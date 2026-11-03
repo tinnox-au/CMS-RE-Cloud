@@ -107,7 +107,7 @@ Each workflow lists the goal, prerequisites, steps, inputs and validation, and r
 
 ### 6.1 Sign in and MFA
 - Goal: authenticated access with MFA. Steps: email and password, TOTP code (enrolment on first login), optional passkey later. Validation: lockout after repeated failures, session inactivity timeout (default 12 hours, configurable by customer admin). State: session, audit event.
-- REFERENCE: Yodeck offers per-user TOTP and, on its Enterprise plan, account-wide policies such as inactivity logout, single session and IP allow-listing (OFFICIALLY DOCUMENTED). TINNOX CMS includes MFA for everyone and defers the policy set.
+- REFERENCE: Yodeck offers per-user TOTP and, on its Enterprise plan, account-wide policies such as inactivity logout, single session and IP allow-listing (VERIFIED_FULL_PAGE, help centre, `research/round2/AV1-accounts-admin.md` rows 19 and 20; whether TOTP is on every plan is INFERRED). TINNOX CMS includes MFA for everyone and defers the policy set.
 
 ### 6.2 Upload media
 - Goal: add images, video or PDF to the library. Prerequisites: Editor or Admin role; free quota under the customer's plan.
@@ -121,7 +121,7 @@ Each workflow lists the goal, prerequisites, steps, inputs and validation, and r
 
 ### 6.4 Build a playlist
 - Ordered items, drag reorder, per-item duration (images default 10 s, videos default natural length, both overridable), per-item fit override, per-item availability window (date range plus weekly slots), nested playlist. Empty playlists are allowed but publish shows a warning and displays fall back to the customer's idle slate.
-- REFERENCE: Yodeck playlist items carry a position and per-item duration, video defaults to its natural length, and availability is a media-level property; per-item availability is not evidenced (THIRD PARTY, INFERRED). TINNOX CMS puts availability on the playlist item as well as the media.
+- REFERENCE: Yodeck playlist items carry an integer order field (named `priority` in the public API) and a per-item duration, and a video's duration is fixed to its own length (VERIFIED_FULL_PAGE, public spec and help centre, AV3 rows 39 and 40). Availability is a media-level property (VERIFIED_FULL_PAGE, AV3 row 31); per-item availability is not evidenced (INFERRED). TINNOX CMS puts availability on the playlist item as well as the media.
 
 ### 6.5 Build a layout
 - Pick a canvas profile; choose full-canvas or two-region template; assign a playlist or media to each region; text band region accepts plain text with font size and colour. Preview renders at the exact canvas pixel dimensions, scaled to fit the browser, with a 1:1 zoom option.
@@ -129,18 +129,18 @@ Each workflow lists the goal, prerequisites, steps, inputs and validation, and r
 
 ### 6.6 Preview fit, crop and letterbox
 - For any media on any canvas profile the portal shows the four fit modes (contain with letterbox, cover with crop, stretch, actual size) using the same rendering rules the player uses (a shared rendering module compiled for the browser and the player). Crop shows the discarded area. The preview is pixel-accurate within 1 px (acceptance test MED-07).
-- Canvas presets per TINNOX package are offered first (for example PrecisionPro S1 1376×774 and PrecisionLuma S1 768×448, which are not 16:9; VERIFIED_FULL_PAGE, R5). Where the LED canvas is smaller than the player's output mode, the preview shows the **content window** (offset and size) inside the output frame, so editors see exactly which pixels reach the LED (PROPOSED).
-- REFERENCE: Yodeck supports portrait by rotating the output and advises custom ratios with exact pixel dimensions for LED boards through a forced resolution and disabling unused portions (OFFICIALLY DOCUMENTED, Yodeck LED board article). TINNOX CMS makes the canvas and the content window explicit objects instead of a per-screen override.
+- Canvas presets per TINNOX package are offered first (for example PrecisionPro S2 1720×946 and PrecisionLuma S1 768×448, which are not 16:9; PrecisionPro S1 1376×774 is the only exact 16:9 PrecisionPro size; VERIFIED_FULL_PAGE, R5). Where the LED canvas is smaller than the player's output mode, the preview shows the **content window** (offset and size) inside the output frame, so editors see exactly which pixels reach the LED (PROPOSED).
+- REFERENCE: Yodeck supports portrait by rotating the output and advises custom ratios with exact pixel dimensions for LED boards through a forced resolution and disabling unused portions (VERIFIED_FULL_PAGE, Yodeck portrait and LED board articles, AV4 L14 and L20). TINNOX CMS makes the canvas and the content window explicit objects instead of a per-screen override.
 
 ### 6.7 Schedule content
 - Per display or display group: a default (always-on) content item, plus events. An event has content, a date range, local start and end times, a recurrence rule, a priority and a name. The editor shows a week view in the site's time zone and a "what plays at" probe for any date and time. Overlaps are resolved by priority (the higher number wins), then by the most recently published event (section 11 rule 5); the editor flags overlaps.
-- Daylight-saving behaviour follows section 11 and is shown inline for the affected dates ("this event is skipped on 4 Oct 2026 because 02:30 does not exist in Australia/Sydney").
-- REFERENCE: Yodeck exposes per-screen time zone, weekly schedules and filler content for gaps (OFFICIALLY DOCUMENTED and THIRD PARTY). Its public API gives each event an integer `priority`, and on overlap the higher number plays (VERIFIED_FULL_PAGE, public spec, R7 X14); how the help centre's drag-to-reorder list maps to that integer is INFERRED. Xibo stores a per-display time zone and a per-event flag to sync to it, and has open 2026 reporting bugs for zones ahead of UTC (OFFICIALLY DOCUMENTED, issue tracker). TINNOX CMS stores wall-clock rules per site and makes the daylight-saving outcome visible.
+- Daylight-saving behaviour follows section 11 and is shown inline for the affected dates ("this event starts at 03:30 on 4 Oct 2026 because 02:30 does not exist in Australia/Sydney").
+- REFERENCE: Yodeck exposes per-screen time zone, weekly schedules and filler content for gaps (VERIFIED_FULL_PAGE, help centre and public spec, AV4 S9 and S14). Its public API gives each event an integer `priority`, and on overlap the higher number plays (VERIFIED_FULL_PAGE, public spec, R7 X14); how the help centre's drag-to-reorder list maps to that integer is INFERRED. Xibo stores a per-display time zone and a per-event flag to sync to it (VERIFIED_FULL_PAGE, source code and manual, `research/round2/R8-xibo-verify.md` A23). It has 2026 reporting issues that shift dates for zones ahead of UTC (THIRD PARTY, search summary of the issue tracker, R8 V19; whether they are still open was not checked). TINNOX CMS stores wall-clock rules per site and makes the daylight-saving outcome visible.
 
 ### 6.8 Publish
 - "Unpublished changes" indicator at playlist, layout, schedule and display level. Publish shows the affected displays and a diff summary, requires confirmation, creates an immutable publication version, and moves each affected display to `pending`. The customer can republish any previous version.
 - Publish is locked, with a clear message, while the display's LicenceState is `suspended` or `expired`. Playback continues (section 20).
-- REFERENCE: Yodeck separates Save from Push to Screens; the push button turns orange after changes and only affected screens download (OFFICIALLY DOCUMENTED). TINNOX CMS keeps an explicit publish step because it gives a natural audit point and avoids half-edited content reaching an LED wall, and adds versioning and rollback.
+- REFERENCE: Yodeck separates Save from Push to Screens; the push button turns orange after changes and only affected screens download (VERIFIED_FULL_PAGE, help centre, AV5 rows 1 and 2). TINNOX CMS keeps an explicit publish step because it gives a natural audit point and avoids half-edited content reaching an LED wall, and adds versioning and rollback.
 
 ### 6.9 Watch delivery and playback
 - Display page shows: online state and last heartbeat; delivery state with progress percentage and timestamps for each state of the display's route (section 12); current publication and current item; last screenshot with time; recent alerts.
@@ -154,7 +154,7 @@ Each workflow lists the goal, prerequisites, steps, inputs and validation, and r
 ### 6.11 Playback report
 - Per display and date range: items played with counts and total seconds; CSV export; proof-of-play rows carry publication version, media identity and evidence type (`logged` or `sampled`). Times are stored in UTC and shown in the site's local time.
 - The report covers the retention period of the customer's plan (section 20). Huidu-route rows are labelled "sampled, not audited".
-- REFERENCE: Yodeck playback reports record all playback, batch upload from players and distinguish playback date from reported date (OFFICIALLY DOCUMENTED, help article on playback reports). Yodeck generates them in Etc/UTC (VERIFIED_FULL_PAGE, `research/round2/AV4-layouts-scheduling.md` N5). TINNOX CMS adopts the date distinction and presents local time.
+- REFERENCE: Yodeck playback reports record all playback, batch upload from players and distinguish playback date from reported date (VERIFIED_FULL_PAGE, help article on playback reports, AV5 row 51). Yodeck generates them in Etc/UTC (VERIFIED_FULL_PAGE, `research/round2/AV4-layouts-scheduling.md` N5). TINNOX CMS adopts the date distinction and presents local time.
 
 ## 7. Operations console workflows
 
@@ -173,9 +173,9 @@ Each workflow lists the goal, prerequisites, steps, inputs and validation, and r
   4. Set the site's Australian IANA zone on the card. The card's default is Asia/Shanghai (VERIFIED_FULL_PAGE, official HTTP API document, R1).
   5. Change or disable the card's Wi-Fi access-point password. The official sample value looks like a factory default, and the API returns the password in clear text (VERIFIED_FULL_PAGE, R1 verification).
   6. Confirm that HDPlayer on/off schedules are no longer used on the card. Enabling the HTTP API can stop them working (VERIFIED_FULL_PAGE, R1).
-  7. Connect the card through an on-site agent or a VPN router. Port 30080 is plain HTTP and must never cross the public internet. A TINNOX-hosted gateway or reverse TCP connection is a lab spike only, because it rests on third-party evidence (HARDWARE-DEPENDENT/UNVERIFIED, R1 verification caveat 1).
+  7. Connect the card through an on-site agent or a VPN router. Port 30080 is plain HTTP (INFERRED from the official document's URLs, R1) and must never cross the public internet. A TINNOX-hosted gateway or reverse TCP connection is a lab spike only, because it rests on third-party evidence (HARDWARE-DEPENDENT/UNVERIFIED, R1 verification caveat 1).
 - Which vendor API TINNOX already holds is open: a 16-hex `sdkKey` from Huidu support means Huidu; an AppKey and AppSecret from the VNNOX Open Platform means NovaStar (Q-T1). No adapter work starts on either assumption (PROPOSED, R99 C2).
-- REFERENCE: Yodeck pairs with an on-screen registration code entered under Screens, Add Screen. Its public API takes the code as exactly 9 digits, and the first digit gives the player type (0 Raspberry Pi, 1 Web Player, 2 BrightSign, 3 Android 7 or earlier, 4 Tizen, 5 webOS, 6 Windows, 7 Fire OS, 8 Android Play Store, 9 ChromeOS). The help centre shows the Pi code as 8 digits and the Windows standard code as W plus 8 digits (VERIFIED_FULL_PAGE, R7 X8 and `research/round2/AV2-registration-api.md`). Yodeck supports pre-provisioning and locks purchased players to the buying account (OFFICIALLY DOCUMENTED). TINNOX CMS keeps the short-code and pre-provisioning paths and adds explicit device replacement and controller commissioning.
+- REFERENCE: Yodeck pairs with an on-screen registration code entered under Screens, Add Screen. Its public API takes the code as exactly 9 digits, and the first digit gives the player type (0 Raspberry Pi, 1 Web Player, 2 BrightSign, 3 Android 7 or earlier, 4 Tizen, 5 webOS, 6 Windows, 7 Fire OS, 8 Android Play Store, 9 ChromeOS). The help centre shows the Pi code as 8 digits and the Windows standard code as W plus 8 digits (VERIFIED_FULL_PAGE, R7 X8 and `research/round2/AV2-registration-api.md`). Yodeck supports pre-provisioning and locks purchased players to the buying account (VERIFIED_FULL_PAGE, help centre, AV2 rows 9 and 16). TINNOX CMS keeps the short-code and pre-provisioning paths and adds explicit device replacement and controller commissioning.
 
 ### 7.3 Confirm installation
 - After pairing, the console shows the device's reported HDMI mode, the configured canvas and the content window; the installer can push a test slate (pixel ruler and orientation markers) that plays until first content is published. On an LED wall the installer confirms the ruler aligns at the panel edges.
@@ -190,7 +190,7 @@ Each workflow lists the goal, prerequisites, steps, inputs and validation, and r
 - Remote actions require confirmation and are audited with the operator identity; customers see them in their audit log. These actions are in the device-operations scope and need no customer grant (section 7.6).
 
 ### 7.6 Support access to a customer account (B+ policy)
-TINNOX's support policy is option B+ (PROPOSED, R2; adopted over the AV1 opt-out proposal by R99 C4; TINNOX approval pending, Q-T6). It answers Q8. Vendors differ: Xibo Cloud and Yodeck partners have standing access by default; Signagelive, Salesforce, Zendesk and Atlassian need a customer grant (R2, VERIFIED_FULL_PAGE for Xibo and Yodeck, OFFICIALLY DOCUMENTED for the others). No public Samsung control that lets a customer grant or approve access was found (UNKNOWN, R2). B+ follows the customer-grant pattern because councils, schools and state bodies assess third-party access (APP 11, VPDSS, ST4S; OFFICIALLY DOCUMENTED, R2).
+TINNOX's support policy is option B+ (PROPOSED, R2; adopted over the AV1 opt-out proposal by R99 C4; TINNOX approval pending, Q-T6). It answers Q8. Vendors differ: Xibo Cloud and Yodeck partners have standing access by default; Signagelive, Salesforce, Zendesk and Atlassian need a customer grant (R2: VERIFIED_FULL_PAGE for Xibo and Yodeck; OFFICIALLY DOCUMENTED for Signagelive, Zendesk and Atlassian; THIRD PARTY for Salesforce). No public Samsung control that lets a customer grant or approve access was found (UNKNOWN, R2). B+ follows the customer-grant pattern because councils, schools and state bodies assess third-party access (APP 11, VPDSS, ST4S; OFFICIALLY DOCUMENTED, R2).
 
 1. **Device-operations scope (always on, under the contract).** Operators see telemetry, logs, storage and screenshots, restart devices and roll out firmware for hardware TINNOX supplied or supports. They cannot view or edit media, playlists, schedules or users. Every action is logged in the customer's audit log. Screenshots are taken on demand only and kept 30 days, because they can show content.
 2. **Content and account scope (customer grant).** Off by default. A TINNOX operator raises an in-app request with a reason and ticket number. A customer Admin or Owner approves it in one click, choosing view-only or edit. The admin can also grant access proactively. The default duration is 24 hours and the maximum is 7 days. Renewal is explicit. The customer can revoke a grant at any time, and revocation ends active sessions at once.
@@ -230,7 +230,7 @@ Retention for these records is in section 10 item 8.
 
 Site scoping: a customer user may be restricted to one or more sites; scoped users see only those sites' displays and schedules. Service tokens carry a role and a customer, are shown once, and are revocable.
 
-REFERENCE: Yodeck offers a fixed role set, one role per user on lower plans, Enterprise-only workspaces and custom roles, and no documented per-screen permission (OFFICIALLY DOCUMENTED and INFERRED). Site scoping is TINNOX CMS's answer to that gap at the scale of its customers.
+REFERENCE: Yodeck offers a fixed role set, one role per user on every plan (one role per workspace on Enterprise), Enterprise-only workspaces and custom roles (VERIFIED_FULL_PAGE, AV1 rows 4 and 16), and no documented per-screen permission (INFERRED). Site scoping is TINNOX CMS's answer to that gap at the scale of its customers.
 
 ## 9. Scope decisions deferred
 
@@ -243,7 +243,7 @@ REFERENCE: Yodeck offers a fixed role set, one role per user on lower plans, Ent
 | Widgets and apps catalogue | Separate | Start with clock, weather and RSS only if a pilot customer needs them. Huidu's polling task can feed live data on route (b) later |
 | Brightness, power and panel health of LED controllers | Release 1 for Huidu "D" cards through the HTTP API; release 2 for others, each gated on a verified adapter per controller model | `docs/architecture-and-hardware.md` section 5; R1 |
 | NovaStar control adapter (LAN) | Release 2 | Release 1 reaches NovaStar through route (a) only |
-| Huidu cloud and NovaStar VNNOX routes | Excluded until a vendor shows an Australian region in writing | Conflicts with TINNOX answer Q9 (R1 route (d), architecture route 6; R99 C15) |
+| Huidu cloud and NovaStar VNNOX routes | Excluded until a vendor shows an Australian region in writing | Conflicts with TINNOX answer Q9 (R1 route (d), architecture routes 3 and 6; R99 C15) |
 | TINNOX app on a Huidu Android card | Lab spike only | Undocumented by Huidu (UNKNOWN, R1) |
 | SSO and SCIM | When a customer requires it | Role model is designed so identity-provider groups can map to roles |
 | Documents and web pages | PDF in release 1. PowerPoint (converted to video or images) and web pages in release 2, on TINNOX-player routes only | TINNOX answer Q11. Huidu cards have no web item (VERIFIED_FULL_PAGE, absence, R1) |
@@ -283,7 +283,7 @@ Rules (PROPOSED):
 10. Proof-of-play times are stored in UTC and shown in the site's local time.
 11. Resume versus restart is explicit. When a higher-priority event ends, the interrupted playlist resumes at the item that was interrupted, from that item's start. After a reboot or a new publication, playback restarts from item 1. The schedule editor states this next to the priority setting (PROPOSED). Behaviour on Huidu cards is HARDWARE-DEPENDENT/UNVERIFIED.
 
-REFERENCE: Yodeck sets time zone per screen and documents that the user's profile zone does not affect screens (OFFICIALLY DOCUMENTED). Its help centre and API spec never mention daylight saving, and its zone list mixes aliases with canonical names (VERIFIED_FULL_PAGE, AV4). Its help centre says a layout or playlist restarts from item 1 after a priority event, while another page says it "resumes" (VERIFIED_FULL_PAGE, AV4 N6). Xibo converts event times with the display zone when the event opts in (OFFICIALLY DOCUMENTED, source code).
+REFERENCE: Yodeck sets time zone per screen (VERIFIED_FULL_PAGE, AV4 S14). A statement that the user's profile zone does not affect screens was not found in the help centre (UNKNOWN, AV4 S16). Its help centre and API spec never mention daylight saving, and its zone list mixes aliases with canonical names (VERIFIED_FULL_PAGE, AV4). Its help centre says a layout or playlist restarts from item 1 after a priority event, while another page says it "resumes" (VERIFIED_FULL_PAGE, AV4 N6). Xibo converts event times with the display zone when the event opts in (VERIFIED_FULL_PAGE, source code, R8 A23).
 
 ## 12. Publishing and delivery states
 
@@ -314,7 +314,7 @@ Huidu program push route (`huidu_push`) (PROPOSED, R1):
 | Delivery `playing (sampled)` | a screenshot and the card's screen status match the publication | sampled evidence, not a play log | "Playing v12 (sampled at T)" |
 | Delivery `error` | card or server | key refused, card unreachable through agent or VPN, file fetch failed | "Error: reason" with remedy |
 
-REFERENCE: Yodeck screens show statuses such as Online, Offline, Upgrading, Disabled and Not Registered. Its content status has six values: Up to date, Downloading, Unknown, Pending Media (download deferred by Restricted Download Hours), Possibly Outdated and Not Updated (VERIFIED_FULL_PAGE, help centre, `research/round2/AV5-publish-monitor-offline.md` row 8). Only affected screens download after a push (OFFICIALLY DOCUMENTED). Its bulk push status is tracked per account with no job ID (VERIFIED_FULL_PAGE, public spec, R7). Download progress visibility in its interface is UNKNOWN.
+REFERENCE: Yodeck screens show statuses such as Online, Offline, Upgrading, Disabled and Not Registered. Its content status has six values: Up to date, Downloading, Unknown, Pending Media (download deferred by Restricted Download Hours), Possibly Outdated and Not Updated (VERIFIED_FULL_PAGE, help centre, `research/round2/AV5-publish-monitor-offline.md` row 8). Only affected screens download after a push (VERIFIED_FULL_PAGE, AV5 row 2). Its bulk push status is tracked per account with no job ID (VERIFIED_FULL_PAGE, public spec, R7). Download progress visibility in its interface is UNKNOWN.
 
 ## 13. Monitoring, diagnostics and reporting
 
@@ -337,7 +337,7 @@ These apply to the TINNOX player (route (a)). On the Huidu route the card stores
 
 1. Boots to playback without interaction; no public-facing error dialogs; a small staff-visible status indicator.
 2. Plays the current publication from local cache indefinitely without network; evaluates schedules locally, including daylight-saving transitions.
-3. Survives power loss: read-only root with overlay (Linux) or journaled cache (Android); cache integrity check at boot; last-known-good time persisted. On CM5 and Pi 5 the RTC backup cell's charging is off by default, so the image must enable it (`dtparam=rtc_bbat_vchg`) where a rechargeable cell is fitted (VERIFIED_FULL_PAGE, Pi documentation, R4).
+3. Survives power loss: read-only root with overlay (Linux) or journaled cache (Android); cache integrity check at boot; last-known-good time persisted. On the Pi 5 the RTC backup cell's charging is off by default, so the image must enable it (`dtparam=rtc_bbat_vchg`) where a rechargeable cell is fitted (VERIFIED_FULL_PAGE, Pi documentation, R4). The CM5 is assumed to behave the same way (INFERRED from the shared power-management chip, R4).
 4. Watchdog restarts the renderer within 60 seconds of a freeze; three restarts in ten minutes trigger one reboot and an alert. On Android, `DISALLOW_SYSTEM_ERROR_DIALOGS` hides crash dialogs and force-stops the crashed app but does not restart it, so the TINNOX app needs its own relaunch (home or lock-task launcher, or an alarm watchdog) (VERIFIED_FULL_PAGE, AOSP source, R4).
 5. Updates are signed, downloaded in the background, applied in the site's maintenance window, health-checked within 2 minutes and rolled back automatically on failure; OS images are A/B; power loss during an update never leaves a half-installed state.
 6. Outbound-only connectivity over HTTPS (and MQTT over TLS if used); no inbound ports; works behind proxies configured at provisioning.
@@ -367,7 +367,7 @@ First release: read-only REST API per customer (displays, delivery states, heart
 - Device commands (screenshot now, restart, reboot, re-push) return a job ID with a per-device result, so status is tracked per job, never per account (PROPOSED, R7 P6). In release 1 these are console actions; the public API exposes job status read-only.
 - Write operations and webhooks are later (section 13).
 
-REFERENCE: Yodeck's API is available on its Premium and Enterprise plans, and tokens act as a user with a role (OFFICIALLY DOCUMENTED). Its public spec publishes three rate-limit levels per rolling 10 seconds, counted per token and per account: Low 14 and 42, Standard 21 and 63, High 33 and 99. A throttled request gets a 429 with no body and a `Retry-After` header in seconds (VERIFIED_FULL_PAGE, public spec, R7 F2).
+REFERENCE: Yodeck API tokens act as a user with a role (VERIFIED_FULL_PAGE, public spec, AV2 row 40). The Premium and Enterprise plan gate is stated only on its AI-agent page; no page states the plan for the REST API (AV1 row 24, AV2 row 53). Its public spec publishes three rate-limit levels per rolling 10 seconds, counted per token and per account: Low 14 and 42, Standard 21 and 63, High 33 and 99. A throttled request gets a 429 with no body and a `Retry-After` header in seconds (VERIFIED_FULL_PAGE, public spec, R7 F2).
 
 ## 17. Non-functional requirements
 

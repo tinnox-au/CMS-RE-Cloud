@@ -23,7 +23,7 @@ No personal names, personal contact details or customer names are recorded. Cust
 |---|---|---|---|
 | Trading name | TINNOX (all caps in site copy) | VERIFIED_FULL_PAGE | https://tinnox.com.au/ |
 | Legal entity | UFL Technology Pty Ltd trading as Tinnox (footer and JSON-LD `legalName`) | VERIFIED_FULL_PAGE | https://tinnox.com.au/ |
-| ABN | 12 656 209 639, Australian private company, main location VIC, GST registered, active from 21 Dec 2021 | VERIFIED_FULL_PAGE (ABN shown in site footer); registry details from the ABR | https://tinnox.com.au/ , https://abr.business.gov.au/ABN/View?id=12656209639 |
+| ABN | 12 656 209 639, Australian private company, main location VIC, GST registered, active from 21 Dec 2021 | VERIFIED_FULL_PAGE (ABN shown in site footer); registry details carried from the earlier draft and not re-checked in round 2 | https://tinnox.com.au/ , https://abr.business.gov.au/ABN/View?id=12656209639 |
 | Positioning | "Australian Outdoor Display Specialists"; LED video walls, digital kiosks, outdoor LED displays and LED hire, "delivered and installed nationwide" | VERIFIED_FULL_PAGE | https://tinnox.com.au/ |
 | Headquarters | Level 3, 235 Queen Street, Melbourne VIC 3000. This is first-party data (JSON-LD `address` and footer). | VERIFIED_FULL_PAGE | https://tinnox.com.au/ |
 | Warehouse | 359 Bluff Road, Hampton VIC 3188. The retail page describes a local test-build warehouse with "over 400sqm of LED cabinets". | VERIFIED_FULL_PAGE | https://tinnox.com.au/ , https://tinnox.com.au/industries/digital-signage-for-retail/ |
@@ -33,8 +33,8 @@ No personal names, personal contact details or customer names are recorded. Cust
 | Certifications | ISO 9001, ISO 14001 and ISO 45001; the government page says "JAS-ANZ". No certificate numbers are given. | VERIFIED_FULL_PAGE | https://tinnox.com.au/iso-certifications/ , https://tinnox.com.au/industries/digital-signage-for-government/ |
 | Governance claims | Compliance team, annual ethics training, internal and third-party audits, a Chief Compliance Officer, and a link to a compliance portal subdomain. The subdomain was blocked from this environment. | VERIFIED_FULL_PAGE (subdomain UNKNOWN) | https://tinnox.com.au/ethics-and-compliance/ |
 | Delivery model | Installation is "conducted by our network of certified installation partners"; a "global network of channel partners, suppliers, and subcontractors" | VERIFIED_FULL_PAGE | https://tinnox.com.au/ |
-| Size | 11 to 50 employees (aggregator estimate). Not stated on the site. | THIRD PARTY | https://zoominfo.com/c/tinnox/1318605509 |
-| Founded | Not stated on the site. LinkedIn says 2015; the ABN was registered in Dec 2021; a directory says "over ten years" in AU and NZ. Conflicting. | THIRD PARTY | https://au.linkedin.com/company/tinnox , https://diib.com/featuredmembers/tinnox/ |
+| Size | 11 to 50 employees (aggregator estimate). Not stated on the site. | THIRD PARTY (earlier draft; not re-checked in round 2) | https://zoominfo.com/c/tinnox/1318605509 |
+| Founded | Not stated on the site. LinkedIn says 2015; the ABN was registered in Dec 2021; a directory says "over ten years" in AU and NZ. Conflicting. | THIRD PARTY (earlier draft; not re-checked in round 2) | https://au.linkedin.com/company/tinnox , https://diib.com/featuredmembers/tinnox/ |
 | Business contact | Phone 1300 846 669 ("1300 TINNOX"); enquiry@ and support@ business mailboxes at tinnox.com.au. Warranty claims go "via a support ticket or" the support mailbox. | VERIFIED_FULL_PAGE | https://tinnox.com.au/support/ , https://tinnox.com.au/product-warranty/ |
 | Support channel | /support/ is a ticket form (name, e-mail, device serial number, subject, description, up to 5 attachments of 20 MB, restart checkbox). It submits to Zoho Desk. | VERIFIED_FULL_PAGE | https://tinnox.com.au/support/ |
 
@@ -201,7 +201,7 @@ PROPOSED: the CMS uses TINNOX's own brand assets supplied by TINNOX and an origi
 - Release 1 must work with **two controller vendors, Huidu and NovaStar** (INFERRED from TINNOX Q2 and the site). An **external TINNOX player feeding the controller over HDMI** is the vendor-neutral primary topology (PROPOSED). The per-package controller list is question Q-T2.
 - The published SLA and on-site warranty make **remote diagnostics, SLA timers and an audited support path** a day-one requirement (INFERRED from section 3). Staff access to customer content follows the opt-in grant model recommended in `research/round2/R2-support-access-models.md` (PROPOSED, B+).
 - Release 1 is **Australia only** (DECIDED, TINNOX Q6). Site-local **Australian time zones with daylight-saving correctness** are a day-one requirement. New Zealand is added later as zone data.
-- Documents: **PDF in release 1; PowerPoint and web pages in release 2**, on TINNOX-player routes only (DECIDED, TINNOX Q11, with the route limit PROPOSED).
+- Documents: **PDF in release 1; PowerPoint and web pages in release 2**, on TINNOX-player routes only. TINNOX accepts either release (DECIDED, TINNOX Q11); this split and the route limit are PROPOSED (`research/round2/R99-critic.md` C7).
 - All CMS data stays in Australia (DECIDED, TINNOX Q9; section 10).
 
 ## 9. Gaps to close with TINNOX
