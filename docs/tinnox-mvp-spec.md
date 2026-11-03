@@ -255,7 +255,7 @@ REFERENCE: Yodeck screens show statuses such as Online, Offline, Upgrading, Disa
 - Alerts: offline longer than a threshold (default 15 minutes, configurable, with "do not alert during scheduled off hours"), update failed, storage below 10%, delivery error. Notification by email to customer and TINNOX recipients per preferences; alerts resolve automatically.
 - Playback log batched from the player, uploaded on reconnect, with playback time distinct from reported time; CSV export.
 
-REFERENCE: Yodeck provides per-screen offline email notifications with a wait time and back-online alert (OFFICIALLY DOCUMENTED, April 2025 release), and playback reports that batch records (OFFICIALLY DOCUMENTED). The screenshot cadence reported by third parties (30 to 40 seconds) is UNVERIFIED.
+REFERENCE: Yodeck provides per-screen offline email notifications with a wait time and back-online alert (OFFICIALLY DOCUMENTED, April 2025 release), and playback reports that batch records (OFFICIALLY DOCUMENTED). Yodeck documents that players send a screenshot every 30 to 40 seconds and that the portal refreshes thumbnails every 30 seconds while a screen's details are open and every two hours otherwise (OFFICIALLY DOCUMENTED).
 
 ## 14. Player requirements: offline, startup, updates, recovery
 
@@ -285,7 +285,7 @@ REFERENCE: Yodeck documents cached offline playback with a warning three days be
 
 First release: read-only REST API per customer (displays, delivery states, heartbeats summary, playback logs, media list) with service tokens carrying a role, rate limited, documented with OpenAPI. Write operations and webhooks are later.
 
-REFERENCE: Yodeck's API is available on its Premium and Enterprise plans, tokens act as a user with a role, and third parties report a limit of 21 requests per 10 seconds (OFFICIALLY DOCUMENTED and THIRD PARTY).
+REFERENCE: Yodeck's API is available on its Premium and Enterprise plans, tokens act as a user with a role, Yodeck states only that its limiter has three levels and answers 429 with no body, and publishes no numbers; third parties report 21 requests per 10 seconds per token (OFFICIALLY DOCUMENTED and THIRD PARTY).
 
 ## 17. Non-functional requirements
 
