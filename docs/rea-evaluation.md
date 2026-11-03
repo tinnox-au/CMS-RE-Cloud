@@ -1,9 +1,9 @@
 # REA evaluation (morluto/rea) for the TINNOX CMS discovery work
 
 Status: completed pilot on an isolated synthetic target. Date: 2026-11-03.
-Environment: Claude Code cloud container (Ubuntu 24.04, Node 22.23.4, 4 vCPU, Playwright 1.63.0 with Chrome for Testing 153.0.8010.12).
+Environment: cloud development container (Ubuntu 24.04, Node 22.23.4, 4 vCPU, Playwright 1.63.0 with Chrome for Testing 153.0.8010.12).
 
-Evidence labels used in this document: **DIRECTLY OBSERVED** (we ran it here), **OFFICIALLY DOCUMENTED** (REA's own README/docs at the pinned version), **INFERRED**, **PROPOSED**.
+Evidence labels used in this document: **PILOT RESULT** (a command we ran in this container against our own synthetic target; it is not an observation of Yodeck, and no Yodeck finding anywhere carries this label), **OFFICIALLY DOCUMENTED** (REA's own README/docs at the pinned version), **INFERRED**, **PROPOSED**.
 
 ## 1. Verdict in one paragraph
 
@@ -26,9 +26,9 @@ REA 6.8.0 installs and runs in this environment as a project-scoped npm dependen
 | Limits | 64 MiB per CDP WebSocket message (`payload_limit`); observation begins at attach time (no prior activity); worker coverage attach-limited | docs/browser-observation.md |
 | Native analysis engines | Hopper/Ghidra/IDA/JADX/Kuna are optional; not installed here and not needed for website work | `rea doctor` output |
 
-Note: `npx rea-agents setup` rewrites agent configuration (`/root/.claude.json` registration, skill files). We did **not** run setup; the CLI has equivalent contracts to the MCP tools ("Every surface has equivalent CLI and MCP contracts"), so a project-scoped CLI install was sufficient and left session configuration untouched.
+Note: `npx rea-agents setup` rewrites the coding agent's own configuration (registration and skill files). We did **not** run setup; the CLI has equivalent contracts to the MCP tools ("Every surface has equivalent CLI and MCP contracts"), so a project-scoped CLI install was sufficient and left session configuration untouched.
 
-## 3. Compatibility check in this cloud environment (DIRECTLY OBSERVED)
+## 3. Compatibility check in this cloud environment (PILOT RESULT)
 
 | Requirement | Result |
 |---|---|
@@ -38,13 +38,15 @@ Note: `npx rea-agents setup` rewrites agent configuration (`/root/.claude.json` 
 | Install | `npm install --save-exact rea-agents@6.8.0` in a scratch project: 176 packages, 17 s, one deprecation warning (`prebuild-install`) |
 | `rea doctor` | `healthy: false` solely because native engines (Hopper, Ghidra, IDA, JADX, Kuna) and the agent registration/skill are absent; node and host checks healthy |
 | Chrome-family browser with CDP | Chrome for Testing 153.0.8010.12 at `/opt/pw-browsers/chromium-1243/chrome-linux64/chrome`, launched by us with `--headless=new --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --user-data-dir=<dedicated profile>` |
-| Platform managed browser exposing CDP | **None.** This session has no browser MCP tools (no `Claude_Browser`, no `claude-in-chrome`, no `remote-devices`), no Remote Control folders, and no connectors. The only browser is the one we launch ourselves. |
+| Platform managed browser exposing CDP | **None.** This session has no browser-control tools, no linked computer folders, and no connectors. The only browser is the one we launch ourselves. |
 | Network to app.yodeck.com | **Blocked** by the environment's network policy: `curl` gets `CONNECT tunnel failed, response 403`; Chromium gets `net::ERR_TUNNEL_CONNECTION_FAILED`; the WebFetch tool gets `getaddrinfo ENOTFOUND`. |
 | MCP integration | Not registered (would require `rea setup` to edit session config). CLI used instead. |
 
 Conclusion: the runtime and CLI are compatible; the browser connection works for a browser we own on loopback; the intended target is unreachable from this container.
 
-## 4. Pilot on one isolated workflow (DIRECTLY OBSERVED)
+**Round-2 addendum (2026-11-03).** The network policy changed after this check. help.yodeck.com (656 articles) and the public OpenAPI specification at https://app.yodeck.com/api-docs/bundle.yaml can now be read without signing in, and both were read in full (VERIFIED_FULL_PAGE, `research/round2/R7-yodeck-api-spec.md`, `research/round2/AV1-accounts-admin.md` to `AV5-publish-monitor-offline.md`). www.yodeck.com is still blocked. No Yodeck account was used and the authenticated Yodeck interface was not inspected. That still needs a browser signed in by a human operator, which this container does not have. The conclusion above is unchanged.
+
+## 4. Pilot on one isolated workflow (PILOT RESULT)
 
 Because Yodeck was unreachable, the pilot used a **synthetic, self-contained "schedule editor" page** served on `127.0.0.1:3000` by a 60-line Node script (three fake screens, a schedule form posting JSON to `/api/schedules`, a 2-second poll of `/api/screens`, `history.pushState` after save, a 422 for `priority` outside 0-100). No real product, account, or customer data was involved. Two independent capture methods were run against it.
 
@@ -91,6 +93,8 @@ Interpretation (INFERRED): REA's value for a *workflow* audit is the evidence di
 3. Do **not** use `export-web-scripts`, `recover-javascript-sources` or `analyze-javascript-application` on Yodeck's bundles. The task is to observe workflows, not to reconstruct proprietary code, and Yodeck's terms of service likely restrict reverse engineering (not verified here; see `docs/open-questions.md`).
 4. Compare each REA capture with the ordinary DevTools/Playwright view of the same action once, as done in this pilot, before relying on it for a workflow.
 5. Record the REA version and evidence IDs in the evidence index of `docs/yodeck-workflow-audit.md`.
+
+**Round-2 addendum (2026-11-03).** The public help centre and the public OpenAPI specification now answer most of what REA would have been used for (see the section 3 addendum). The remaining targets are the items only the signed-in interface shows, listed in `docs/yodeck-workflow-audit.md` section 8 (for example daylight-saving behaviour and the zone picker). So the decision in section 7 is unchanged: REA stays optional and selective. Reading Yodeck's published help articles and its public OpenAPI specification is reading documentation that Yodeck publishes. It is not reverse engineering of Yodeck code (PROPOSED wording; Yodeck's terms are still unread, open-questions A12). No migration is planned (TINNOX answer Q12, `docs/decisions-2026-11.md` DEC-04).
 
 ## 6. Limitations recorded during the pilot
 
