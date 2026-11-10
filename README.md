@@ -13,10 +13,12 @@ You don't need to read all ~5,800 lines. Read the five documents below in order 
 | Step | Read | Why | Time |
 |---|---|---|---|
 | 1 | [`docs/decisions-2026-11.md`](docs/decisions-2026-11.md), all of it | **The one-page summary of the whole project.** It has 29 numbered decisions (DEC-01 to DEC-29), each marked *DECIDED by client* or *PROPOSED for TINNOX approval*, plus recommended answers on support access, hosting cost and player hardware. If you read only one document, read this one. | 30 min |
-| 2 | [`docs/open-questions.md`](docs/open-questions.md), sections 2.1 and 6 | **What TINNOX still has to answer (Q13 to Q26), and what happens next.** Q13 (which vendor gave API access) and Q14 (which controller each product package uses) block the start of build work. | 15 min |
+| 2 | [`docs/open-questions.md`](docs/open-questions.md), sections 2.1 and 6 | **What TINNOX still has to answer (Q13 to Q26), and what happens next.** Q13 (which vendor gave API access) and Q14 (which controller each product package uses) block the controller adapter work and the Huidu hardware order. Platform work can start without them. | 15 min |
 | 3 | [`docs/tinnox-mvp-spec.md`](docs/tinnox-mvp-spec.md), sections 1 to 4 | **What release 1 does and does not include**: purpose, the eight product principles, personas and scenarios, and the in-scope and out-of-scope tables. Sections 5 to 20 are detail you can skim. | 30 min |
 | 4 | [`docs/implementation-backlog.md`](docs/implementation-backlog.md), sections 0, 2 and 3 | **How it gets built, and in what order.** It covers the first milestone ("one display, one site, honest states"), a 5-phase plan of about 22 weeks for two to three engineers, and the main risks. Section 1 lists the epics (A to N) in detail. | 20 min |
 | 5 | [`docs/architecture-and-hardware.md`](docs/architecture-and-hardware.md), sections 1, 2, 5, 6, 7 and 8 | **How it is built and what it runs on**: system topology, how content reaches Huidu and NovaStar LED controllers, the pilot hardware, why we build rather than adapt Xibo, the tech stack, and monthly running costs. | 40 min |
+
+**Then act on it:** [`docs/gaps-and-first-steps.md`](docs/gaps-and-first-steps.md) is a later review (9 November 2026) of the whole pack. It has a checklist for the first two weeks, the security and compliance baseline for a first release, the hardware to prepare, and the inconsistencies found between the documents.
 
 **A quick check worth doing early:** [`docs/tinnox-context.md`](docs/tinnox-context.md) describes TINNOX itself (products, warranty, services, branding) as it was pieced together from tinnox.com.au. You know the business, so you can spot anything wrong here in minutes, and some decisions rest on it. For example, NovaStar became the second controller vendor because the website names it.
 
@@ -48,6 +50,7 @@ flowchart LR
 |---|---|---|
 | [`decisions-2026-11.md`](docs/decisions-2026-11.md) | The decision register (DEC-01 to DEC-29), the page TINNOX approves | 94 lines |
 | [`open-questions.md`](docs/open-questions.md) | Blockers, questions for TINNOX (Q1 to Q26 with answers so far), assumptions (A-numbers), things that need real hardware, and next actions | 142 lines |
+| [`gaps-and-first-steps.md`](docs/gaps-and-first-steps.md) | Review of 9 November 2026: first-two-weeks checklist, launch baseline for security and Australian compliance, what is deferred until a large buyer appears, hardware list, and inconsistencies in the pack | 184 lines |
 
 ### 2. Build plan: what we will build
 
@@ -130,7 +133,7 @@ The docs use a few conventions throughout. Once you know them, the documents rea
 
 ## What happens next
 
-From [`open-questions.md`](docs/open-questions.md) section 6:
+From [`open-questions.md`](docs/open-questions.md) section 6. [`gaps-and-first-steps.md`](docs/gaps-and-first-steps.md) section 2 turns this into a two-week checklist:
 
 1. TINNOX answers Q13 to Q26, Q13 and Q14 first.
 2. TINNOX approves or amends the PROPOSED decisions (commercial model, support access, hosting, player hardware).
