@@ -1,0 +1,12 @@
+# Allow-list: nothing enters the build context unless it is named here.
+# In particular .env, infra/.generated and data/ are never sent to the builder.
+**
+!package.json
+!package-lock.json
+!apps/*/package.json
+!packages/*/package.json
+!tests/package.json
+!packages/contracts/src/**
+!apps/media-worker/src/**
+**/*.test.ts
+**/node_modules

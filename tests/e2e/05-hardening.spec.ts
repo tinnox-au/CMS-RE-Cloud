@@ -1,0 +1,82 @@
+/**
+ * Review findings of 2026-11-14 checked in a real browser: a player with a wrong clock can
+ * pair, and the portal and player pages cannot be framed by another site.
+ */
+import { randomUUID } from 'node:crypto';
+import { expect, test } from '@playwright/test';
+import { operatorSession, type OperatorSession } from './support/contexts.ts';
+import { expectPhase, openPlayer, pairingCode } from './support/player.ts';
+import { API_URL, PLAYER_URL, PORTAL_URL } from './support/stack.ts';
+
+const runId = randomUUID().slice(0, 8);
+const CLOCK_OFFSET_MS = 11 * 60 * 1000;
+let operator: OperatorSession;
+
+test.beforeAll(async ({ browser }) => {
+  operator = await operatorSession(browser, 'operator');
+});
+
+test.afterAll(async () => {
+  await operator.context.close();
+});
+
+test('a player whose clock is 11 minutes fast shows one pairing code, keeps it and pairs', async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const context = await browser.newContext({ viewport: { width: 960, height: 540 } });
+  // Every Date in the player page runs 11 minutes ahead of the server.
+  await context.addInitScript({
+    content: `(() => {
+      const offset = ${CLOCK_OFFSET_MS};
+      const Real = Date;
+      class Skewed extends Real {
+        constructor(...args) { if (args.length === 0) { super(Real.now() + offset); } else { super(...args); } }
+        static now() { return Real.now() + offset; }
+      }
+      globalThis.Date = Skewed;
+    })();`,
+  });
+  let pairingRequests = 0;
+  context.on('request', (request) => {
+    if (request.method() === 'POST' && request.url() === `${API_URL}/player/pairing`) {
+      pairingRequests += 1;
+    }
+  });
+  const page = await context.newPage();
+  try {
+    await openPlayer(page);
+    const skew = (await page.evaluate(() => Date.now())) - Date.now();
+    expect(skew).toBeGreaterThan(CLOCK_OFFSET_MS - 5_000);
+    const code = await pairingCode(page);
+    // Before the fix the player judged the server's expiry by its own clock, saw every code
+    // as expired before showing it, and kept requesting new ones.
+    await page.waitForTimeout(15_000);
+    expect(pairingRequests).toBe(1);
+    expect(await pairingCode(page)).toBe(code);
+
+    const display = await operator.api.createDisplay({
+      name: `E2E skewed clock ${runId}`,
+      canvas: { width: 640, height: 360 },
+    });
+    expect((await operator.api.claim(display.id, code)).status()).toBe(200);
+    // Registered; nothing is published to this display, so it waits in "idle".
+    await expectPhase(page, 'idle', 30_000);
+    expect(pairingRequests).toBe(1);
+  } finally {
+    await context.close();
+  }
+});
+
+test('portal and player pages refuse to be framed and are not content-sniffed', async ({
+  request,
+}) => {
+  for (const url of [`${PORTAL_URL}/`, `${PORTAL_URL}/displays`, `${PLAYER_URL}/`]) {
+    const response = await request.get(url);
+    expect(response.status(), url).toBe(200);
+    const headers = response.headers();
+    expect(headers['content-security-policy'], url).toContain("frame-ancestors 'none'");
+    expect(headers['x-frame-options'], url).toBe('DENY');
+    expect(headers['x-content-type-options'], url).toBe('nosniff');
+  }
+});

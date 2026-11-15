@@ -1,0 +1,242 @@
+/**
+ * Operator-side helpers: the real sign-in through Keycloak (password, then TOTP) and a
+ * small client that calls the portal API with the browser context's own session cookie.
+ */
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { expect, type APIResponse, type BrowserContext, type Page } from '@playwright/test';
+import { devUser, totpCode, type DevUserName } from '../../support/dev-identity.ts';
+import { PORTAL_URL, runDir } from './stack.ts';
+
+const TOTP_PERIOD_SECONDS = 30;
+
+/**
+ * Keycloak refuses a one-time code it has already accepted. Remember the time step
+ * used last for each user (across runs) and wait for the next one when needed.
+ */
+async function freshTotp(name: DevUserName): Promise<string> {
+  mkdirSync(runDir, { recursive: true });
+  const file = join(runDir, 'totp-steps.json');
+  const used: Record<string, number> = existsSync(file)
+    ? (JSON.parse(readFileSync(file, 'utf8')) as Record<string, number>)
+    : {};
+  for (;;) {
+    const nowSeconds = Date.now() / 1000;
+    const step = Math.floor(nowSeconds / TOTP_PERIOD_SECONDS);
+    const secondsLeft = TOTP_PERIOD_SECONDS - (nowSeconds % TOTP_PERIOD_SECONDS);
+    // Also avoid typing a code that is about to roll over.
+    if ((used[name] ?? -1) < step && secondsLeft > 4) {
+      used[name] = step;
+      writeFileSync(file, JSON.stringify(used));
+      return totpCode(devUser(name));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}
+
+/** Signs in through the portal's "Sign in" link and the identity provider's two forms. */
+export async function signIn(page: Page, name: DevUserName = 'operator'): Promise<void> {
+  const user = devUser(name);
+  await page.goto(`${PORTAL_URL}/`);
+  await page.getByRole('link', { name: 'Sign in' }).click();
+  await page.waitForURL(/\/realms\/tinnox-dev\//);
+  await page.locator('#username').fill(user.username);
+  await page.locator('#password').fill(user.password);
+  await page.locator('#kc-login').click();
+  const otp = page.locator('#otp');
+  await expect(otp, 'the identity provider asks for a one-time code').toBeVisible();
+  await otp.fill(await freshTotp(name));
+  await page.locator('#kc-login').click();
+  await page.waitForURL(`${PORTAL_URL}/**`);
+  await expect(page.getByRole('heading', { level: 1, name: 'Displays' })).toBeVisible();
+}
+
+export interface MediaItem {
+  readonly id: string;
+  readonly status: string;
+  readonly kind: string;
+  readonly originalName: string;
+  readonly bytes: number | null;
+  readonly sha256: string | null;
+  readonly errorCode: string | null;
+}
+
+export interface PublishResult {
+  readonly publicationId: string;
+  readonly replayed: boolean;
+  readonly manifest: { readonly assets: readonly { assetId: string; sha256: string }[] };
+}
+
+export interface StatusView {
+  readonly paired: boolean;
+  readonly registrationId: string | null;
+  readonly desired: { publicationId: string } | null;
+  readonly downloaded: { publicationId: string } | null;
+  readonly active: { publicationId: string; itemIndex: number } | null;
+  readonly playerState: string | null;
+  readonly lastHeartbeatAt: string | null;
+  readonly stale: boolean;
+  readonly summary: string;
+  readonly errors: readonly { code: string; publicationId: string | null }[];
+}
+
+/** Calls the API through the portal origin, as the signed-in browser context. */
+export class OperatorApi {
+  readonly #context: BrowserContext;
+  #csrf: string | null = null;
+
+  constructor(context: BrowserContext) {
+    this.#context = context;
+  }
+
+  async session(): Promise<{
+    authenticated: boolean;
+    organization?: { id: string; name: string };
+  }> {
+    const response = await this.#context.request.get(`${PORTAL_URL}/api/session`);
+    return (await response.json()) as {
+      authenticated: boolean;
+      organization?: { id: string; name: string };
+      csrfToken?: string;
+    };
+  }
+
+  async #headers(extra: Record<string, string> = {}): Promise<Record<string, string>> {
+    if (this.#csrf === null) {
+      const response = await this.#context.request.get(`${PORTAL_URL}/api/session`);
+      const body = (await response.json()) as { authenticated: boolean; csrfToken?: string };
+      if (!body.authenticated || body.csrfToken === undefined) throw new Error('not signed in');
+      this.#csrf = body.csrfToken;
+    }
+    return { origin: PORTAL_URL, 'x-csrf-token': this.#csrf, ...extra };
+  }
+
+  get(path: string): Promise<APIResponse> {
+    return this.#context.request.get(`${PORTAL_URL}${path}`);
+  }
+
+  async post(
+    path: string,
+    data?: unknown,
+    extra: Record<string, string> = {},
+  ): Promise<APIResponse> {
+    return this.#context.request.post(`${PORTAL_URL}${path}`, {
+      headers: await this.#headers(extra),
+      ...(data === undefined ? {} : { data }),
+    });
+  }
+
+  async put(path: string, data: unknown): Promise<APIResponse> {
+    return this.#context.request.put(`${PORTAL_URL}${path}`, {
+      headers: await this.#headers(),
+      data,
+    });
+  }
+
+  async siteId(): Promise<string> {
+    const body = (await (await this.get('/api/sites')).json()) as { items: { id: string }[] };
+    const site = body.items[0];
+    if (site === undefined) throw new Error('no site is seeded');
+    return site.id;
+  }
+
+  async createDisplay(input: {
+    name: string;
+    canvas: { width: number; height: number };
+    contentRect?: { x: number; y: number; width: number; height: number } | null;
+    defaultFit?: 'contain' | 'cover';
+  }): Promise<{ id: string }> {
+    const response = await this.post('/api/displays', { siteId: await this.siteId(), ...input });
+    expect(response.status(), await response.text()).toBe(201);
+    return (await response.json()) as { id: string };
+  }
+
+  async claim(displayId: string, code: string): Promise<APIResponse> {
+    return this.post(`/api/displays/${displayId}/claim`, { code });
+  }
+
+  async upload(name: string, mimeType: string, buffer: Buffer): Promise<MediaItem> {
+    const response = await this.#context.request.post(`${PORTAL_URL}/api/media`, {
+      headers: await this.#headers(),
+      multipart: { file: { name, mimeType, buffer } },
+    });
+    expect(response.status(), await response.text()).toBe(201);
+    return ((await response.json()) as { media: MediaItem }).media;
+  }
+
+  async media(id: string): Promise<MediaItem> {
+    return (await (await this.get(`/api/media/${id}`)).json()) as MediaItem;
+  }
+
+  /** Waits until the real validation worker has reached a verdict. */
+  async waitForVerdict(id: string, timeoutMs = 60_000): Promise<MediaItem> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const item = await this.media(id);
+      if (item.status !== 'processing') return item;
+      if (Date.now() > deadline) throw new Error(`media ${id} is still processing`);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+
+  async uploadReady(name: string, mimeType: string, buffer: Buffer): Promise<MediaItem> {
+    const uploaded = await this.upload(name, mimeType, buffer);
+    const verdict = await this.waitForVerdict(uploaded.id);
+    expect(verdict.status, `verdict for ${name}: ${verdict.errorCode ?? ''}`).toBe('ready');
+    return verdict;
+  }
+
+  async createPlaylist(name: string): Promise<{ id: string }> {
+    const response = await this.post('/api/playlists', { name });
+    expect(response.status(), await response.text()).toBe(201);
+    return (await response.json()) as { id: string };
+  }
+
+  async savePlaylist(
+    id: string,
+    name: string,
+    items: readonly {
+      mediaId: string;
+      durationMs: number | null;
+      fit: 'contain' | 'cover' | null;
+    }[],
+  ): Promise<void> {
+    const response = await this.put(`/api/playlists/${id}`, { name, items });
+    expect(response.status(), await response.text()).toBe(200);
+  }
+
+  async publish(playlistId: string, displayId: string, key = randomUUID()): Promise<PublishResult> {
+    const response = await this.post(
+      `/api/playlists/${playlistId}/publish`,
+      { displayId },
+      { 'idempotency-key': key },
+    );
+    expect([200, 201], await response.text()).toContain(response.status());
+    return (await response.json()) as PublishResult;
+  }
+
+  async status(displayId: string): Promise<StatusView> {
+    const response = await this.get(`/api/displays/${displayId}/status`);
+    expect(response.status()).toBe(200);
+    return (await response.json()) as StatusView;
+  }
+
+  /** Polls the server's status view until `accept` is satisfied; returns the accepted view. */
+  async waitForStatus(
+    displayId: string,
+    what: string,
+    accept: (view: StatusView) => boolean,
+    timeoutMs = 90_000,
+  ): Promise<StatusView> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const last = await this.status(displayId);
+      if (accept(last)) return last;
+      if (Date.now() > deadline) {
+        throw new Error(`status never showed ${what}; last view: ${JSON.stringify(last)}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+}

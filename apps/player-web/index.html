@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      No inline script or style is allowed. The only network destinations are this
+      origin and the player API (written in at build time). Media is shown from
+      blob: URLs made from verified, locally cached bytes.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; media-src 'self' blob:; connect-src 'self' __API_ORIGIN__; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TINNOX Player</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="stage" aria-hidden="true"></div>
+    <div id="screen"></div>
+    <div id="diagnostics" hidden></div>
+    <noscript>The TINNOX player needs JavaScript.</noscript>
+    <script type="module" src="/src/index.ts"></script>
+  </body>
+</html>
