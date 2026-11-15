@@ -1,0 +1,56 @@
+{
+  "name": "tinnox-cms",
+  "version": "0.0.0",
+  "private": true,
+  "description": "TINNOX CMS prototype M0: browser-first digital signage content management (internal engineering prototype)",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0",
+    "npm": ">=10"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "tests"
+  ],
+  "scripts": {
+    "setup": "node scripts/setup-dev.mjs",
+    "infra:up": "docker compose --env-file .env -f infra/docker-compose.yml --profile worker up -d --build --wait postgres keycloak media-worker",
+    "infra:down": "docker compose --env-file .env -f infra/docker-compose.yml --profile worker down",
+    "infra:logs": "docker compose --env-file .env -f infra/docker-compose.yml --profile worker logs --tail=200",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "fixtures": "node apps/api/test-fixtures/generate.mjs",
+    "dev": "npm run infra:up && concurrently --kill-others-on-fail --names api,portal,player \"npm run dev -w @tinnox/api\" \"npm run dev -w @tinnox/portal\" \"npm run dev -w @tinnox/player-web\"",
+    "start:built": "npm run infra:up && npm run build && concurrently --kill-others-on-fail --names api,portal,player \"npm run start -w @tinnox/api\" \"npm run preview -w @tinnox/portal\" \"npm run preview -w @tinnox/player-web\"",
+    "otp": "node scripts/otp.mjs",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p scripts/tsconfig.json && tsc -p tsconfig.json",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:e2e": "npm run e2e -w @tinnox/tests",
+    "audit": "npm audit --audit-level=high",
+    "scan:secrets": "node scripts/scan-secrets.mjs",
+    "reset": "node scripts/reset-dev.mjs",
+    "backup:verify": "bash scripts/backup-restore-check.sh",
+    "verify:oidc": "node scripts/verify-oidc-login.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.20.5",
+    "concurrently": "10.0.7",
+    "eslint": "10.15.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.14.0",
+    "prettier": "3.10.1",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vitest": "5.1.0"
+  },
+  "packageManager": "npm@11.21.2"
+}

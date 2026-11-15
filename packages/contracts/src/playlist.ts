@@ -1,0 +1,129 @@
+import { z } from 'zod';
+import { FitModeSchema } from './canvas.ts';
+import {
+  DisplayIdSchema,
+  MediaIdSchema,
+  PlaylistIdSchema,
+  PlaylistItemIdSchema,
+  PublicationIdSchema,
+  UtcTimestampSchema,
+} from './ids.ts';
+import { ABSOLUTE } from './limits.ts';
+import { NameSchema } from './display.ts';
+import { ManifestV1Schema } from './manifest.ts';
+import { MediaDtoSchema } from './media.ts';
+
+/**
+ * One entry of a one-level playlist.
+ * - `durationMs`: required for images; must be null for video (natural duration is used).
+ * - `fit`: null means "use the display's default fit at publish time".
+ * The kind-dependent rules are enforced by `validatePlaylist` in @tinnox/domain,
+ * which has the media records; this schema only bounds the values.
+ */
+export const PlaylistItemInputSchema = z
+  .object({
+    mediaId: MediaIdSchema,
+    durationMs: z.number().int().positive().max(ABSOLUTE.maxItemDurationMs).nullable(),
+    fit: FitModeSchema.nullable(),
+  })
+  .strict();
+export type PlaylistItemInput = z.infer<typeof PlaylistItemInputSchema>;
+
+export const PlaylistItemDtoSchema = z
+  .object({
+    id: PlaylistItemIdSchema,
+    position: z.number().int().nonnegative(),
+    mediaId: MediaIdSchema,
+    durationMs: z.number().int().positive().nullable(),
+    fit: FitModeSchema.nullable(),
+    /** Current media record, so the editor can show status and thumbnails. */
+    media: MediaDtoSchema,
+  })
+  .strict();
+export type PlaylistItemDto = z.infer<typeof PlaylistItemDtoSchema>;
+
+export const PlaylistSummaryDtoSchema = z
+  .object({
+    id: PlaylistIdSchema,
+    name: z.string(),
+    itemCount: z.number().int().nonnegative(),
+    createdAt: UtcTimestampSchema,
+    updatedAt: UtcTimestampSchema,
+  })
+  .strict();
+export type PlaylistSummaryDto = z.infer<typeof PlaylistSummaryDtoSchema>;
+
+export const PlaylistDtoSchema = z
+  .object({
+    id: PlaylistIdSchema,
+    name: z.string(),
+    items: z.array(PlaylistItemDtoSchema),
+    createdAt: UtcTimestampSchema,
+    updatedAt: UtcTimestampSchema,
+  })
+  .strict();
+export type PlaylistDto = z.infer<typeof PlaylistDtoSchema>;
+
+export const PlaylistListResponseSchema = z
+  .object({ items: z.array(PlaylistSummaryDtoSchema) })
+  .strict();
+export type PlaylistListResponse = z.infer<typeof PlaylistListResponseSchema>;
+
+/** `POST /api/playlists` */
+export const PlaylistCreateSchema = z.object({ name: NameSchema }).strict();
+export type PlaylistCreate = z.infer<typeof PlaylistCreateSchema>;
+
+/** `PUT /api/playlists/:id` replaces the name and the whole ordered item list. */
+export const PlaylistReplaceSchema = z
+  .object({
+    name: NameSchema,
+    items: z.array(PlaylistItemInputSchema).max(ABSOLUTE.maxPlaylistItems),
+  })
+  .strict();
+export type PlaylistReplace = z.infer<typeof PlaylistReplaceSchema>;
+
+/** `POST /api/playlists/:id/publish`; requires the `Idempotency-Key` header. */
+export const PublishRequestSchema = z.object({ displayId: DisplayIdSchema }).strict();
+export type PublishRequest = z.infer<typeof PublishRequestSchema>;
+
+/** Client-generated key; a UUID is recommended. */
+export const IdempotencyKeySchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{16,64}$/, 'Idempotency-Key must be 16 to 64 URL-safe characters');
+export type IdempotencyKey = z.infer<typeof IdempotencyKeySchema>;
+
+export const PublishResponseSchema = z
+  .object({
+    publicationId: PublicationIdSchema,
+    displayId: DisplayIdSchema,
+    playlistId: PlaylistIdSchema,
+    createdAt: UtcTimestampSchema,
+    /** True when this response repeats an earlier publish with the same Idempotency-Key. */
+    replayed: z.boolean(),
+    manifest: ManifestV1Schema,
+  })
+  .strict();
+export type PublishResponse = z.infer<typeof PublishResponseSchema>;
+
+/** Why a publish was refused. Returned in `error.details[].code` with `publication_rejected`. */
+export const PUBLISH_REJECTION_CODES = [
+  'playlist_empty',
+  'too_many_items',
+  'media_missing',
+  'media_not_ready',
+  'media_failed',
+  'duration_required',
+  'duration_not_allowed',
+  'duration_out_of_range',
+  'unsupported_media_type',
+  'unsupported_codec',
+  'unsupported_fit',
+  'content_rect_unsupported',
+  'canvas_too_large',
+  'asset_too_large',
+  'video_resolution_too_large',
+  'audio_unsupported',
+  'multiple_regions_unsupported',
+] as const;
+export const PublishRejectionCodeSchema = z.enum(PUBLISH_REJECTION_CODES);
+export type PublishRejectionCode = z.infer<typeof PublishRejectionCodeSchema>;

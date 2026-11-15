@@ -2,7 +2,116 @@
 
 TINNOX sells and installs LED walls, outdoor LED signs, pylons, billboards and kiosks across Australia. **TINNOX CMS** is the content management software TINNOX will sell with that hardware: customers upload images, video and PDFs, schedule them, publish them to their screens, and see proof that they are playing. TINNOX staff use the same platform to provision devices, watch the fleet and support customers.
 
-**Where the project is today:** discovery is finished and written up. There is **no code yet**. Everything in this repository is in [`docs/`](docs/): a specification, an architecture, a backlog, acceptance tests, and the research behind them. All of it is dated 3 November 2026 and most of it is **PROPOSED**, meaning it waits for TINNOX to approve or amend it.
+**Where the project is today:** discovery is finished, and the first internal prototype (milestone M0) runs locally. M0 is a **browser prototype**: an operator portal, an API, an isolated media-validation worker and a browser player, with synthetic data only. It is not a production system, it is not certified or assessed against any standard, and it says nothing yet about NovaStar or Huidu compatibility; that needs the model-specific hardware test in [`docs/hardware-next-step.md`](docs/hardware-next-step.md). What was run and what passed is recorded in [`docs/prototype-validation.md`](docs/prototype-validation.md). The discovery documents in [`docs/`](docs/) are dated 3 November 2026 and most of them are **PROPOSED**, meaning they wait for TINNOX to approve or amend them.
+
+---
+
+## Run the prototype
+
+Everything runs on your own machine. Nothing is deployed and nothing contacts a cloud service at run time.
+
+### Prerequisites
+
+- macOS or Linux, with Docker Desktop (or Docker Engine with Compose v2) running.
+- Node.js 22.13 or newer (22.13 is the lowest Node 22 release that ESLint 10 supports) and npm 10 or newer. `.nvmrc` says 22. Every recorded test run so far used Node 23.10, which is outside the supported range of ESLint 10 and vitest 5 (they warn at install); no run on Node 22 has been recorded yet.
+- Free local ports: 4000 (API), 5173 (portal), 5174 (player), 8080 (Keycloak) and 54329 for PostgreSQL. If 54329 is taken, setup picks the next free port and writes it to `.env` (on the first development machine it is 54330).
+- Google Chrome or Chromium for the player. The end-to-end tests use Playwright's own Chromium (`npx playwright install chromium` once).
+
+### First-time setup
+
+From the repository root:
+
+```sh
+npm ci                              # exact dependency versions from package-lock.json
+npm run setup                       # generates .env and the development identities (gitignored)
+npm run infra:up                    # PostgreSQL, Keycloak and the media worker container; waits until healthy
+npm run db:migrate                  # applies db/migrations as the migration role
+npm run db:seed -- --second-org     # "TINNOX Internal" + site "Melbourne Workshop", and a second test organisation
+npm run verify:oidc                 # optional: proves the Keycloak sign-in (PKCE, password, one-time code)
+```
+
+`npm run setup` creates random development secrets (all start with `dev-`) in `.env` and `infra/.generated/`. Both are gitignored; never commit them. The API refuses to start with them when `NODE_ENV=production`.
+
+### Start
+
+```sh
+npm run dev        # starts infra (if needed), then the API, the portal and the player together; Ctrl+C stops them
+```
+
+| What | URL |
+|---|---|
+| Operator portal | http://localhost:5173 |
+| Browser player | http://localhost:5174 (open it in a separate window, ideally another browser profile) |
+| API health | http://localhost:4000/readyz |
+| Keycloak administration (optional) | http://localhost:8080/admin (user `KC_BOOTSTRAP_ADMIN_USERNAME`, password `KC_BOOTSTRAP_ADMIN_PASSWORD`, both in `.env`) |
+
+Use `localhost`, not `127.0.0.1`, in the browser: the sign-in redirect, the session cookie and the signed media URLs are registered for `localhost`. For a database client the opposite holds: connect to `127.0.0.1:<POSTGRES_HOST_PORT>`, because PostgreSQL listens on IPv4 only and `localhost` may resolve to `::1`, where another program can hold the same port (setup now checks both addresses when it chooses a port).
+
+`npm run start:built` runs the production builds of the portal and player instead (the player's service worker, and therefore offline reload, exists only in a build).
+
+### Sign-in details
+
+```sh
+npm run otp -- --show-password      # username, password and the current one-time code of the operator
+npm run otp -- --second             # the operator of the second test organisation
+```
+
+The one-time code changes every 30 seconds, and Keycloak accepts each code once. If a code is refused, wait for the next one. The values come from `infra/.generated/dev-credentials.json`; they exist only in your local Keycloak.
+
+### Walkthrough
+
+1. Open http://localhost:5173 and choose **Sign in**. Enter the username and password from `npm run otp -- --show-password`, then the one-time code.
+2. **Displays → New display.** Give it a name and a canvas (for example 1920 × 1080, or 1080 × 1920 for portrait). Optionally set a content rectangle and the default fit (contain or cover).
+3. Open http://localhost:5174 in another window. The player shows an 8-character pairing code for 10 minutes.
+4. In the portal, open the display, enter the code under **Player pairing** and choose **Pair player**. The player changes to "registered" within a few seconds.
+5. **Media**: upload a JPEG, a PNG and an H.264 MP4. Each goes through *processing* to *ready*, or to *failed* with a reason (an HEVC video, for example, is refused with an explanation). `npm run fixtures` writes small synthetic samples to `apps/api/test-fixtures/out/`.
+6. **Playlists → New playlist.** Add the files, reorder them, set image durations (videos use their own length; playback is muted), and **Save draft**.
+7. **Publish to display**. The player downloads every file, checks its size and SHA-256, and switches over at an item boundary.
+8. Back on the display page, the status panel shows the desired, downloaded and player-reported active publication, the current item, the last report time, and any delivery errors. A report older than the stale limit is marked stale.
+9. Edit and save the playlist again: the player keeps showing the published version until you publish again.
+10. Stop the network (or the API) and the player keeps playing from its cache; it reports again when the network returns.
+11. **Revoke player** on the display page: the player loses access at its next contact, removes its cached content and shows the unregistered screen, with **Reset this player** to pair again. On a registered player, press `d` for diagnostics and the two-step local reset.
+
+### Tests
+
+| Suite | Command | Needs |
+|---|---|---|
+| Type check, lint, format | `npm run typecheck && npm run lint && npm run format:check` | nothing running |
+| Unit tests | `npm test` | nothing running |
+| Builds | `npm run build` | nothing running |
+| Integration and security-boundary tests | `npm run fixtures && npm run test:integration` | `npm run infra:up`; rebuilds the database `tinnox_test` itself |
+| Browser end-to-end tests (Playwright, Chromium) | `npm run test:e2e` | infra up; the API, portal and player must **not** be running (Playwright starts them); about 6.5 minutes. It rebuilds its own database `tinnox_e2e_test` and uses `tests/.run/media`, so the development data is not touched, but it **restarts the shared PostgreSQL container** once (restart test) and shares `data/jobs` with the development worker |
+| Dependency audit | `npm run audit` | network access to the npm registry |
+| Secret scan | `npm run scan:secrets` | Docker (gitleaks container, no network) |
+| Backup and restore exercise | `npm run backup:verify` | infra up, API stopped |
+
+The end-to-end suite writes screenshots of key states and its measurements to `tests/.run/evidence/` (gitignored). The evidence cited in the validation record lives in `docs/evidence/`; refresh it deliberately with `E2E_EVIDENCE_DIR=docs/evidence npm run test:e2e`. At the end of a run the saved operator sessions are signed out and their browser states deleted. Results of the last full run are in [`docs/prototype-validation.md`](docs/prototype-validation.md).
+
+### Reset everything
+
+```sh
+npm run infra:down                  # stop the containers, keep the data
+npm run reset -- --yes              # delete the database volume, Keycloak state and ./data (uploaded media)
+npm run infra:up && npm run db:migrate && npm run db:seed -- --second-org
+```
+
+`npm run reset` keeps `.env` and the generated identities. For brand-new secrets as well, delete `.env` and `infra/.generated/` after the reset and run `npm run setup` again. The player keeps its own browser storage; use its local reset (`d`, then **Reset this player…** twice) or clear the site data of http://localhost:5174.
+
+### Where things are
+
+| Path | What |
+|---|---|
+| `apps/api` | Fastify API: sign-in (OIDC backend-for-frontend), displays, pairing, media, playlists, publishing, player protocol, status, audit |
+| `apps/media-worker` | Upload inspection in a container with no network, read-only root, non-root user, CPU/memory/PID limits |
+| `apps/portal` | Operator portal (React, Vite) |
+| `apps/player-web` | Browser player (TypeScript, service worker, IndexedDB and Cache Storage) |
+| `packages/*` | Shared contracts (zod schemas), domain rules, delivery port, storage, database helpers |
+| `db/migrations` | PostgreSQL schema with forced row-level security |
+| `tests/` | Integration, security-boundary and end-to-end tests |
+| `docs/prototype-m0.md` | M0 scope, architecture decisions D1 to D19, deviations |
+| `docs/player-protocol-v1.md` | Player protocol |
+| `docs/security/` | Threat model, control matrix, operations and release checklist |
+| `docs/prototype-validation.md` | What was run, real results, limitations |
 
 ---
 

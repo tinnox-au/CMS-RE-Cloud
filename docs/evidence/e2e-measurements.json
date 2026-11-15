@@ -1,0 +1,15 @@
+{
+  "runId": "3e95cb31",
+  "startedAt": "2026-11-14T12:41:42.890Z",
+  "interruptedDownloadErrorCodes": [
+    "network_error"
+  ],
+  "recoveryAfterInterruptedDownloadSeconds": 42,
+  "errorsReportedAfterRecovery": [],
+  "offlineSeconds": 110,
+  "offlineItemChangesObserved": 39,
+  "offlineSamples": 487,
+  "secondsFromReconnectToFreshReport": 3,
+  "secondsFromApiRestartToReport": 0,
+  "finishedAt": "2026-11-14T12:46:44.776Z"
+}

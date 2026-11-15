@@ -1,0 +1,31 @@
+# dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+
+# local runtime data (media, worker job exchange, backups)
+data/
+
+# generated development secrets and identity-provider import (never commit)
+.env
+.env.*
+!.env.example
+infra/.generated/
+
+# test artefacts
+coverage/
+test-results/
+playwright-report/
+blob-report/
+tests/.auth/
+*.log
+
+# editor and OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# end-to-end run state (API pid and log, results)
+tests/.run/

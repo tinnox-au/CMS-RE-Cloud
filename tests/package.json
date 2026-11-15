@@ -1,0 +1,23 @@
+{
+  "name": "@tinnox/tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "playwright test",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@tinnox/contracts": "*",
+    "@tinnox/db": "*",
+    "@tinnox/domain": "*",
+    "@tinnox/storage": "*",
+    "@types/pg": "8.23.1",
+    "otplib": "13.6.0",
+    "pg": "8.23.1",
+    "undici": "8.12.4",
+    "zod": "4.6.7"
+  }
+}

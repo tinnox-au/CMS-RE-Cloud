@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # No telemetry or update checks from build tooling.
+  CI: 'true'
+  NPM_CONFIG_FUND: 'false'
+  NPM_CONFIG_UPDATE_NOTIFIER: 'false'
+
+jobs:
+  quality:
+    name: Lint, types, unit tests, build, audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # The lockfile is the source of truth; npm ci fails if package.json and the lockfile disagree.
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # Fails on high or critical advisories. Lower-severity findings are tracked in the docs.
+      - run: npm run audit
+
+  integration:
+    name: Integration and security-boundary tests (PostgreSQL, API, media worker)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # Same path as a developer machine: random per-run development secrets in a
+      # gitignored .env, then PostgreSQL, Keycloak and the media worker image from compose.
+      # The worker image is needed because tests/integration/media-worker.test.ts runs the
+      # real worker container against real sample files.
+      - run: npm run setup -- --quiet
+      - run: npm run infra:up
+      - run: npm run fixtures
+      # The vitest global setup rebuilds tinnox_test from db/migrations before the tests run.
+      - run: npm run test:integration
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      # Uses the pinned gitleaks container image directly (no marketplace action, no licence key).
+      - run: npm run scan:secrets
+
+  # End-to-end browser tests need the whole stack: PostgreSQL, Keycloak with the imported
+  # development realm, the media worker container, the API, the portal and the player.
+  # Starting Keycloak and building the worker image on every push is slow and the suite takes
+  # about seven minutes, so this job only runs when started by hand
+  # (Actions > CI > Run workflow) or when the repository variable RUN_E2E is "true".
+  # Enable it on every push once it is stable. Until then, E2E results come from local runs
+  # recorded in docs/prototype-validation.md; this job passing must not be claimed otherwise.
+  e2e:
+    name: End-to-end (manual)
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.RUN_E2E == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run setup -- --quiet
+      - run: npm run infra:up
+      - run: npm run db:migrate
+      - run: npm run db:seed -- --second-org
+      # Playwright builds the portal and the player and starts them and the API itself.
+      - run: npm run test:e2e
+      - name: Keep the result file (test names and outcomes only; traces and videos are off)
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-results
+          path: tests/.run/e2e-results.json
+          retention-days: 7
