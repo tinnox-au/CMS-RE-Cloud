@@ -65,6 +65,10 @@ function ffmpeg(args) {
       '--rm',
       '--network',
       'none',
+      // Write the outputs as the invoking user: the image's own user (uid 10001)
+      // cannot write into a checkout owned by someone else on Linux (CI runners).
+      '--user',
+      `${process.getuid()}:${process.getgid()}`,
       '--entrypoint',
       'ffmpeg',
       '-v',
