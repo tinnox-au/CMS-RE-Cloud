@@ -9,7 +9,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { readdir, writeFile } from 'node:fs/promises';
+import { chmod, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -210,8 +210,18 @@ describe('upload validation by the isolated worker', () => {
     };
     const once = await upload('landscape.jpg');
     const twice = await upload('portrait.png');
-    await writeFile(join(t.jobsDir, 'outbox', `${once}.started`), '', { mode: 0o644 });
-    await writeFile(join(t.jobsDir, 'outbox', `${twice}.started`), '2', { mode: 0o644 });
+    // A real marker belongs to the worker (uid 10001), which rewrites it in place. These are
+    // written by the test's user, so make them writable for the worker or Linux refuses the
+    // rewrite (macOS Docker Desktop does not enforce ownership). chmod, because the umask
+    // would strip the write bits from a mode given to writeFile.
+    for (const [jobId, content] of [
+      [once, ''],
+      [twice, '2'],
+    ] as const) {
+      const marker = join(t.jobsDir, 'outbox', `${jobId}.started`);
+      await writeFile(marker, content);
+      await chmod(marker, 0o666);
+    }
     stopWorker = startWorkerContainer(t);
 
     const retried = await waitForVerdict(t, operator, once);
