@@ -524,7 +524,8 @@ export class MediaPipeline {
       const info = await handle.stat();
       let reason: string;
       if (!info.isFile()) reason = 'thumbnail is not a regular file';
-      // Another local process cannot plant a thumbnail: it must come from the verdict's writer.
+      // A thumbnail must come from the verdict's writer. That stops a local process from adding
+      // one to the worker's verdict, not one that forged the verdict too (threat model T1).
       else if (info.uid !== verdictUid) reason = 'thumbnail owner differs from the verdict owner';
       else if (info.size < 1 || info.size > MAX_THUMB_BYTES)
         reason = 'thumbnail size is out of bounds';
