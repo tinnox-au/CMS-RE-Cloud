@@ -309,6 +309,8 @@ export class MediaPipeline {
     const specPath = this.#path(this.#inbox, jobId, '.json');
     const tempPath = `${specPath}.tmp`;
     await writeFile(tempPath, JSON.stringify(spec), { mode: 0o644, flag: 'w' });
+    // writeFile's mode is reduced by the umask; the worker (another uid) must be able to read it.
+    await chmod(tempPath, 0o644);
     await rename(tempPath, specPath);
     this.#inFlight.delete(jobId);
   }
