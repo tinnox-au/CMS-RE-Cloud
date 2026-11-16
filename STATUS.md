@@ -3,7 +3,7 @@ contract: status/v2
 repo: tinnox-au/tinnox-cms
 initiative: TINNOX CMS
 key: CMS
-next_id: 2
+next_id: 3
 phase: Not written yet: one sentence on what this project is and where it stands
 gate: -
 seeded: 17 Nov 2026 by status init
@@ -23,7 +23,9 @@ None.
 
 ## Backlog
 
-None.
+| Id | Card | Agreed | PR | Since |
+|---|---|---|---|---|
+| CMS-2 | Layouts (stage B): split a screen into zones, each with its own content | proposed | - | 17 Nov |
 
 ## To do
 
