@@ -3,6 +3,7 @@ import type {
   DisplayTarget,
   DraftItem,
   MediaRecord,
+  PlaybackOptions,
   PublicationDraft,
   PublishIssue,
   ResolvedItem,
@@ -117,6 +118,7 @@ export function buildPublicationDraft(
   items: readonly DraftItem[],
   mediaById: ReadonlyMap<string, MediaRecord>,
   limits: Limits,
+  playback: PlaybackOptions,
 ): DraftResult {
   const issues = validatePlaylist(items, mediaById, limits, { mode: 'publish' });
   if (issues.length > 0) return { ok: false, issues };
@@ -171,6 +173,8 @@ export function buildPublicationDraft(
       fit: item.fit ?? display.defaultFit,
       width: media.width,
       height: media.height,
+      availableFrom: media.availableFrom,
+      availableUntil: media.availableUntil,
     });
   });
   if (late.length > 0) return { ok: false, issues: late };
@@ -184,6 +188,11 @@ export function buildPublicationDraft(
       regions: 1,
       audio: false,
       items: resolved,
+      transition: playback.transition,
+      shuffle: playback.shuffle,
+      rotation: display.rotation,
+      workingHours: display.workingHours,
+      timeZone: display.timeZone,
     },
   };
 }

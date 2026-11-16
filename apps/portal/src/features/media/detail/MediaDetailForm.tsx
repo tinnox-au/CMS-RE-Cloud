@@ -1,9 +1,10 @@
 import type { Limits, MediaDto } from '@tinnox/contracts';
-import { useRef, type FormEvent, type KeyboardEvent, type Ref } from 'react';
+import { useRef, type FormEvent, type KeyboardEvent, type Ref, type SyntheticEvent } from 'react';
 import { durationFieldText } from '../../../lib/duration.ts';
 import {
   durationBoundsSeconds,
   errorFields,
+  INCOMPLETE_DATE_TIME,
   MEDIA_DETAIL_FIELD_LABELS,
   STANDARD_IMAGE_DURATION_MS,
   type MediaDetailDraft,
@@ -92,6 +93,15 @@ export function MediaDetailForm({
       ) ?? wrapper?.querySelector<HTMLElement>('button:not([disabled])');
     control?.focus();
   };
+
+  // A partly filled field reports '' and fires no change while it stays partial (a date
+  // without a time on an empty field), so it is also read on blur, which comes before Save.
+  const typeWindow =
+    (field: 'availableFrom' | 'availableUntil') => (event: SyntheticEvent<HTMLInputElement>) => {
+      const input = event.currentTarget;
+      const text = input.validity.badInput ? INCOMPLETE_DATE_TIME : input.value;
+      if (text !== draft[field]) onChange(field, { ...draft, [field]: text });
+    };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -256,6 +266,45 @@ export function MediaDetailForm({
               </p>
             </div>
           )}
+          <Field
+            className={fieldClass('availableFrom')}
+            label="Available from"
+            optional
+            error={errors.availableFrom}
+            hint="Leave empty for no limit. Times are local to each screen's site."
+          >
+            {(control) => (
+              <TextInput
+                {...control}
+                type="datetime-local"
+                width="md"
+                value={draft.availableFrom === INCOMPLETE_DATE_TIME ? '' : draft.availableFrom}
+                readOnly={saving}
+                data-testid="media-detail-available-from"
+                onChange={typeWindow('availableFrom')}
+                onBlur={typeWindow('availableFrom')}
+              />
+            )}
+          </Field>
+          <Field
+            className={fieldClass('availableUntil')}
+            label="Available until"
+            optional
+            error={errors.availableUntil}
+          >
+            {(control) => (
+              <TextInput
+                {...control}
+                type="datetime-local"
+                width="md"
+                value={draft.availableUntil === INCOMPLETE_DATE_TIME ? '' : draft.availableUntil}
+                readOnly={saving}
+                data-testid="media-detail-available-until"
+                onChange={typeWindow('availableUntil')}
+                onBlur={typeWindow('availableUntil')}
+              />
+            )}
+          </Field>
         </FormSection>
 
         <FormSection title="Organise" layout="rows">

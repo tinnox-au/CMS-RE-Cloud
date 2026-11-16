@@ -47,11 +47,19 @@ export interface MediaRow {
   description: string | null;
   default_duration_ms: number | null;
   folder_id: string | null;
+  available_from: string | null;
+  available_until: string | null;
   tag_ids: string[];
   usage_count: string;
   created_at: Date;
   updated_at: Date;
 }
+
+/**
+ * The availability window as wall-clock text. The raw `timestamp` is never read:
+ * node-postgres would turn it into a Date in the process time zone.
+ */
+export const MEDIA_WINDOW_COLUMNS = `to_char(m.available_from,'YYYY-MM-DD"T"HH24:MI') AS available_from, to_char(m.available_until,'YYYY-MM-DD"T"HH24:MI') AS available_until`;
 
 /**
  * Select list for `media m` that yields a `MediaRow`. `usage_count` is the
@@ -60,6 +68,7 @@ export interface MediaRow {
 export const MEDIA_COLUMNS = `m.id, m.kind, m.status, m.error_code, m.error_detail, m.mime_type,
   m.bytes, m.sha256, m.width, m.height, m.duration_ms, m.codec, m.storage_key, m.original_name,
   COALESCE(m.name, m.original_name) AS name, m.description, m.default_duration_ms, m.folder_id,
+  ${MEDIA_WINDOW_COLUMNS},
   ARRAY(SELECT mt.tag_id FROM media_tag mt
         WHERE mt.media_id = m.id AND mt.org_id = m.org_id
         ORDER BY mt.created_at, mt.tag_id)::text[] AS tag_ids,
@@ -80,6 +89,8 @@ export function toMediaDto(row: MediaRow): MediaDto {
     description: row.description,
     defaultDurationMs: row.default_duration_ms,
     folderId: row.folder_id,
+    availableFrom: row.available_from,
+    availableUntil: row.available_until,
     tagIds: row.tag_ids.slice(0, ABSOLUTE.maxTagsPerItem),
     usageCount: bigintToNumber(row.usage_count),
     mimeType: mime.success ? mime.data : null,
@@ -441,6 +452,14 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
             ],
           );
         }
+        // The contract makes both sides arrive together.
+        if (patch.availableFrom !== undefined) {
+          await tx.query(
+            `UPDATE media SET available_from = $2::timestamp, available_until = $3::timestamp
+             WHERE id = $1 AND org_id = app_org_id()`,
+            [id, patch.availableFrom, patch.availableUntil ?? null],
+          );
+        }
         if (patch.tagIds !== undefined) await replaceTags(tx, 'media', id, patch.tagIds);
 
         await auditScoped(tx, {
@@ -509,7 +528,12 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
     });
   });
 
-  app.get(ROUTES.mediaPreviewPattern, async (request, reply) => {
+  /** /preview sends the original; /thumbnail sends the thumbnail when there is one. */
+  async function sendPreview(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    thumbnail: boolean,
+  ): Promise<FastifyReply> {
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     const row = await withOrg(pool, session.orgId, async (tx) => {
@@ -517,10 +541,11 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
         id: string;
         status: string;
         storage_key: string | null;
+        thumb_storage_key: string | null;
         sha256: string | null;
         mime_type: string | null;
       }>(
-        `SELECT id, status, storage_key, sha256, mime_type FROM media
+        `SELECT id, status, storage_key, thumb_storage_key, sha256, mime_type FROM media
          WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL`,
         [id],
       );
@@ -540,16 +565,22 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
         'This file has no preview because it is not ready.',
       );
     }
+    // shortcut: no backfill, no video posters; such media serves the original here.
+    const thumb = thumbnail ? row.thumb_storage_key : null;
     return serveObject(request, reply, {
       storage: ctx.storage,
       orgId: session.orgId,
-      storageKey: row.storage_key,
-      mimeType: mime.data,
+      storageKey: thumb ?? row.storage_key,
+      mimeType: thumb === null ? mime.data : 'image/jpeg',
+      // shortcut: ETag reuses media sha256 (thumbnail is write-once); store a thumb sha if thumbnails are regenerated.
       sha256: row.sha256,
       mediaId: row.id,
       cacheControl: 'private, max-age=300',
     });
-  });
+  }
+
+  app.get(ROUTES.mediaPreviewPattern, (request, reply) => sendPreview(request, reply, false));
+  app.get(ROUTES.mediaThumbnailPattern, (request, reply) => sendPreview(request, reply, true));
 
   /**
    * Deleting media:
@@ -563,11 +594,15 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
   app.delete(ROUTES.mediaItemPattern, async (request, reply) => {
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
-    let storageKeyToRemove: string | null;
+    let keysToRemove: (string | null)[];
     try {
-      storageKeyToRemove = await withOrg(pool, session.orgId, async (tx) => {
-        const { rows } = await tx.query<{ status: string; storage_key: string | null }>(
-          `SELECT status, storage_key FROM media
+      keysToRemove = await withOrg(pool, session.orgId, async (tx) => {
+        const { rows } = await tx.query<{
+          status: string;
+          storage_key: string | null;
+          thumb_storage_key: string | null;
+        }>(
+          `SELECT status, storage_key, thumb_storage_key FROM media
            WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL FOR UPDATE`,
           [id],
         );
@@ -621,7 +656,8 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
           result: 'success',
           detail: { bytesRetainedForPublications: retained },
         });
-        return retained ? null : row.storage_key;
+        // shortcut: quota ignores thumbnail bytes (<=512 KiB each).
+        return retained ? [] : [row.storage_key, row.thumb_storage_key];
       });
     } catch (error) {
       // A publish or playlist edit referenced the row between the checks and the DELETE.
@@ -634,9 +670,10 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
       }
       throw error;
     }
-    if (storageKeyToRemove !== null) {
+    for (const key of keysToRemove) {
+      if (key === null) continue;
       try {
-        await ctx.storage.delete(storageKeyToRemove);
+        await ctx.storage.delete(key);
       } catch (error) {
         request.log.error({ err: error, mediaId: id }, 'media row deleted but stored bytes remain');
       }

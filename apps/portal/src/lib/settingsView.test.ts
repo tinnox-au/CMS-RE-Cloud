@@ -176,6 +176,12 @@ describe('planned settings', () => {
     expect(new Set(PLANNED_SETTINGS.map((row) => row.id)).size).toBe(PLANNED_SETTINGS.length);
   });
 
+  it('points working hours to the tab of each screen', () => {
+    expect(PLANNED_SETTINGS.find((row) => row.id === 'working-hours')?.description).toBe(
+      'Default hours for new screens. Set hours per screen on its Working hours tab.',
+    );
+  });
+
   it('names the stage', () => {
     expect(plannedStageLabel('B')).toBe('Planned for stage B');
     expect(plannedStageLabel('C')).toBe('Planned for stage C');

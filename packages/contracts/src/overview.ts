@@ -11,6 +11,7 @@ const bySummaryShape = {
   stale: count,
   updating: count,
   error: count,
+  standing_by: count,
   in_sync: count,
 } satisfies Record<DeliverySummary, typeof count>;
 

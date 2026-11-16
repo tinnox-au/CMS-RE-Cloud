@@ -6,24 +6,32 @@ import {
   DisplayCreateSchema,
   HeartbeatV1Schema,
   IdempotencyKeySchema,
+  LocalDateTimeSchema,
   LoginQuerySchema,
+  ManifestSchema,
   ManifestV1Schema,
+  ManifestV2Schema,
   MediaJobResultSchema,
+  MediaPatchSchema,
   MediaUrlQuerySchema,
   PAIRING_CODE_ALPHABET,
   PairingClaimRequestSchema,
   PlaylistReplaceSchema,
   ROUTES,
+  WorkingHoursSchema,
   apiError,
   ApiErrorSchema,
   formatPairingCode,
   limitsFromEnv,
   manifestEtag,
+  manifestV2Facts,
   normalisePairingCode,
   parseManifest,
   publicationIdFromEtag,
 } from './index.ts';
 
+const ok = (schema: { safeParse(v: unknown): { success: boolean } }, value: unknown) =>
+  schema.safeParse(value).success;
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const asset = (o: Record<string, unknown> = {}) => ({
   assetId: U(1),
@@ -152,9 +160,10 @@ describe('manifest v1', () => {
     expect(parseManifest(manifest())).toMatchObject({ ok: true });
   });
   it('distinguishes an unsupported version from a malformed document', () => {
-    expect(parseManifest(manifest({ schemaVersion: 2 }))).toMatchObject({
+    expect(parseManifest(manifest({ schemaVersion: 3 }))).toMatchObject({
       ok: false,
       reason: 'unsupported_version',
+      message: 'manifest schemaVersion 3 is not supported (expected 1 or 2)',
     });
     expect(parseManifest({ hello: 'world' })).toMatchObject({ ok: false, reason: 'malformed' });
     expect(parseManifest('<html>')).toMatchObject({ ok: false, reason: 'malformed' });
@@ -198,6 +207,125 @@ describe('manifest v1', () => {
     expect(publicationIdFromEtag(`W/"${U(2)}"`)).toBe(U(2));
     for (const h of [undefined, null, '', '*', U(2), '"abc"', `"${U(2)}", "x"`, 'x'.repeat(500)])
       expect(publicationIdFromEtag(h)).toBeNull();
+  });
+});
+
+describe('manifest v2', () => {
+  const HOURS = [{ start: '09:00', end: '17:00' }, null, null, null, null, null, null];
+  const v2 = (o: Record<string, unknown> = {}) =>
+    manifest({
+      schemaVersion: 2,
+      timeZone: 'Australia/Melbourne',
+      transition: 'fade',
+      shuffle: true,
+      rotation: 90,
+      workingHours: HOURS,
+      assets: [asset({ availableFrom: '2026-12-01T09:00', availableUntil: null })],
+      ...o,
+    });
+
+  it('accepts a well-formed v2 manifest through every entry point', () => {
+    expect(ManifestV2Schema.safeParse(v2()).success).toBe(true);
+    expect(ManifestSchema.safeParse(v2()).success).toBe(true);
+    expect(ManifestSchema.safeParse(manifest()).success).toBe(true);
+    expect(parseManifest(v2())).toMatchObject({ ok: true, manifest: { schemaVersion: 2 } });
+  });
+
+  it('reads the playback facts of either version', () => {
+    expect(manifestV2Facts(ManifestSchema.parse(manifest()))).toEqual({
+      transition: 'cut',
+      shuffle: false,
+      rotation: 0,
+      workingHours: null,
+      timeZone: null,
+    });
+    expect(manifestV2Facts(ManifestSchema.parse(v2()))).toEqual({
+      transition: 'fade',
+      shuffle: true,
+      rotation: 90,
+      workingHours: HOURS,
+      timeZone: 'Australia/Melbourne',
+    });
+  });
+
+  it('rejects extra or missing fields, unknown values and a window out of order', () => {
+    const noShuffle = Object.fromEntries(Object.entries(v2()).filter(([k]) => k !== 'shuffle'));
+    const bad = [
+      v2({ html: '<script>' }),
+      noShuffle,
+      v2({ rotation: 45 }),
+      v2({ transition: 'wipe' }),
+      v2({ timeZone: '' }),
+      v2({ assets: [asset({ availableFrom: null, availableUntil: null, url: 'x' })] }),
+      v2({ assets: [asset()] }),
+      v2({
+        assets: [asset({ availableFrom: '2026-12-01T09:00', availableUntil: '2026-12-01T09:00' })],
+      }),
+      v2({
+        assets: [asset({ availableFrom: '2026-12-02T09:00', availableUntil: '2026-12-01T09:00' })],
+      }),
+    ];
+    bad.forEach((m, i) => expect(parseManifest(m).ok, `case ${i}`).toBe(false));
+  });
+
+  it('refuses a v1 document that carries a v2 field', () => {
+    expect(parseManifest(manifest({ rotation: 0 })).ok).toBe(false);
+    expect(
+      parseManifest(manifest({ assets: [asset({ availableFrom: null, availableUntil: null })] }))
+        .ok,
+    ).toBe(false);
+  });
+});
+
+describe('time rules', () => {
+  it('accepts only real wall-clock date-times from year 1000', () => {
+    for (const v of ['2026-11-14T09:30', '1000-01-01T00:00', '2028-02-29T23:59'])
+      expect(LocalDateTimeSchema.safeParse(v).success, v).toBe(true);
+    for (const v of [
+      '0000-01-01T00:00',
+      '0999-12-31T23:59',
+      '2026-02-30T09:00',
+      '2026-02-29T09:00',
+      '2026-13-01T09:00',
+      '2026-11-14T24:00',
+      '2026-11-14T09:60',
+      '2026-11-14T09:30:00',
+      '2026-11-14T09:30Z',
+      '2026-11-14 09:30',
+    ])
+      expect(LocalDateTimeSchema.safeParse(v).success, v).toBe(false);
+  });
+
+  it('accepts seven days with at least one open, each ending after it starts', () => {
+    const open = { start: '09:00', end: '24:00' };
+    expect(WorkingHoursSchema.safeParse([open, null, null, null, null, null, null]).success).toBe(
+      true,
+    );
+    for (const bad of [
+      [null, null, null, null, null, null, null],
+      [open, null, null, null, null, null],
+      [open, null, null, null, null, null, null, null],
+      [{ start: '17:00', end: '09:00' }, null, null, null, null, null, null],
+      [{ start: '09:00', end: '09:00' }, null, null, null, null, null, null],
+      [{ start: '09:00', end: '24:01' }, null, null, null, null, null, null],
+      [{ start: '9:00', end: '17:00' }, null, null, null, null, null, null],
+      [{ start: '09:00', end: '17:00', note: 'x' }, null, null, null, null, null, null],
+    ])
+      expect(WorkingHoursSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+  });
+
+  it('patches a media availability window with both sides together, in order', () => {
+    expect(
+      MediaPatchSchema.parse({ availableFrom: '2026-12-01T09:00', availableUntil: null }),
+    ).toEqual({ availableFrom: '2026-12-01T09:00', availableUntil: null });
+    expect(ok(MediaPatchSchema, { availableFrom: null, availableUntil: null })).toBe(true);
+    for (const bad of [
+      { availableFrom: '2026-12-01T09:00' },
+      { availableUntil: null },
+      { availableFrom: '2026-12-01T09:00', availableUntil: '2026-12-01T09:00' },
+      { availableFrom: '2026-12-02T09:00', availableUntil: '2026-12-01T09:00' },
+    ])
+      expect(ok(MediaPatchSchema, bad), JSON.stringify(bad)).toBe(false);
   });
 });
 

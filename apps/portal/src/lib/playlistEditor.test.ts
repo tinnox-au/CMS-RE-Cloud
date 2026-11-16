@@ -8,7 +8,7 @@ import {
   type PushState,
 } from '@tinnox/contracts';
 import { describe, expect, it } from 'vitest';
-import { updateItem } from './playlistDraft.ts';
+import { removeItem, updateItem } from './playlistDraft.ts';
 import {
   addedAnnouncement,
   addMedia,
@@ -76,6 +76,8 @@ function media(n: number, kind: 'image' | 'video', change: Partial<MediaDto> = {
     originalName: `file-${n}.${kind === 'image' ? 'png' : 'mp4'}`,
     description: null,
     defaultDurationMs: null,
+    availableFrom: null,
+    availableUntil: null,
     folderId: null,
     tagIds: [],
     usageCount: 0,
@@ -99,6 +101,8 @@ function playlist(change: Partial<PlaylistDto> = {}): PlaylistDto {
     id: ID(9),
     name: 'Lobby loop',
     description: 'Plays in the foyer.',
+    transition: 'cut',
+    shuffle: false,
     createdAt: T,
     updatedAt: T,
     items: [
@@ -165,6 +169,31 @@ describe('playlist editor draft', () => {
     expect(editorIsDirty({ ...value, description: '  Plays in the foyer.\n' }, saved)).toBe(false);
   });
 
+  it('carries the playback options and becomes dirty when either changes', () => {
+    const saved = playlist({ transition: 'fade', shuffle: true });
+    const value = editorDraftFromPlaylist(saved);
+    expect([value.transition, value.shuffle]).toEqual(['fade', true]);
+    expect(editorIsDirty(value, saved)).toBe(false);
+    expect(editorIsDirty({ ...value, transition: 'cut' }, saved)).toBe(true);
+    expect(editorIsDirty({ ...value, shuffle: false }, saved)).toBe(true);
+    const sent = validateEditorDraft(value, DEFAULT_LIMITS);
+    expect(sent.ok && [sent.value.transition, sent.value.shuffle]).toEqual(['fade', true]);
+  });
+
+  it('keeps the playback options when items are added, moved or removed', () => {
+    const value = { ...draft(), transition: 'fade', shuffle: true } as const;
+    const added = addMedia(value, media(4, 'image'), 'k', DEFAULT_LIMITS);
+    const results = [
+      moveItemToSlot(value, 0, 3),
+      { ...value, ...removeItem(value, ID(6)) },
+      added.ok ? added.draft : value,
+    ];
+    for (const result of results) {
+      expect([result.transition, result.shuffle]).toEqual(['fade', true]);
+    }
+    expect(added.ok).toBe(true);
+  });
+
   it('compares line ends as the API stores them', () => {
     const saved = playlist({ description: 'One\nTwo' });
     const value = editorDraftFromPlaylist(saved);
@@ -177,13 +206,15 @@ describe('playlist editor draft', () => {
     expect(editorIsDirty({ ...value, name: 'Other' }, saved)).toBe(true);
     expect(editorIsDirty(moveItemToSlot(value, 0, 3), saved)).toBe(true);
     const longer = updateItem(value, ID(5), { durationText: '9' });
-    expect(editorIsDirty({ ...longer, description: value.description }, saved)).toBe(true);
+    expect(editorIsDirty({ ...value, ...longer }, saved)).toBe(true);
   });
 
   it('keeps the rendering keys across a save where the same media stays in place', () => {
     const before: EditorDraft = {
       name: 'Lobby loop',
       description: '',
+      transition: 'cut',
+      shuffle: false,
       items: [
         { key: 'local-a', media: media(1, 'image'), durationText: '8', fit: null },
         { key: 'local-b', media: media(2, 'video'), durationText: '', fit: 'cover' },
@@ -201,6 +232,8 @@ describe('playlist editor draft', () => {
     const before: EditorDraft = {
       name: 'x',
       description: '',
+      transition: 'cut',
+      shuffle: false,
       items: [
         { key: 'local-a', media: media(4, 'image'), durationText: '8', fit: null },
         { key: 'local-b', media: media(2, 'video'), durationText: '', fit: null },
@@ -213,6 +246,8 @@ describe('playlist editor draft', () => {
     const twice: EditorDraft = {
       name: 'x',
       description: '',
+      transition: 'cut',
+      shuffle: false,
       items: [
         { key: 'same', media: media(1, 'image'), durationText: '8', fit: null },
         { key: 'same', media: media(2, 'video'), durationText: '', fit: null },
@@ -271,6 +306,8 @@ describe('playlist editor validation', () => {
           { mediaId: ID(2), durationMs: null, fit: 'cover' },
           { mediaId: ID(3), durationMs: 5_000, fit: 'contain' },
         ],
+        transition: 'cut',
+        shuffle: false,
       },
     });
     if (result.ok) expect(PlaylistReplaceSchema.safeParse(result.value).success).toBe(true);
@@ -321,6 +358,7 @@ describe('playlist editor validation', () => {
   it('reports every kind of error at once', () => {
     const base = draft();
     const broken: EditorDraft = {
+      ...base,
       ...updateItem(base, ID(5), { durationText: '0' }),
       name: '',
       description: 'a'.repeat(600),

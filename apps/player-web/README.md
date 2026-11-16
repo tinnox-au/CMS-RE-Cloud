@@ -173,6 +173,28 @@ active version nor the staging version and is not on screen or being prepared. I
 after a successful activation and again when the renderer has switched versions. If the
 state cannot be read, nothing is deleted.
 
+### Clock and time rules (manifest v2)
+
+Since `player-web/0.2.0` the player accepts manifest v1 and v2 (`docs/player-protocol-v1.md`
+§5). A stored v1 record still loads after the upgrade.
+
+The clock used for time rules is `Date.now()` plus an offset: `serverTime` of each
+heartbeat reply minus the local time when it arrived, 0 until the first reply. Round-trip
+time is ignored. `core/time-rules.ts` (pure) turns that time into the wall clock of the
+manifest's `timeZone` (one `Intl.DateTimeFormat` per zone) and decides which items may play:
+
+- v1: every item.
+- Outside working hours: none. The stage goes black, no slate is shown, and the heartbeat
+  reports `idle` with no active publication (the portal shows "Standing by").
+- Otherwise the items whose availability window holds the local time (from inclusive,
+  until exclusive).
+- Fail open: when the corrected clock is more than 5 minutes before the publication's
+  `createdAt`, or the browser does not know the zone, every item plays.
+
+The rules are checked at item boundaries, so an item can run past an edge by its own
+length; with nothing playable the loop looks again every `idleRecheckMs`. Diagnostics show
+"Time zone", "Local time there", "Clock offset" and "Rotation".
+
 ### Renderer
 
 The stage is the window, black. The publication canvas is scaled to fit and centred
@@ -191,9 +213,22 @@ counter and nothing else.
   `durationMs × 1.25 + 5 s` skips a video that has not ended by then and reports
   `playback_error`.
 - A one-item playlist repeats.
+- Shuffle (v2): each round plays every item once in a new Fisher-Yates order; a new round
+  never starts with the item that just ended when another item can play.
+  `activeItemIndex` stays the index into `assets`.
+- Fade (v2, `transition: fade`): only from one image to the next image, 500 ms
+  (`FADE_MS`, matching `styles.css`), started when the new layer is revealed. The old
+  layer stays in use (so its asset is not collected) until the fade ends or the next item
+  starts; the player asks for garbage collection again after `FADE_MS` when the fade
+  crossed into a new publication. The first item and anything with a video cut. With
+  `prefers-reduced-motion: reduce` there is no animation.
+- Rotation (v2): 90 and 270 swap the viewport's width and height, and the canvas is
+  turned with a CSS transform (`stageTransform` from `@tinnox/domain`). The canvas keeps
+  its size. Pairing and slate screens are not rotated.
 - An item that cannot be shown (missing from the cache, decode failure, autoplay blocked,
   media error during playback) is reported and skipped after a 500 ms pause.
-- If every item of the publication fails in a row, the stage is cleared, the phase
+- If every playable item of the publication fails in a row (items hidden by a window do
+  not count), the stage is cleared, the phase
   becomes `faulted`, the heartbeat says `error` with no active item, and the loop tries
   again every 30 s. The player never reports `playing` with nothing on screen.
 
@@ -349,7 +384,16 @@ fakes for the state store, the asset store, the API and the presenter, plus
 - manifest handling: 304, 204, repeat of the active publication, malformed, unsupported
   version, wrong display, superseded during download;
 - playback order, image durations, looping, video end and watchdog, skipping failed
-  items, the all-failed case, switching versions only at an item boundary;
+  items, the all-failed case, switching versions only at an item boundary; shuffle (a new
+  seeded permutation per round with no repeat across the boundary, also with windows),
+  window skips, nothing due (`not_now`), the manifest index under shuffle, and all-failed
+  after the playable items only;
+- time rules (`core/time-rules.test.ts`, fixed instants in Australia/Melbourne): a
+  daylight-saving day, `24:00`, a closed day, a window edge, fail-open on a clock behind
+  the publication and on an unknown zone;
+- manifest v2 accepted and version 3 refused in sync; a stored v1 record loads from
+  IndexedDB. Test data: `makeManifest` in `core/fakes.test-support.ts` builds v1 and
+  `makeManifestV2` builds v2;
 - heartbeat contents, sequence numbers across reloads, no queue while offline;
 - the HTTP client (headers, no credential on other origins, status mapping) and the
   IndexedDB store (atomic activation, registration replacement, revocation).

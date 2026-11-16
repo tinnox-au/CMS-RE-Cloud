@@ -1,13 +1,14 @@
-import type { ManifestAssetV1, ManifestV1 } from '@tinnox/contracts';
+import type { ManifestAssetV1, Manifest } from '@tinnox/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlayerFault } from './errors.ts';
-import { makeAsset, makeManifest } from './fakes.test-support.ts';
+import { makeAsset, makeManifest, makeManifestV2 } from './fakes.test-support.ts';
 import {
   holdTimeMs,
   nextStep,
   PlaybackLoop,
   videoWatchdogMs,
   type PlaybackEvent,
+  type PlaybackPosition,
   type Presenter,
   type ShownItem,
 } from './playback.ts';
@@ -15,52 +16,125 @@ import { sleep } from './timing.ts';
 
 async function manifestOf(
   ...specs: { kind?: 'image' | 'video'; durationMs: number }[]
-): Promise<ManifestV1> {
+): Promise<Manifest> {
   const assets: ManifestAssetV1[] = [];
   for (const [i, spec] of specs.entries()) assets.push((await makeAsset(100 + i, spec)).asset);
   return makeManifest(assets);
 }
 
+/** Monday 2026-11-16 13:00 in Melbourne, after the test manifests' createdAt. */
+const NOW = Date.parse('2026-11-16T02:00:00Z');
+const opts = { now: NOW, random: Math.random };
+
+/** A position partway through a playlist played in listed order. */
+function at(manifest: Manifest, index: number): PlaybackPosition {
+  return { manifest, index, order: manifest.assets.map((_, i) => i), cursor: index };
+}
+
+/** Deterministic random numbers in [0, 1) (mulberry32). */
+function seeded(seed: number): () => number {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Walks `count` boundaries from nothing playing; returns the manifest indexes shown. */
+function walk(manifest: Manifest, count: number, random: () => number): number[] {
+  const shown: number[] = [];
+  let position: PlaybackPosition | null = null;
+  for (let i = 0; i < count; i += 1) {
+    const step = nextStep(position, manifest, { now: NOW, random });
+    if (step === null || step === 'not_now') throw new Error('expected a step');
+    expect(step.index).toBe(step.order[step.cursor]);
+    shown.push(step.index);
+    position = step;
+  }
+  return shown;
+}
+
+async function images(count: number): Promise<ManifestAssetV1[]> {
+  const assets: ManifestAssetV1[] = [];
+  for (let i = 0; i < count; i += 1)
+    assets.push((await makeAsset(200 + i, { durationMs: 1_000 })).asset);
+  return assets;
+}
+
 describe('nextStep (what to show at an item boundary)', () => {
   it('shows nothing without an active publication', async () => {
-    expect(nextStep(null, null)).toBeNull();
+    expect(nextStep(null, null, opts)).toBeNull();
     const m = await manifestOf({ durationMs: 1000 });
-    expect(nextStep({ manifest: m, index: 0 }, null)).toBeNull();
+    expect(nextStep(at(m, 0), null, opts)).toBeNull();
   });
 
   it('starts a publication at its first item', async () => {
     const m = await manifestOf({ durationMs: 1000 }, { durationMs: 1000 });
-    expect(nextStep(null, m)).toEqual({ manifest: m, index: 0, switched: true });
+    expect(nextStep(null, m, opts)).toMatchObject({
+      manifest: m,
+      index: 0,
+      switched: true,
+      playable: 2,
+    });
   });
 
   it('advances in order and wraps around', async () => {
     const m = await manifestOf({ durationMs: 1 }, { durationMs: 1 }, { durationMs: 1 });
-    expect(nextStep({ manifest: m, index: 0 }, m)?.index).toBe(1);
-    expect(nextStep({ manifest: m, index: 1 }, m)?.index).toBe(2);
-    expect(nextStep({ manifest: m, index: 2 }, m)).toEqual({
-      manifest: m,
-      index: 0,
-      switched: false,
-    });
+    expect(walk(m, 7, Math.random)).toEqual([0, 1, 2, 0, 1, 2, 0]);
+    expect(nextStep(at(m, 2), m, opts)).toMatchObject({ manifest: m, index: 0, switched: false });
   });
 
   it('repeats a one-item playlist', async () => {
     const m = await manifestOf({ durationMs: 1 });
-    expect(nextStep({ manifest: m, index: 0 }, m)).toEqual({
-      manifest: m,
-      index: 0,
-      switched: false,
-    });
+    expect(nextStep(at(m, 0), m, opts)).toMatchObject({ manifest: m, index: 0, switched: false });
   });
 
   it('switches to a newly activated publication at the boundary, from its first item', async () => {
     const a = await manifestOf({ durationMs: 1 }, { durationMs: 1 }, { durationMs: 1 });
     const b = await manifestOf({ durationMs: 1 });
-    expect(nextStep({ manifest: a, index: 1 }, b)).toEqual({
-      manifest: b,
-      index: 0,
-      switched: true,
+    expect(nextStep(at(a, 1), b, opts)).toMatchObject({ manifest: b, index: 0, switched: true });
+  });
+
+  it('shuffles: every round plays each item once, never the same item twice in a row', async () => {
+    const m = makeManifestV2(await images(5), { shuffle: true });
+    const shown = walk(m, 5 * 40, seeded(7));
+    for (let round = 0; round < 40; round += 1) {
+      expect([...shown.slice(round * 5, round * 5 + 5)].sort()).toEqual([0, 1, 2, 3, 4]);
+    }
+    shown.slice(1).forEach((index, i) => {
+      expect(index).not.toBe(shown[i]);
     });
+    // Not merely the listed order.
+    expect(shown.slice(0, 10)).not.toEqual([0, 1, 2, 3, 4, 0, 1, 2, 3, 4]);
+  });
+
+  it('skips items outside their window', async () => {
+    const m = makeManifestV2(await images(3));
+    m.assets[1] = { ...m.assets[1]!, availableFrom: '2026-12-01T00:00' };
+    expect(walk(m, 4, Math.random)).toEqual([0, 2, 0, 2]);
+    expect(nextStep(null, m, opts)).toMatchObject({ playable: 2 });
+  });
+
+  it('shuffles only the items in their window, still without a repeat', async () => {
+    const m = makeManifestV2(await images(5), { shuffle: true });
+    m.assets[0] = { ...m.assets[0]!, availableUntil: '2026-11-01T00:00' };
+    m.assets[3] = { ...m.assets[3]!, availableUntil: '2026-11-01T00:00' };
+    const shown = walk(m, 60, seeded(11));
+    expect(new Set(shown)).toEqual(new Set([1, 2, 4]));
+    shown.slice(1).forEach((index, i) => {
+      expect(index).not.toBe(shown[i]);
+    });
+  });
+
+  it("says 'not_now' when nothing may be shown", async () => {
+    const hours = { start: '09:00', end: '10:00' };
+    const m = makeManifestV2(await images(2), {
+      workingHours: [hours, hours, hours, hours, hours, hours, hours],
+    });
+    expect(nextStep(null, m, opts)).toBe('not_now');
+    expect(nextStep(at(m, 0), m, opts)).toBe('not_now');
   });
 });
 
@@ -121,7 +195,7 @@ function stage(videoPlayMs = 4_000): Stage {
 describe('PlaybackLoop', () => {
   let abort: AbortController;
   let events: PlaybackEvent[];
-  let active: ManifestV1 | null;
+  let active: Manifest | null;
 
   function loop(s: Stage): PlaybackLoop {
     return new PlaybackLoop({
@@ -129,6 +203,7 @@ describe('PlaybackLoop', () => {
       presenter: s.presenter,
       clock: { now: () => Date.now() },
       sleep,
+      random: Math.random,
       signal: abort.signal,
       onEvent: (e) => events.push(e),
     });
@@ -293,6 +368,7 @@ describe('PlaybackLoop', () => {
       presenter: s.presenter,
       clock: { now: () => Date.now() },
       sleep,
+      random: Math.random,
       signal: abort.signal,
       onEvent: (e) => events.push(e),
     });
@@ -314,6 +390,40 @@ describe('PlaybackLoop', () => {
     expect(started().length).toBeGreaterThanOrEqual(999);
     // One hold timer (plus at most the watchdog/finished pair of the current video).
     expect(vi.getTimerCount()).toBeLessThanOrEqual(2);
+  });
+
+  it('gives all_failed after the playable items fail, when windows hide the rest', async () => {
+    vi.setSystemTime(NOW);
+    const m = makeManifestV2(await images(3));
+    m.assets[0] = { ...m.assets[0]!, availableUntil: '2026-11-01T00:00' };
+    active = m;
+    const s = stage();
+    s.behaviour.set(m.assets[1]!.assetId, 'fail_to_show');
+    s.behaviour.set(m.assets[2]!.assetId, 'fail_to_show');
+    loop(s).start();
+    await vi.advanceTimersByTimeAsync(600);
+    expect(events.filter((e) => e.type === 'item_failed')).toHaveLength(2);
+    expect(events.filter((e) => e.type === 'all_failed')).toHaveLength(1);
+  });
+
+  it('goes black outside working hours and resumes without a switch', async () => {
+    // Monday 16:59:58 in Melbourne; open 09:00 to 17:00 every day.
+    vi.setSystemTime(Date.parse('2026-11-16T05:59:58Z'));
+    const hours = { start: '09:00', end: '17:00' };
+    active = makeManifestV2(await images(2), {
+      workingHours: [hours, hours, hours, hours, hours, hours, hours],
+    });
+    const s = stage();
+    loop(s).start();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(started()).toEqual([0, 1]);
+    expect(events.at(-1)).toEqual({ type: 'no_content', reason: 'not_now' });
+    expect(s.clears).toBe(1);
+    // Tuesday 09:00: the next item in the round, not the first of a new publication.
+    vi.setSystemTime(Date.parse('2026-11-16T22:00:00Z'));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(started()).toEqual([0, 1, 0]);
+    expect(events.filter((e) => e.type === 'version_adopted')).toHaveLength(1);
   });
 
   it('stops when aborted', async () => {

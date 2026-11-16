@@ -112,6 +112,36 @@ describe('playlists: description, summary, duplicate and delete', () => {
     });
   });
 
+  describe('playback options', () => {
+    it('start as cut without shuffle, are kept when a save leaves them out, and are replaced when sent', async () => {
+      const id = await createPlaylist(alice, 'Options loop');
+      expect(await getPlaylist(alice, id)).toMatchObject({ transition: 'cut', shuffle: false });
+      const save = async (body: Record<string, unknown>): Promise<Response> =>
+        alice.fetch(`/api/playlists/${id}`, {
+          method: 'PUT',
+          json: { name: 'Options loop', items: [], ...body },
+        });
+
+      const set = await save({ transition: 'fade', shuffle: true });
+      expect(set.status).toBe(200);
+      expect(PlaylistDtoSchema.parse(await set.json())).toMatchObject({
+        transition: 'fade',
+        shuffle: true,
+      });
+      expect((await save({})).status).toBe(200);
+      expect(await getPlaylist(alice, id)).toMatchObject({ transition: 'fade', shuffle: true });
+      expect((await save({ shuffle: false })).status).toBe(200);
+      expect(await getPlaylist(alice, id)).toMatchObject({ transition: 'fade', shuffle: false });
+      expect((await save({ transition: 'wipe' })).status).toBe(400);
+
+      const [event] = (await auditEvents(alice, '&category=playlist')).filter(
+        (e) => e.objectId === id && e.action === 'playlist.update',
+      );
+      // Newest first: the last save sent shuffle only.
+      expect(event?.detail).toEqual({ itemCount: 0, shuffle: false });
+    });
+  });
+
   describe('GET /api/playlists', () => {
     it('summarises items, loop length, kinds, preview media and assigned displays', async () => {
       const org = await createOrg('Playlist summary');
@@ -194,7 +224,7 @@ describe('playlists: description, summary, duplicate and delete', () => {
   });
 
   describe('POST /api/playlists/:id/duplicate', () => {
-    it('copies the description and every item into a new, unassigned playlist', async () => {
+    it('copies the description, the playback options and every item into a new, unassigned playlist', async () => {
       const first = await readyImage(t, alice);
       const second = await readyImage(t, alice);
       const display = await createDisplay(alice, orgA, 'Duplicate source display');
@@ -204,6 +234,8 @@ describe('playlists: description, summary, duplicate and delete', () => {
         json: {
           name: 'Window loop',
           description: 'Street side',
+          transition: 'fade',
+          shuffle: true,
           items: [
             { mediaId: second.id, durationMs: 9000, fit: 'cover' },
             imageItem(first.id, 4),
@@ -222,6 +254,7 @@ describe('playlists: description, summary, duplicate and delete', () => {
       expect(copy.id).not.toBe(sourceId);
       expect(copy.name).toBe('Copy of Window loop');
       expect(copy.description).toBe('Street side');
+      expect(copy).toMatchObject({ transition: 'fade', shuffle: true });
       const shape = (playlist: PlaylistDto): unknown =>
         playlist.items.map((item) => [item.position, item.mediaId, item.durationMs, item.fit]);
       expect(shape(copy)).toEqual(shape(source));

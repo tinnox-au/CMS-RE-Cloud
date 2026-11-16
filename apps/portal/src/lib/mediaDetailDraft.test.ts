@@ -8,6 +8,7 @@ import {
   errorFields,
   fieldErrorsFromApi,
   hasErrors,
+  INCOMPLETE_DATE_TIME,
   isDraftDirty,
   NO_MEDIA_DETAIL_ERRORS,
   STANDARD_IMAGE_DURATION_MS,
@@ -33,6 +34,8 @@ function image(overrides: Partial<MediaDto> = {}): MediaDto {
     originalName: 'IMG_0042.jpg',
     description: null,
     defaultDurationMs: null,
+    availableFrom: null,
+    availableUntil: null,
     folderId: null,
     tagIds: [],
     usageCount: 0,
@@ -88,6 +91,7 @@ describe('media details draft', () => {
       defaultDurationMs: 7_500,
       folderId: ID(10),
       tagIds: [ID(20), ID(21)],
+      availableFrom: '2026-12-01T09:00',
     });
     expect(draftFromMedia(media)).toEqual({
       name: 'Spring sale',
@@ -95,6 +99,8 @@ describe('media details draft', () => {
       durationText: '7.5',
       folderId: ID(10),
       tagIds: [ID(20), ID(21)],
+      availableFrom: '2026-12-01T09:00',
+      availableUntil: '',
     });
     expect(draftFromMedia(image()).durationText).toBe('');
     expect(draftFromMedia(video()).durationText).toBe('');
@@ -210,6 +216,52 @@ describe('media details draft', () => {
     expect(patches[3]).toEqual({ tagIds: [] });
   });
 
+  it('sends both sides of the availability window together, and checks their order', () => {
+    const media = image({ availableFrom: '2026-12-01T09:00' });
+    expect(patchOf(media, { availableUntil: '2026-12-24T17:00' })).toEqual({
+      availableFrom: '2026-12-01T09:00',
+      availableUntil: '2026-12-24T17:00',
+    });
+    expect(patchOf(media, { availableFrom: '' })).toEqual({
+      availableFrom: null,
+      availableUntil: null,
+    });
+    expect(changedFields(edit(media, { availableFrom: '' }), media, LIMITS)).toEqual([
+      'availableFrom',
+    ]);
+    for (const until of ['2026-12-01T09:00', '2026-11-30T23:59']) {
+      expect(errorsOf(media, { availableUntil: until })).toEqual({
+        availableUntil: 'Must be after Available from.',
+      });
+    }
+    expect(errorsOf(media, { availableFrom: '0999-12-01T09:00' }).availableFrom).toBe(
+      'Enter a full date and time, year 1000 or later.',
+    );
+  });
+
+  it('refuses a half-typed window side instead of saving it as no limit', () => {
+    const FULL = 'Enter a full date and time, year 1000 or later.';
+    // A stored start whose year is being retyped.
+    const windowed = image({
+      availableFrom: '2026-12-01T09:00',
+      availableUntil: '2026-12-24T17:00',
+    });
+    expect(errorsOf(windowed, { availableFrom: INCOMPLETE_DATE_TIME })).toEqual({
+      availableFrom: FULL,
+    });
+    // A date without a time on an item with no window: dirty, so Save is offered and refused.
+    const open = image();
+    expect(isDraftDirty(edit(open, { availableFrom: INCOMPLETE_DATE_TIME }), open, LIMITS)).toBe(
+      true,
+    );
+    expect(errorsOf(open, { availableFrom: INCOMPLETE_DATE_TIME })).toEqual({
+      availableFrom: FULL,
+    });
+    expect(errorsOf(open, { availableUntil: INCOMPLETE_DATE_TIME })).toEqual({
+      availableUntil: FULL,
+    });
+  });
+
   it('keeps the default duration inside the configured limits', () => {
     const media = image();
     expect(patchOf(media, { durationText: '1' })).toEqual({ defaultDurationMs: 1_000 });
@@ -273,6 +325,8 @@ function playlist(items: readonly { media: MediaDto; durationMs: number | null }
     id: ID(50),
     name: 'Reception loop',
     description: 'Front desk',
+    transition: 'cut',
+    shuffle: false,
     items: items.map((item, index) => ({
       id: ID(60 + index),
       position: index,

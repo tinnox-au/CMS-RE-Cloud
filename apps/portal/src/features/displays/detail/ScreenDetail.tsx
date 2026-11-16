@@ -1,9 +1,9 @@
-import type { DeliveryStatusView, DisplayDto } from '@tinnox/contracts';
+import type { DeliveryStatusView, DisplayDto, Rotation } from '@tinnox/contracts';
 import { useCallback, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../../../api/index.ts';
 import { useLoad } from '../../../hooks/useLoad.ts';
-import type { DisplayFormValues } from '../../../lib/displayForm.ts';
+import { displayFormFromDto, type DisplayFormValues } from '../../../lib/displayForm.ts';
 import {
   revokeOutcomeText,
   sameTagIds,
@@ -11,8 +11,10 @@ import {
   screenDetailSearch,
   screenDetailsDirty,
   screenDetailTabOf,
+  workingHoursDirty,
   type ScreenDetailOpenTabId,
   type ScreenDetailsValues,
+  type WorkingHoursDraft,
 } from '../../../lib/screenDetail.ts';
 import { canvasFormDirty } from '../../../lib/screenDetailCanvas.ts';
 import { EditorPage } from '../../../shell/EditorPage.tsx';
@@ -72,12 +74,20 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
   // ---- Drafts, kept here so switching tabs keeps them; null means "as stored" ----
   const [detailsDraft, setDetailsDraft] = useState<ScreenDetailsValues | null>(null);
   const [canvasDraft, setCanvasDraft] = useState<DisplayFormValues | null>(null);
+  const [rotationDraft, setRotationDraft] = useState<Rotation | null>(null);
   const [tagsDraft, setTagsDraft] = useState<readonly string[] | null>(null);
+  const [workingHoursDraft, setWorkingHoursDraft] = useState<WorkingHoursDraft | null>(null);
 
   const dirty =
     (detailsDraft !== null && screenDetailsDirty(detailsDraft, display)) ||
-    (canvasDraft !== null && canvasFormDirty(canvasDraft, display)) ||
-    (tagsDraft !== null && !sameTagIds(tagsDraft, display.tagIds));
+    ((canvasDraft !== null || rotationDraft !== null) &&
+      canvasFormDirty(
+        canvasDraft ?? displayFormFromDto(display),
+        display,
+        rotationDraft ?? display.rotation,
+      )) ||
+    (tagsDraft !== null && !sameTagIds(tagsDraft, display.tagIds)) ||
+    (workingHoursDraft !== null && workingHoursDirty(workingHoursDraft, display.workingHours));
 
   const leaveGuard = useLeaveGuard(dirty, display.name);
 
@@ -178,13 +188,18 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
               tab={tab}
               onTab={selectTab}
               display={display}
+              site={site}
               status={status.state}
               onReloadStatus={reloadStatus}
               canvasDraft={canvasDraft}
               onCanvasDraft={setCanvasDraft}
+              rotationDraft={rotationDraft}
+              onRotationDraft={setRotationDraft}
               tags={tags}
               tagsDraft={tagsDraft}
               onTagsDraft={setTagsDraft}
+              workingHoursDraft={workingHoursDraft}
+              onWorkingHoursDraft={setWorkingHoursDraft}
               onSaved={changed}
               onPaired={afterPlayerChange}
               onRevoke={() => {

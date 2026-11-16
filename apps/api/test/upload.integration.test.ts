@@ -1,9 +1,11 @@
+import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { appendFile, mkdir, symlink, unlink, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { MediaJobResult } from '@tinnox/contracts';
 import { withOrg } from '@tinnox/db';
 import { LocalObjectStorage } from '@tinnox/storage';
+import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MediaPipeline } from '../src/media/pipeline.ts';
 import {
@@ -233,6 +235,100 @@ describe('upload limits and validation results', () => {
     });
     const preview = await operator.fetch(`/api/media/${media.id}/preview`);
     expect(Buffer.from(await preview.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('serves an image thumbnail as JPEG, ignores a bad one and deletes both objects', async () => {
+    const outbox = join(t.jobsDir, 'outbox');
+    const storage = await LocalObjectStorage.create({ root: t.mediaRoot });
+    const keysOf = async (id: string) =>
+      withOrg(t.pool, org.orgId, async (tx) => {
+        const { rows } = await tx.query<{
+          storage_key: string | null;
+          thumb_storage_key: string | null;
+        }>('SELECT storage_key, thumb_storage_key FROM media WHERE id = $1', [id]);
+        return rows[0];
+      });
+    const jpeg = await sharp(await pngBytes(8, 4))
+      .jpeg()
+      .toBuffer();
+    const elsewhere = join(t.jobsDir, 'elsewhere.jpg');
+    await writeFile(elsewhere, jpeg);
+
+    const { media: good } = await uploadPng();
+    await writeFile(join(outbox, `${good.id}.thumb.jpg`), jpeg);
+    await actAsWorker(t, accepted(good.id));
+    await t.ctx.media.tick();
+    expect((await get(good.id)).status).toBe('ready');
+    const thumb = await operator.fetch(`/api/media/${good.id}/thumbnail`);
+    expect(thumb.status).toBe(200);
+    expect(thumb.headers.get('content-type')).toBe('image/jpeg');
+    expect(thumb.headers.get('cache-control')).toBe('private, max-age=300');
+    expect(Buffer.from(await thumb.arrayBuffer())).toEqual(jpeg);
+    const preview = await operator.fetch(`/api/media/${good.id}/preview`);
+    expect(preview.headers.get('content-type')).toBe('image/png');
+    expect(await listDir(outbox)).not.toContain(`${good.id}.thumb.jpg`);
+
+    const bad: [string, (path: string) => Promise<void>][] = [
+      ['not a JPEG', (path) => writeFile(path, Buffer.from('\x89PNG\r\n\x1a\nnot a jpeg'))],
+      ['empty', (path) => writeFile(path, Buffer.alloc(0))],
+      [
+        'oversized',
+        (path) => writeFile(path, Buffer.concat([jpeg.subarray(0, 3), Buffer.alloc(524_288)])),
+      ],
+      ['a symbolic link', (path) => symlink(elsewhere, path)],
+      ['a directory', (path) => mkdir(path)],
+      // A FIFO with no writer would block a blocking open, and with it the whole tick loop.
+      [
+        'a FIFO',
+        (path) => {
+          execFileSync('mkfifo', [path]);
+          return Promise.resolve();
+        },
+      ],
+    ];
+    for (const [what, plant] of bad) {
+      const { media, bytes } = await uploadPng();
+      await plant(join(outbox, `${media.id}.thumb.jpg`));
+      await actAsWorker(t, accepted(media.id));
+      await t.ctx.media.tick();
+      expect((await get(media.id)).status, what).toBe('ready');
+      expect((await keysOf(media.id))?.thumb_storage_key, what).toBeNull();
+      const fallback = await operator.fetch(`/api/media/${media.id}/thumbnail`);
+      expect(fallback.headers.get('content-type'), what).toBe('image/png');
+      expect(Buffer.from(await fallback.arrayBuffer()), what).toEqual(bytes);
+      expect(await listDir(outbox), what).not.toContain(`${media.id}.thumb.jpg`);
+    }
+
+    // A video gets no thumbnail, even when one is lying in the outbox.
+    const head = Buffer.from([0, 0, 0, 32, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
+    const upload = await uploadBytes(operator, Buffer.concat([head, Buffer.alloc(52)]), 'a.mp4');
+    const video = ((await upload.json()) as { media: Media }).media;
+    await writeFile(join(outbox, `${video.id}.thumb.jpg`), jpeg);
+    await actAsWorker(t, {
+      schemaVersion: 1,
+      jobId: video.id,
+      outcome: 'accepted',
+      kind: 'video',
+      mimeType: 'video/mp4',
+      width: 1280,
+      height: 720,
+      durationMs: 8000,
+      codec: 'h264',
+    });
+    await t.ctx.media.tick();
+    expect((await get(video.id)).status).toBe('ready');
+    expect((await keysOf(video.id))?.thumb_storage_key).toBeNull();
+    const poster = await operator.fetch(`/api/media/${video.id}/thumbnail`);
+    expect(poster.headers.get('content-type')).toBe('video/mp4');
+    await poster.arrayBuffer();
+
+    // Deleting the image removes the original and the thumbnail from storage.
+    const keys = await keysOf(good.id);
+    expect(keys?.thumb_storage_key).toMatch(new RegExp(`^${org.orgId}/[0-9a-f-]{36}$`));
+    expect((await operator.fetch(`/api/media/${good.id}`, { method: 'DELETE' })).status).toBe(204);
+    expect(await storage.stat(keys?.storage_key ?? '')).toBeNull();
+    expect(await storage.stat(keys?.thumb_storage_key ?? '')).toBeNull();
+    await operator.fetch(`/api/media/${video.id}`, { method: 'DELETE' });
   });
 
   it('fails media safely when the worker result is malformed, forged or inconsistent', async () => {

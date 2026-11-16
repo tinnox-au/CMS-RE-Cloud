@@ -42,6 +42,7 @@ function bySummary(
     stale: 0,
     updating: 0,
     error: 0,
+    standing_by: 0,
     in_sync: 0,
     ...change,
   };
@@ -66,6 +67,8 @@ function display(n: number, name: string): DisplayDto {
     canvas: { width: 1920, height: 1080 },
     contentRect: null,
     defaultFit: 'contain',
+    rotation: 0,
+    workingHours: null,
     route: 'browser',
     player: null,
     tagIds: [],
@@ -169,6 +172,7 @@ describe('screenCounters', () => {
     const counters = screenCounters(
       bySummary({
         in_sync: 4,
+        standing_by: 2,
         updating: 2,
         awaiting_player: 1,
         nothing_published: 3,
@@ -177,7 +181,7 @@ describe('screenCounters', () => {
         unpaired: 7,
       }),
     );
-    expect(counters.map((counter) => counter.count)).toEqual([4, 6, 11, 7]);
+    expect(counters.map((counter) => counter.count)).toEqual([6, 6, 11, 7]);
   });
 
   it('links each counter to the filter of the screens list that shows the same screens', () => {

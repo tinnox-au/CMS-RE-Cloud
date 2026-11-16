@@ -26,6 +26,9 @@ import {
   STATUS_DISCLAIMER,
   tagsSavedText,
   validateScreenDetails,
+  validateWorkingHours,
+  workingHoursDirty,
+  workingHoursDraftOf,
   type PreviewState,
 } from './screenDetail.ts';
 
@@ -52,6 +55,8 @@ function item(
       originalName: `file ${mediaId.slice(-1)}`,
       description: null,
       defaultDurationMs: null,
+      availableFrom: null,
+      availableUntil: null,
       folderId: null,
       tagIds: [],
       usageCount: 1,
@@ -80,6 +85,8 @@ function playlist(items: Item[]): PlaylistDto {
     id: '20000000-0000-4000-8000-000000000001',
     name: 'Reception loop',
     description: null,
+    transition: 'cut',
+    shuffle: false,
     items,
     createdAt: '2026-11-15T00:00:00.000Z',
     updatedAt: '2026-11-15T00:00:00.000Z',
@@ -104,12 +111,61 @@ describe('tabs', () => {
 
   it('lists the planned tabs with their stage', () => {
     const planned = SCREEN_DETAIL_TABS.filter((tab) => tab.plannedStage !== null);
-    expect(planned.map((tab) => tab.label)).toEqual(['Working hours', 'Alerts', 'Advanced']);
+    expect(planned.map((tab) => tab.label)).toEqual(['Alerts', 'Advanced']);
+    expect(screenDetailTabOf('working-hours')).toBe('working-hours');
     expect(plannedTabReason('B')).toBe('Planned for stage B');
   });
 
   it('polls the status every 5 s as M0 did', () => {
     expect(SCREEN_STATUS_POLL_MS).toBe(5000);
+  });
+});
+
+describe('working hours', () => {
+  const closed = { open: false, start: '09:00', end: '17:00' };
+
+  it('starts from Monday to Friday 09:00 to 17:00 and saves always on as null', () => {
+    const draft = workingHoursDraftOf(null);
+    expect(draft.alwaysOn).toBe(true);
+    expect(draft.days.map((day) => day.open)).toEqual([true, true, true, true, true, false, false]);
+    expect(validateWorkingHours(draft)).toEqual({ ok: true, value: null });
+    expect(workingHoursDirty(draft, null)).toBe(false);
+    const on = { ...draft, alwaysOn: false };
+    expect(workingHoursDirty(on, null)).toBe(true);
+    const week = validateWorkingHours(on);
+    expect(week.ok && week.value).toEqual([
+      ...Array.from({ length: 5 }, () => ({ start: '09:00', end: '17:00' })),
+      null,
+      null,
+    ]);
+  });
+
+  it('saves an end of 00:00 as 24:00 and shows 24:00 as 00:00', () => {
+    const days = [
+      { open: true, start: '18:00', end: '00:00' },
+      ...Array.from({ length: 6 }, () => closed),
+    ];
+    const result = validateWorkingHours({ alwaysOn: false, days });
+    expect(result.ok && result.value?.[0]).toEqual({ start: '18:00', end: '24:00' });
+    const stored = result.ok ? result.value : null;
+    expect(workingHoursDraftOf(stored).days[0]).toEqual(days[0]);
+    expect(workingHoursDirty({ alwaysOn: false, days }, stored)).toBe(false);
+  });
+
+  it('needs the end after the start, and at least one day', () => {
+    const days = [
+      { open: true, start: '17:00', end: '09:00' },
+      ...Array.from({ length: 6 }, () => closed),
+    ];
+    const result = validateWorkingHours({ alwaysOn: false, days });
+    expect(result.ok ? null : result.errors.days[0]).toBe('End must be after start.');
+    const none = validateWorkingHours({
+      alwaysOn: false,
+      days: Array.from({ length: 7 }, () => closed),
+    });
+    expect(none.ok ? null : none.errors.form).toBe(
+      'Choose at least one day, or turn on Always on.',
+    );
   });
 });
 

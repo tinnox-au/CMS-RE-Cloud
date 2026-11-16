@@ -9,7 +9,7 @@ import {
   UtcTimestampSchema,
 } from './ids.ts';
 import { ABSOLUTE } from './limits.ts';
-import { ManifestV1Schema } from './manifest.ts';
+import { ManifestSchema, TransitionSchema } from './manifest.ts';
 import { MEDIA_KINDS, MediaDtoSchema, MediaKindSchema } from './media.ts';
 import { DescriptionInputSchema, DescriptionSchema, NameSchema } from './text.ts';
 
@@ -80,6 +80,8 @@ export const PlaylistDtoSchema = z
     name: z.string(),
     description: DescriptionSchema.nullable(),
     items: z.array(PlaylistItemDtoSchema),
+    transition: TransitionSchema,
+    shuffle: z.boolean(),
     createdAt: UtcTimestampSchema,
     updatedAt: UtcTimestampSchema,
   })
@@ -98,21 +100,24 @@ export type PlaylistCreate = z.infer<typeof PlaylistCreateSchema>;
 /**
  * `PUT /api/playlists/:id` replaces the name and the whole ordered item list.
  * `description` is optional: left out, the stored description stays as it is;
- * null or an empty string clears it.
+ * null or an empty string clears it. `transition` and `shuffle` work the same
+ * way: left out, the stored value stays.
  */
 export const PlaylistReplaceSchema = z
   .object({
     name: NameSchema,
     description: DescriptionInputSchema.optional(),
+    transition: TransitionSchema.optional(),
+    shuffle: z.boolean().optional(),
     items: z.array(PlaylistItemInputSchema).max(ABSOLUTE.maxPlaylistItems),
   })
   .strict();
 export type PlaylistReplace = z.infer<typeof PlaylistReplaceSchema>;
 
 /**
- * `POST /api/playlists/:id/duplicate` takes no body. It copies the description and
- * every item into a new playlist named by `duplicatePlaylistName`, assigned to no
- * display, and answers 201 with the copy.
+ * `POST /api/playlists/:id/duplicate` takes no body. It copies the description,
+ * the playback options and every item into a new playlist named by
+ * `duplicatePlaylistName`, assigned to no display, and answers 201 with the copy.
  */
 export const PlaylistDuplicateResponseSchema = PlaylistDtoSchema;
 export type PlaylistDuplicateResponse = z.infer<typeof PlaylistDuplicateResponseSchema>;
@@ -147,7 +152,7 @@ export const PublishResponseSchema = z
     createdAt: UtcTimestampSchema,
     /** True when this response repeats an earlier publish with the same Idempotency-Key. */
     replayed: z.boolean(),
-    manifest: ManifestV1Schema,
+    manifest: ManifestSchema,
   })
   .strict();
 export type PublishResponse = z.infer<typeof PublishResponseSchema>;

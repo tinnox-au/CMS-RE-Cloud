@@ -32,6 +32,33 @@ export type FolderId = Uuid;
 export const UtcTimestampSchema = z.iso.datetime();
 export type UtcTimestamp = z.infer<typeof UtcTimestampSchema>;
 
+/**
+ * Wall-clock date and time without a zone, for example 2026-11-14T09:30. Read in
+ * the zone of each screen's site. Year 1000 or later: PostgreSQL has no year 0.
+ */
+export const LocalDateTimeSchema = z
+  .string()
+  .regex(/^[1-9]\d{3}-\d{2}-\d{2}T\d{2}:\d{2}$/, 'expected YYYY-MM-DDTHH:mm')
+  .refine((v) => {
+    const date = new Date(`${v}:00Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 16) === v;
+  }, 'not a real date and time');
+export type LocalDateTime = z.infer<typeof LocalDateTimeSchema>;
+
+/** Wall-clock time of day, HH:mm. '24:00' is the end of the day. */
+export const LocalTimeSchema = z
+  .string()
+  .regex(/^(([01]\d|2[0-3]):[0-5]\d|24:00)$/, 'expected HH:mm between 00:00 and 24:00');
+export type LocalTime = z.infer<typeof LocalTimeSchema>;
+
+/**
+ * IANA time zone name. Length only: an older player's time zone data must not
+ * reject a whole manifest over a zone name. The server checks the zone when it
+ * builds a manifest; the player fails open.
+ */
+export const TimeZoneSchema = z.string().min(1).max(64);
+export type TimeZone = z.infer<typeof TimeZoneSchema>;
+
 /** Lower-case hexadecimal SHA-256 digest. */
 export const Sha256HexSchema = z
   .string()

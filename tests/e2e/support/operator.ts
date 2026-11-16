@@ -209,8 +209,9 @@ export class OperatorApi {
       durationMs: number | null;
       fit: 'contain' | 'cover' | null;
     }[],
+    playback: { transition?: 'cut' | 'fade'; shuffle?: boolean } = {},
   ): Promise<void> {
-    const response = await this.put(`/api/playlists/${id}`, { name, items });
+    const response = await this.put(`/api/playlists/${id}`, { name, items, ...playback });
     expect(response.status(), await response.text()).toBe(200);
   }
 

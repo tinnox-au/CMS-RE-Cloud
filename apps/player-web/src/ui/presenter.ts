@@ -1,5 +1,12 @@
-import type { Canvas, ManifestAssetV1, ManifestV1, Rect } from '@tinnox/contracts';
-import { canvasToViewport, effectiveContentRect } from '@tinnox/domain';
+import {
+  manifestV2Facts,
+  type Canvas,
+  type ManifestAssetV1,
+  type Manifest,
+  type Rect,
+  type Rotation,
+} from '@tinnox/contracts';
+import { canvasToViewport, effectiveContentRect, stageTransform } from '@tinnox/domain';
 import { PlayerFault, throwIfAborted } from '../core/errors.ts';
 import type { Presenter, ShownItem } from '../core/playback.ts';
 import { releaseVideo } from '../platform/media.ts';
@@ -7,9 +14,13 @@ import { el } from './dom.ts';
 
 /** Longest wait for an item to become displayable before it is skipped. */
 const READY_TIMEOUT_MS = 15_000;
+/** Matches the fade animations in styles.css. */
+export const FADE_MS = 500;
 
 interface Layer {
   readonly sha256: string;
+  readonly kind: ManifestAssetV1['kind'];
+  readonly holder: HTMLElement;
   dispose(): void;
 }
 
@@ -35,7 +46,8 @@ function withTimeout<T>(work: Promise<T>, ms: number, onTimeout: () => Error): P
  * Draws the publication canvas in the window: scaled to fit, centred, black
  * around it. Content appears only inside the content rectangle. Two stacked
  * layers give a cut without a black frame: the next item is prepared hidden on
- * top, revealed when it can be displayed, and only then is the old one released.
+ * top, revealed when it can be displayed, and only then is the old one released
+ * (after a 500 ms fade, for image to image when the publication asks for it).
  *
  * Every object URL made here is revoked when its layer is disposed, and elements
  * are removed from the document, so nothing accumulates however long the loop runs.
@@ -45,8 +57,11 @@ export class DomPresenter implements Presenter {
   readonly #getBlob: (sha256: string) => Promise<Blob | null>;
   readonly #canvasEl: HTMLDivElement;
   readonly #contentEl: HTMLDivElement;
-  #geometry: { canvas: Canvas; contentRect: Rect | null } | null = null;
+  #geometry: { canvas: Canvas; contentRect: Rect | null; rotation: Rotation } | null = null;
   #current: Layer | null = null;
+  /** The previous image while it fades out under the current one. */
+  #leaving: Layer | null = null;
+  #leavingTimer: ReturnType<typeof setTimeout> | undefined;
   #pendingSha: string | null = null;
 
   constructor(stage: HTMLElement, getBlob: (sha256: string) => Promise<Blob | null>) {
@@ -67,6 +82,7 @@ export class DomPresenter implements Presenter {
   inUse(): ReadonlySet<string> {
     const set = new Set<string>();
     if (this.#current !== null) set.add(this.#current.sha256);
+    if (this.#leaving !== null) set.add(this.#leaving.sha256);
     if (this.#pendingSha !== null) set.add(this.#pendingSha);
     return set;
   }
@@ -74,14 +90,23 @@ export class DomPresenter implements Presenter {
   #layout(): void {
     const geometry = this.#geometry;
     if (geometry === null) return;
-    const viewport = { width: this.#stage.clientWidth, height: this.#stage.clientHeight };
-    if (viewport.width <= 0 || viewport.height <= 0) return;
+    const stage = { width: this.#stage.clientWidth, height: this.#stage.clientHeight };
+    if (stage.width <= 0 || stage.height <= 0) return;
+    // A screen mounted on its side: lay the canvas out in the turned frame, then turn it.
+    const { viewport, prefix } = stageTransform(geometry.rotation, stage);
     const { scale, offsetX, offsetY } = canvasToViewport(geometry.canvas, viewport);
     const rect = effectiveContentRect(geometry.canvas, geometry.contentRect);
     const px = (value: number): string => `${Math.round(value * 1000) / 1000}px`;
     const canvasStyle = this.#canvasEl.style;
-    canvasStyle.left = px(offsetX);
-    canvasStyle.top = px(offsetY);
+    if (geometry.rotation === 0) {
+      canvasStyle.left = px(offsetX);
+      canvasStyle.top = px(offsetY);
+      canvasStyle.transform = '';
+    } else {
+      canvasStyle.left = '0px';
+      canvasStyle.top = '0px';
+      canvasStyle.transform = `${prefix} translate(${px(offsetX)},${px(offsetY)})`;
+    }
     canvasStyle.width = px(geometry.canvas.width * scale);
     canvasStyle.height = px(geometry.canvas.height * scale);
     const contentStyle = this.#contentEl.style;
@@ -92,13 +117,10 @@ export class DomPresenter implements Presenter {
     this.#canvasEl.dataset.canvas = `${geometry.canvas.width}x${geometry.canvas.height}`;
   }
 
-  async show(
-    asset: ManifestAssetV1,
-    manifest: ManifestV1,
-    signal: AbortSignal,
-  ): Promise<ShownItem> {
+  async show(asset: ManifestAssetV1, manifest: Manifest, signal: AbortSignal): Promise<ShownItem> {
+    this.#dropLeaving();
     this.#pendingSha = asset.sha256;
-    let layer: (Layer & { reveal(): void }) | null = null;
+    let layer: (Layer & { reveal(fade: boolean): void }) | null = null;
     try {
       const blob = await this.#getBlob(asset.sha256);
       throwIfAborted(signal);
@@ -117,14 +139,31 @@ export class DomPresenter implements Presenter {
       throwIfAborted(signal);
 
       // Swap: geometry first (it only changes with a new publication), then reveal, then release.
-      this.#geometry = { canvas: manifest.canvas, contentRect: manifest.contentRect };
+      const facts = manifestV2Facts(manifest);
+      this.#geometry = {
+        canvas: manifest.canvas,
+        contentRect: manifest.contentRect,
+        rotation: facts.rotation,
+      };
       this.#layout();
       this.#canvasEl.hidden = false;
-      layer.reveal();
       const previous = this.#current;
+      // Only image to image fades; the first item and anything with video cut.
+      const fade =
+        facts.transition === 'fade' && asset.kind === 'image' && previous?.kind === 'image';
+      layer.reveal(fade);
       this.#current = layer;
       layer = null;
-      previous?.dispose();
+      if (fade && previous !== null) {
+        previous.holder.removeAttribute('data-testid');
+        previous.holder.classList.add('fade-out');
+        this.#leaving = previous;
+        this.#leavingTimer = setTimeout(() => {
+          this.#dropLeaving();
+        }, FADE_MS);
+      } else {
+        previous?.dispose();
+      }
       return { finished: built.finished };
     } catch (err) {
       layer?.dispose();
@@ -135,16 +174,23 @@ export class DomPresenter implements Presenter {
   }
 
   clear(): void {
+    this.#dropLeaving();
     this.#current?.dispose();
     this.#current = null;
     this.#canvasEl.hidden = true;
+  }
+
+  #dropLeaving(): void {
+    clearTimeout(this.#leavingTimer);
+    this.#leaving?.dispose();
+    this.#leaving = null;
   }
 
   #mount(
     media: HTMLElement,
     asset: ManifestAssetV1,
     onDispose: () => void,
-  ): Layer & { reveal(): void } {
+  ): Layer & { reveal(fade: boolean): void } {
     media.classList.add(asset.fit === 'cover' ? 'fit-cover' : 'fit-contain');
     const holder = el('div', { className: 'layer pending' }, [media]);
     holder.dataset.assetId = asset.assetId;
@@ -154,8 +200,12 @@ export class DomPresenter implements Presenter {
     let disposed = false;
     return {
       sha256: asset.sha256,
-      reveal: () => {
+      kind: asset.kind,
+      holder,
+      // Not at mount: the layer stays hidden until decoded, and the fade starts when it shows.
+      reveal: (fade) => {
         holder.classList.remove('pending');
+        if (fade) holder.classList.add('fade-in');
         holder.setAttribute('data-testid', 'active-layer');
       },
       dispose: () => {
@@ -170,7 +220,7 @@ export class DomPresenter implements Presenter {
   #image(
     asset: ManifestAssetV1,
     blob: Blob,
-  ): { layer: Layer & { reveal(): void }; ready: Promise<void>; finished: null } {
+  ): { layer: Layer & { reveal(fade: boolean): void }; ready: Promise<void>; finished: null } {
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.alt = '';
@@ -197,7 +247,11 @@ export class DomPresenter implements Presenter {
   #video(
     asset: ManifestAssetV1,
     blob: Blob,
-  ): { layer: Layer & { reveal(): void }; ready: Promise<void>; finished: Promise<void> } {
+  ): {
+    layer: Layer & { reveal(fade: boolean): void };
+    ready: Promise<void>;
+    finished: Promise<void>;
+  } {
     const url = URL.createObjectURL(blob);
     const video = document.createElement('video');
     // Muted, inline, no controls: the conditions under which browsers allow unattended autoplay.

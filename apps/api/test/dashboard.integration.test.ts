@@ -100,6 +100,7 @@ describe('dashboard numbers, status of every display, audit filters', () => {
           updating: 0,
           error: 0,
           in_sync: 0,
+          standing_by: 0,
         },
       },
       media: {
@@ -164,8 +165,11 @@ describe('dashboard numbers, status of every display, audit filters', () => {
     const failed = await createDisplay(operator, org, 'Error');
     await assignPlaylist(operator, failed.id, second);
     const failedPlayer = await pairPlayer(t, operator, failed.id);
+    const standing = await createDisplay(operator, org, 'Standing by');
+    await assignPlaylist(operator, standing.id, loop);
+    const standingPlayer = await pairPlayer(t, operator, standing.id);
 
-    const pushedTo = [awaiting.id, playing.id, updating.id, failed.id];
+    const pushedTo = [awaiting.id, playing.id, updating.id, failed.id, standing.id];
     const results = (
       (await (await push(operator, pushedTo)).json()) as {
         results: { displayId: string; publicationId: string }[];
@@ -184,6 +188,14 @@ describe('dashboard numbers, status of every display, audit filters', () => {
       ).status,
     ).toBe(200);
     expect((await heartbeat(updatingPlayer, updating.id, 1)).status).toBe(200);
+    // Holds the publication and shows nothing: nothing in it is due now.
+    expect(
+      (
+        await heartbeat(standingPlayer, standing.id, 1, {
+          downloadedPublicationId: publicationOf(standing.id),
+        })
+      ).status,
+    ).toBe(200);
     expect(
       (
         await heartbeat(failedPlayer, failed.id, 1, {
@@ -208,8 +220,8 @@ describe('dashboard numbers, status of every display, audit filters', () => {
 
     const numbers = await overview(operator);
     expect(numbers.displays).toEqual({
-      total: 6,
-      paired: 5,
+      total: 7,
+      paired: 6,
       bySummary: {
         unpaired: 1,
         nothing_published: 1,
@@ -218,6 +230,7 @@ describe('dashboard numbers, status of every display, audit filters', () => {
         updating: 1,
         error: 1,
         in_sync: 1,
+        standing_by: 1,
       },
     });
     const library = MediaListResponseSchema.parse(
@@ -255,10 +268,11 @@ describe('dashboard numbers, status of every display, audit filters', () => {
         unpaired: 1,
         nothing_published: 1,
         awaiting_player: 1,
-        stale: 3,
+        stale: 4,
         updating: 0,
         error: 0,
         in_sync: 0,
+        standing_by: 0,
       });
     } finally {
       t.advanceClock(-(t.config.limits.heartbeatStaleAfterSeconds + 1) * 1000);

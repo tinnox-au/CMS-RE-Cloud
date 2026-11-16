@@ -1,14 +1,16 @@
 import {
   MANIFEST_SCHEMA_VERSION,
-  ManifestV1Schema,
+  MANIFEST_SCHEMA_VERSION_V2,
+  ManifestSchema,
   type Limits,
-  type ManifestV1,
+  type Manifest,
 } from '@tinnox/contracts';
 import { buildPublicationDraft } from './playlist.ts';
 import type {
   DisplayTarget,
   DraftItem,
   MediaRecord,
+  PlaybackOptions,
   PublicationDraft,
   PublicationValidator,
   PublishIssue,
@@ -20,12 +22,25 @@ export interface ManifestIdentity {
   readonly createdAt: Date;
 }
 
+/** True when the draft uses a playback option or time rule that only manifest v2 carries. */
+export function needsV2(draft: PublicationDraft): boolean {
+  return (
+    draft.transition !== 'cut' ||
+    draft.shuffle ||
+    draft.rotation !== 0 ||
+    draft.workingHours !== null ||
+    draft.items.some((item) => item.availableFrom !== null || item.availableUntil !== null)
+  );
+}
+
 /**
- * Turns a validated draft into the immutable manifest document. The result is
- * checked against the manifest schema; a failure here is a programming error.
+ * Turns a validated draft into the immutable manifest document: version 1 when
+ * the draft needs nothing more, so unchanged screens keep the same kind of
+ * document. The result is checked against its schema; a failure here is a
+ * programming error.
  */
-export function buildManifest(draft: PublicationDraft, identity: ManifestIdentity): ManifestV1 {
-  const candidate = {
+export function buildManifest(draft: PublicationDraft, identity: ManifestIdentity): Manifest {
+  const v1 = {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
     publicationId: identity.publicationId,
     displayId: draft.displayId,
@@ -45,7 +60,28 @@ export function buildManifest(draft: PublicationDraft, identity: ManifestIdentit
       height: item.height,
     })),
   };
-  const parsed = ManifestV1Schema.safeParse(candidate);
+  // shortcut: no per-player version negotiation; a v1 player keeps old content when v2 is needed. Add a schemaVersion signal on GET /player/manifest when a non-browser route ships.
+  let candidate: unknown = v1;
+  if (needsV2(draft)) {
+    // shortcut: site.timezone is seed-only and length-checked; an invalid zone throws here. Validate at site write when sites become editable.
+    new Intl.DateTimeFormat('en', { timeZone: draft.timeZone });
+    candidate = {
+      ...v1,
+      schemaVersion: MANIFEST_SCHEMA_VERSION_V2,
+      timeZone: draft.timeZone,
+      transition: draft.transition,
+      shuffle: draft.shuffle,
+      rotation: draft.rotation,
+      workingHours: draft.workingHours,
+      assets: v1.assets.map((asset, index) => ({
+        ...asset,
+        availableFrom: draft.items[index]?.availableFrom ?? null,
+        availableUntil: draft.items[index]?.availableUntil ?? null,
+      })),
+    };
+  }
+  // The discriminated union checks the candidate against the schema of its version.
+  const parsed = ManifestSchema.safeParse(candidate);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
     throw new Error(
@@ -60,6 +96,8 @@ export interface PlanPublicationInput {
   readonly items: readonly DraftItem[];
   readonly mediaById: ReadonlyMap<string, MediaRecord>;
   readonly limits: Limits;
+  /** The playlist's playback options. */
+  readonly playback: PlaybackOptions;
   /** The delivery route of the target display (or any object with the same two methods). */
   readonly route: PublicationValidator;
 }
@@ -75,7 +113,13 @@ export type PlanPublicationResult =
  * On success the caller assigns an id and calls `buildManifest`.
  */
 export function planPublication(input: PlanPublicationInput): PlanPublicationResult {
-  const built = buildPublicationDraft(input.display, input.items, input.mediaById, input.limits);
+  const built = buildPublicationDraft(
+    input.display,
+    input.items,
+    input.mediaById,
+    input.limits,
+    input.playback,
+  );
   if (!built.ok) return built;
   const issues = input.route.validate(built.draft);
   if (issues.length > 0) return { ok: false, issues };
@@ -83,12 +127,12 @@ export function planPublication(input: PlanPublicationInput): PlanPublicationRes
 }
 
 /** Distinct asset ids of a manifest, in first-use order. */
-export function manifestAssetIds(manifest: ManifestV1): string[] {
+export function manifestAssetIds(manifest: Manifest): string[] {
   return [...new Set(manifest.assets.map((a) => a.assetId))];
 }
 
 /** Total bytes a player must store for a manifest (each distinct asset once). */
-export function manifestStorageBytes(manifest: ManifestV1): number {
+export function manifestStorageBytes(manifest: Manifest): number {
   const seen = new Set<string>();
   let total = 0;
   for (const asset of manifest.assets) {

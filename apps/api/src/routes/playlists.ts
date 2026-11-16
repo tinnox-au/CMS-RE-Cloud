@@ -11,7 +11,7 @@
  */
 import {
   IdParamSchema,
-  ManifestV1Schema,
+  ManifestSchema,
   MEDIA_KINDS,
   PLAYLIST_PREVIEW_COUNT,
   PlaylistCreateSchema,
@@ -25,6 +25,7 @@ import {
   type PlaylistDuplicateResponse,
   type PlaylistListResponse,
   type PublishResponse,
+  type Transition,
 } from '@tinnox/contracts';
 import { auditScoped, STAGE_A_CONSTRAINTS, violatedConstraint, withOrg, type Tx } from '@tinnox/db';
 import { validatePlaylist } from '@tinnox/domain';
@@ -75,8 +76,8 @@ interface ItemRow {
 }
 
 async function loadPlaylistDto(tx: Tx, id: string): Promise<PlaylistDto | null> {
-  const playlist = await tx.query<PlaylistRow>(
-    `SELECT id, name, description, created_at, updated_at FROM playlist
+  const playlist = await tx.query<PlaylistRow & { transition: Transition; shuffle: boolean }>(
+    `SELECT id, name, description, transition, shuffle, created_at, updated_at FROM playlist
      WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL`,
     [id],
   );
@@ -103,13 +104,15 @@ async function loadPlaylistDto(tx: Tx, id: string): Promise<PlaylistDto | null> 
       fit: item.fit,
       media: toMediaDto(item),
     })),
+    transition: row.transition,
+    shuffle: row.shuffle,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
 }
 
 function toPublishResponse(row: PublicationRow, replayed: boolean): PublishResponse {
-  const manifest = ManifestV1Schema.safeParse(row.manifest);
+  const manifest = ManifestSchema.safeParse(row.manifest);
   if (!manifest.success) throw new Error('stored manifest failed schema validation');
   return {
     publicationId: row.id,
@@ -221,7 +224,8 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
   });
 
   // Replaces the name and the whole ordered item list in one transaction. The
-  // description is replaced only when the request carries one (null clears it).
+  // description, transition and shuffle are replaced only when the request
+  // carries them (a null description clears it).
   app.put(ROUTES.playlistPattern, async (request): Promise<PlaylistDto> => {
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
@@ -273,9 +277,17 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
         // Always touches the row, so updated_at reflects item changes too.
         await tx.query(
           `UPDATE playlist
-           SET name = $2, description = CASE WHEN $3::boolean THEN $4::text ELSE description END
+           SET name = $2, description = CASE WHEN $3::boolean THEN $4::text ELSE description END,
+               transition = COALESCE($5::text, transition), shuffle = COALESCE($6::boolean, shuffle)
            WHERE id = $1 AND org_id = app_org_id()`,
-          [id, input.name, input.description !== undefined, input.description ?? null],
+          [
+            id,
+            input.name,
+            input.description !== undefined,
+            input.description ?? null,
+            input.transition ?? null,
+            input.shuffle ?? null,
+          ],
         );
         await auditScoped(tx, {
           actorType: 'operator',
@@ -284,7 +296,12 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
           objectType: 'playlist',
           objectId: id,
           result: 'success',
-          detail: { itemCount: input.items.length },
+          // An option left out is undefined and so absent from the stored JSON.
+          detail: {
+            itemCount: input.items.length,
+            transition: input.transition,
+            shuffle: input.shuffle,
+          },
         });
         const dto = await loadPlaylistDto(tx, id);
         if (dto === null) throw new Error('updated playlist is not visible');
@@ -303,7 +320,7 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
   });
 
   /**
-   * Copies a playlist: its description and every item, under the name "Copy of X".
+   * Copies a playlist: its description, playback options and every item, under the name "Copy of X".
    * The copy is assigned to no display.
    */
   app.post(
@@ -313,17 +330,28 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
       const { id } = parseInput(IdParamSchema, request.params, 'address');
       const dto = await withOrg(pool, session.orgId, async (tx) => {
         // Held until commit, so the items copied below are the items of one moment.
-        const source = await tx.query<{ name: string; description: string | null }>(
-          `SELECT name, description FROM playlist
+        const source = await tx.query<{
+          name: string;
+          description: string | null;
+          transition: Transition;
+          shuffle: boolean;
+        }>(
+          `SELECT name, description, transition, shuffle FROM playlist
            WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL FOR SHARE`,
           [id],
         );
         const original = source.rows[0];
         if (original === undefined) throw notFound('The playlist');
         const inserted = await tx.query<{ id: string }>(
-          `INSERT INTO playlist (org_id, name, description) VALUES (app_org_id(), $1, $2)
+          `INSERT INTO playlist (org_id, name, description, transition, shuffle)
+           VALUES (app_org_id(), $1, $2, $3, $4)
            RETURNING id`,
-          [duplicatePlaylistName(original.name), original.description],
+          [
+            duplicatePlaylistName(original.name),
+            original.description,
+            original.transition,
+            original.shuffle,
+          ],
         );
         const copyId = inserted.rows[0]?.id;
         if (copyId === undefined) throw new Error('playlist insert returned no row');

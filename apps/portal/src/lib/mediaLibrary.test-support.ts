@@ -20,6 +20,8 @@ export function media(
     originalName: name,
     description: null,
     defaultDurationMs: null,
+    availableFrom: null,
+    availableUntil: null,
     folderId: null,
     tagIds: [],
     usageCount: 0,

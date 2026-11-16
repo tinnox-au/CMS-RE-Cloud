@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createDisplay,
   createOrg,
+  pairPlayer,
   pngBytes,
   publishImages,
   readyImage,
@@ -98,6 +99,49 @@ describe('publishing', () => {
     expect(late.status).toBe(200);
     expect(lateBody.publicationId).toBe(bodies[0]?.publicationId);
     expect(lateBody.manifest.assets).toHaveLength(2);
+  });
+
+  it('writes manifest v1 at the default options and v2 with fade, which the player is served', async () => {
+    const display = await createDisplay(alice, orgA);
+    const image = await readyImage(t, alice);
+    const playlistId = await playlistWith(alice, [image.id]);
+    const publish = async (): Promise<Record<string, unknown>> => {
+      const response = await alice.fetch(`/api/playlists/${playlistId}/publish`, {
+        method: 'POST',
+        json: { displayId: display.id },
+        headers: { 'idempotency-key': randomUUID() },
+      });
+      expect(response.status).toBe(201);
+      return ((await response.json()) as { manifest: Record<string, unknown> }).manifest;
+    };
+
+    const v1 = await publish();
+    expect(v1.schemaVersion).toBe(1);
+    expect(v1).not.toHaveProperty('transition');
+
+    const put = await alice.fetch(`/api/playlists/${playlistId}`, {
+      method: 'PUT',
+      json: {
+        name: 'P',
+        transition: 'fade',
+        items: [{ mediaId: image.id, durationMs: 4000, fit: null }],
+      },
+    });
+    expect(put.status).toBe(200);
+    const v2 = await publish();
+    expect(v2).toMatchObject({
+      schemaVersion: 2,
+      transition: 'fade',
+      shuffle: false,
+      rotation: 0,
+      workingHours: null,
+      timeZone: expect.any(String) as string,
+    });
+
+    const player = await pairPlayer(t, alice, display.id);
+    const served = await fetch(`${t.url}/player/manifest`, { headers: player.headers });
+    expect(served.status).toBe(200);
+    expect(((await served.json()) as { manifest: unknown }).manifest).toEqual(v2);
   });
 
   it('keeps a published snapshot unchanged when the playlist and the display are edited', async () => {

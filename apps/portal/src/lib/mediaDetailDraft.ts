@@ -1,5 +1,6 @@
 import {
   ABSOLUTE,
+  LocalDateTimeSchema,
   MediaPatchSchema,
   PlaylistReplaceSchema,
   type ApiErrorDetail,
@@ -29,6 +30,9 @@ export interface MediaDetailDraft {
   /** Null is the root of the library. */
   readonly folderId: string | null;
   readonly tagIds: readonly string[];
+  /** The availability window as `datetime-local` gives it, 'YYYY-MM-DDTHH:mm'; empty is no limit. */
+  readonly availableFrom: string;
+  readonly availableUntil: string;
 }
 
 /** The fields of the form, named as `MediaPatchSchema` names them. */
@@ -36,6 +40,8 @@ export const MEDIA_DETAIL_FIELDS = [
   'name',
   'description',
   'defaultDurationMs',
+  'availableFrom',
+  'availableUntil',
   'folderId',
   'tagIds',
 ] as const;
@@ -46,6 +52,8 @@ export const MEDIA_DETAIL_FIELD_LABELS: { readonly [K in MediaDetailField]: stri
   name: 'Name',
   description: 'Description',
   defaultDurationMs: 'Default duration',
+  availableFrom: 'Available from',
+  availableUntil: 'Available until',
   folderId: 'Folder',
   tagIds: 'Tags',
 };
@@ -73,8 +81,30 @@ export function draftFromMedia(media: MediaDto): MediaDetailDraft {
     durationText: storedDurationText(media),
     folderId: media.folderId,
     tagIds: media.tagIds,
+    availableFrom: media.availableFrom ?? '',
+    availableUntil: media.availableUntil ?? '',
   };
 }
+
+/**
+ * Stands in for a `datetime-local` that is only partly filled. Such a field reports '' like
+ * an empty one; without this value a half-typed date would be saved as "no limit".
+ */
+export const INCOMPLETE_DATE_TIME = 'incomplete';
+
+function windowValue(text: string): string | null {
+  return text === '' ? null : text;
+}
+
+function windowChanged(draft: MediaDetailDraft, media: MediaDto): boolean {
+  return (
+    windowValue(draft.availableFrom) !== media.availableFrom ||
+    windowValue(draft.availableUntil) !== media.availableUntil
+  );
+}
+
+/** The message when the window ends before it starts. */
+export const WINDOW_ORDER_MESSAGE = 'Must be after Available from.';
 
 type Change<T> = { readonly changed: false } | { readonly changed: true; readonly value: T };
 
@@ -148,6 +178,8 @@ export function changedFields(
   if (nameChange(draft, media).changed) changed.push('name');
   if (descriptionChange(draft, media).changed) changed.push('description');
   if (durationChange(draft, media, limits).changed) changed.push('defaultDurationMs');
+  if (windowValue(draft.availableFrom) !== media.availableFrom) changed.push('availableFrom');
+  if (windowValue(draft.availableUntil) !== media.availableUntil) changed.push('availableUntil');
   if (draft.folderId !== media.folderId) changed.push('folderId');
   if (tagsChange(draft, media).changed) changed.push('tagIds');
   return changed;
@@ -200,6 +232,10 @@ function schemaMessage(
     }
     if (issue.code === 'invalid_format') return BAD_CHARACTERS[field];
   }
+  // Both sides are always sent and their order is checked first, so this is the format.
+  if (field === 'availableFrom' || field === 'availableUntil') {
+    return 'Enter a full date and time, year 1000 or later.';
+  }
   if (field === 'tagIds' && issue.code === 'too_big') {
     return `One item carries at most ${ABSOLUTE.maxTagsPerItem} tags. Remove some.`;
   }
@@ -231,6 +267,24 @@ export function validateMediaDraft(
     else patch['defaultDurationMs'] = duration.value;
   }
 
+  // The API takes the two sides of the window together only.
+  if (windowChanged(draft, media)) {
+    const from = windowValue(draft.availableFrom);
+    const until = windowValue(draft.availableUntil);
+    patch['availableFrom'] = from;
+    patch['availableUntil'] = until;
+    // An incomplete side gets the format message from the schema, not the order message.
+    if (
+      from !== null &&
+      until !== null &&
+      from !== INCOMPLETE_DATE_TIME &&
+      until !== INCOMPLETE_DATE_TIME &&
+      from >= until
+    ) {
+      errors.availableUntil = WINDOW_ORDER_MESSAGE;
+    }
+  }
+
   if (draft.folderId !== media.folderId) patch['folderId'] = draft.folderId;
 
   const tags = tagsChange(draft, media);
@@ -244,6 +298,14 @@ export function validateMediaDraft(
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
         const field = issue.path[0];
+        // The order was checked above; the schema's order issue on a well-formed side only
+        // repeats that the other side is malformed, and that side carries the message.
+        if (
+          (field === 'availableFrom' || field === 'availableUntil') &&
+          LocalDateTimeSchema.safeParse(patch[field]).success
+        ) {
+          continue;
+        }
         if (isField(field)) errors[field] ??= schemaMessage(field, issue, patch);
         else errors.form ??= issue.message;
       }

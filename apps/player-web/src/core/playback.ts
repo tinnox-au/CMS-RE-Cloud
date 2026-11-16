@@ -1,37 +1,92 @@
-import type { ManifestAssetV1, ManifestV1, PlayerError } from '@tinnox/contracts';
+import {
+  manifestV2Facts,
+  type ManifestAssetV1,
+  type Manifest,
+  type PlayerError,
+} from '@tinnox/contracts';
 import { AbortedError, PlayerFault, toPlayerError } from './errors.ts';
+import { playableIndexes } from './time-rules.ts';
 import type { Clock, Sleep } from './types.ts';
 
 /** Where the renderer is in the active publication. */
 export interface PlaybackPosition {
-  readonly manifest: ManifestV1;
+  readonly manifest: Manifest;
+  /** Index into `manifest.assets`; always `order[cursor]`. */
   readonly index: number;
+  /** This round's play order (manifest indexes): as listed, or a permutation when shuffling. */
+  readonly order: readonly number[];
+  readonly cursor: number;
 }
 
 export interface PlaybackStep extends PlaybackPosition {
   /** True when this step starts a publication other than the one that was playing. */
   readonly switched: boolean;
+  /** How many items may be shown now (working hours and windows). */
+  readonly playable: number;
+}
+
+function swap(order: number[], i: number, j: number): void {
+  const a = order[i];
+  const b = order[j];
+  if (a === undefined || b === undefined) return;
+  order[i] = b;
+  order[j] = a;
+}
+
+function shuffled(length: number, random: () => number): number[] {
+  const order = Array.from({ length }, (_, index) => index);
+  for (let i = length - 1; i > 0; i -= 1) swap(order, i, Math.floor(random() * (i + 1)));
+  return order;
 }
 
 /**
  * Decides what to show at an item boundary.
  * - no active publication: nothing (null);
- * - a different active publication than the one playing: its first item;
- * - otherwise the next item, wrapping to the first (a one-item playlist repeats).
+ * - nothing in it may be shown now (working hours, windows): 'not_now';
+ * - a different active publication than the one playing: its first playable item;
+ * - otherwise the next playable item, wrapping into a new round (a one-item playlist
+ *   repeats). A shuffled playlist gets a new order each round that never starts with
+ *   the item just shown, unless it is the only playable one.
  */
 export function nextStep(
   current: PlaybackPosition | null,
-  active: ManifestV1 | null,
-): PlaybackStep | null {
+  active: Manifest | null,
+  { now, random }: { now: number; random: () => number },
+): PlaybackStep | 'not_now' | null {
   if (active === null || active.assets.length === 0) return null;
-  if (current === null || current.manifest.publicationId !== active.publicationId) {
-    return { manifest: active, index: 0, switched: true };
+  const allowed = new Set(playableIndexes(active, now));
+  if (allowed.size === 0) return 'not_now';
+  const { shuffle } = manifestV2Facts(active);
+  const length = active.assets.length;
+  const switched = current === null || current.manifest.publicationId !== active.publicationId;
+  let order: readonly number[];
+  let cursor: number;
+  if (switched) {
+    order = shuffle ? shuffled(length, random) : active.assets.map((_, index) => index);
+    cursor = 0;
+  } else {
+    order = current.order;
+    cursor = current.cursor + 1;
   }
-  return {
-    manifest: current.manifest,
-    index: (current.index + 1) % current.manifest.assets.length,
-    switched: false,
-  };
+  // Ends within two passes: `order` holds every index and at least one is allowed.
+  for (;;) {
+    if (cursor >= order.length) {
+      cursor = 0;
+      if (shuffle) {
+        const next = shuffled(length, random);
+        const [first, second] = next.flatMap((index, slot) => (allowed.has(index) ? [slot] : []));
+        if (first !== undefined && second !== undefined && next[first] === current?.index) {
+          swap(next, first, second);
+        }
+        order = next;
+      }
+    }
+    const index = order[cursor];
+    if (index !== undefined && allowed.has(index)) {
+      return { manifest: active, index, order, cursor, switched, playable: allowed.size };
+    }
+    cursor += 1;
+  }
 }
 
 /**
@@ -62,7 +117,7 @@ export interface Presenter {
    * Prepares the asset off screen, then swaps it in. Resolves once it is visible.
    * Rejects with a PlayerFault; the previous item stays visible in that case.
    */
-  show(asset: ManifestAssetV1, manifest: ManifestV1, signal: AbortSignal): Promise<ShownItem>;
+  show(asset: ManifestAssetV1, manifest: Manifest, signal: AbortSignal): Promise<ShownItem>;
   /** Removes all content from the screen. */
   clear(): void;
 }
@@ -73,7 +128,8 @@ export type PlaybackEvent =
   | { readonly type: 'item_failed'; readonly error: PlayerError }
   /** A whole round of the playlist failed; the screen was cleared. */
   | { readonly type: 'all_failed'; readonly publicationId: string }
-  | { readonly type: 'no_content' };
+  /** Nothing is active, or (`not_now`) nothing in it is due to show now. The screen was cleared. */
+  | { readonly type: 'no_content'; readonly reason?: 'not_now' };
 
 export interface PlaybackTimings {
   /** How often an idle or fully failed loop looks again when nobody wakes it. */
@@ -91,10 +147,12 @@ export const DEFAULT_PLAYBACK_TIMINGS: PlaybackTimings = {
 
 export interface PlaybackDeps {
   /** The active version from durable state. Read at every item boundary. */
-  loadActive(): Promise<ManifestV1 | null>;
+  loadActive(): Promise<Manifest | null>;
   readonly presenter: Presenter;
   readonly clock: Clock;
   readonly sleep: Sleep;
+  /** Shuffle source; Math.random in the browser, seeded in tests. */
+  readonly random: () => number;
   readonly signal: AbortSignal;
   onEvent(event: PlaybackEvent): void;
 }
@@ -103,6 +161,7 @@ export interface PlaybackDeps {
  * The render loop. It holds no growing state: one position, one failure counter.
  * A new active version is picked up only between items, never in the middle of one.
  */
+// shortcut: rules are checked at item boundaries; an item may overrun an edge by its own length. Wake the image hold at the next edge if long images are used with hours.
 export class PlaybackLoop {
   readonly #deps: PlaybackDeps;
   readonly #timings: PlaybackTimings;
@@ -135,10 +194,10 @@ export class PlaybackLoop {
   async run(): Promise<void> {
     const { signal, presenter } = this.#deps;
     let consecutiveFailures = 0;
-    let lastKnown: ManifestV1 | null = null;
+    let lastKnown: Manifest | null = null;
 
     while (!signal.aborted) {
-      let active: ManifestV1 | null;
+      let active: Manifest | null;
       try {
         active = await this.#deps.loadActive();
         lastKnown = active;
@@ -151,7 +210,10 @@ export class PlaybackLoop {
         });
       }
 
-      const step = nextStep(this.#position, active);
+      const step = nextStep(this.#position, active, {
+        now: this.#deps.clock.now(),
+        random: this.#deps.random,
+      });
       if (step === null) {
         presenter.clear();
         this.#position = null;
@@ -160,11 +222,24 @@ export class PlaybackLoop {
         if (!(await this.#idle(this.#timings.idleRecheckMs))) return;
         continue;
       }
+      if (step === 'not_now') {
+        // Keep the position, so coming back into hours is not a switch.
+        presenter.clear();
+        consecutiveFailures = 0;
+        this.#deps.onEvent({ type: 'no_content', reason: 'not_now' });
+        if (!(await this.#idle(this.#timings.idleRecheckMs))) return;
+        continue;
+      }
       if (step.switched) {
         consecutiveFailures = 0;
         this.#deps.onEvent({ type: 'version_adopted', publicationId: step.manifest.publicationId });
       }
-      this.#position = { manifest: step.manifest, index: step.index };
+      this.#position = {
+        manifest: step.manifest,
+        index: step.index,
+        order: step.order,
+        cursor: step.cursor,
+      };
       const asset = step.manifest.assets[step.index];
       const publicationId = step.manifest.publicationId;
 
@@ -182,7 +257,8 @@ export class PlaybackLoop {
           type: 'item_failed',
           error: this.#error(err, publicationId, asset?.assetId ?? null, 'playback_error'),
         });
-        if (consecutiveFailures >= step.manifest.assets.length) {
+        // Counted against what may be shown now, so windows cannot hide a broken publication.
+        if (consecutiveFailures >= step.playable) {
           // Nothing in this publication can be shown. Say so; do not pretend to play.
           presenter.clear();
           consecutiveFailures = 0;

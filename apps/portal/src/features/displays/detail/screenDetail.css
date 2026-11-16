@@ -217,19 +217,6 @@
   min-inline-size: 0;
 }
 
-/*
- * On a wide, tall window the summary stays in view beside the details and content cards.
- * The editor header (back link and title) measures 97 px, 9 px more than `--header-h`
- * (88 px); the card sticks where it starts, under that header and the content column's
- * 12 px top padding, so it neither jumps nor slides under the header.
- */
-@media (min-width: 1100px) and (min-height: 860px) {
-  .tx-screen-detail__aside {
-    position: sticky;
-    inset-block-start: calc(var(--header-h) + 9px + var(--s-3));
-  }
-}
-
 /* The label of a sub-section inside a card: the kit's caption title, 13 px at 600. */
 .tx-screen-detail-caption {
   margin: 0;
@@ -662,11 +649,34 @@
   max-inline-size: 560px;
 }
 
-.tx-screen-detail-tags {
+.tx-screen-detail-tags,
+.tx-screen-detail-hours {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--s-5);
   max-inline-size: 560px;
+}
+
+/* One day of the Working hours tab: the day, then its two times; they wrap on a phone. */
+.tx-screen-detail-hours__day {
+  display: flex;
+  flex-wrap: wrap;
+  flex-basis: 100%;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+}
+
+.tx-screen-detail-hours__day > .tx-check {
+  inline-size: 140px;
+}
+
+/* Start and end stay side by side: the pair wraps as one under the day name on a phone. */
+.tx-screen-detail-hours__day > .tx-screen-detail-pair {
+  flex-wrap: nowrap;
+}
+
+.tx-screen-detail-hours__day > .tx-field__error {
+  flex-basis: 100%;
 }
 
 /* ---------- Loading ---------- */

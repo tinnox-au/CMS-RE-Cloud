@@ -4,11 +4,7 @@
  * It is not exported from the package, is not registered anywhere, and does
  * not represent NovaStar, Huidu or any other real controller.
  */
-import {
-  CapabilityProfileSchema,
-  type CapabilityProfile,
-  type ManifestV1,
-} from '@tinnox/contracts';
+import { CapabilityProfileSchema, type CapabilityProfile, type Manifest } from '@tinnox/contracts';
 import { checkCapabilities, type PublicationDraft, type PublishIssue } from '@tinnox/domain';
 import type { DeliveryRoute, NormalizeStatusResult } from '../src/port.ts';
 
@@ -18,7 +14,7 @@ export interface FakePrepared {
 }
 
 export function createFakeStillImageRoute(): DeliveryRoute<FakePrepared> & {
-  readonly prepared: ManifestV1[];
+  readonly prepared: Manifest[];
 } {
   const profile: CapabilityProfile = CapabilityProfileSchema.parse({
     // The contract only knows real route ids; the fake borrows one because it is never registered.
@@ -37,14 +33,14 @@ export function createFakeStillImageRoute(): DeliveryRoute<FakePrepared> & {
     maxAssetBytes: 1_000_000,
     maxItems: 3,
   });
-  const prepared: ManifestV1[] = [];
+  const prepared: Manifest[] = [];
   return {
     id: 'browser',
     prepared,
     capabilities: () => profile,
     validate: (draft: PublicationDraft): readonly PublishIssue[] =>
       checkCapabilities(draft, profile),
-    prepare(manifest: ManifestV1): FakePrepared {
+    prepare(manifest: Manifest): FakePrepared {
       prepared.push(manifest);
       return {
         kind: 'fake-package',

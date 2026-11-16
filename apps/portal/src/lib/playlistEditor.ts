@@ -21,6 +21,7 @@ import {
   type PlaylistReplace,
   type PushPlanResponse,
   type PushPlanRow,
+  type Transition,
 } from '@tinnox/contracts';
 import { durationFieldText } from './duration.ts';
 import { countLabel, matchesSearch } from './listView.ts';
@@ -48,9 +49,11 @@ type DraftLimits = Pick<
 // ---------------------------------------------------------------------------
 // The draft
 
-/** The M0 draft plus the description, as typed. */
+/** The M0 draft plus the description, as typed, and the playback options. */
 export interface EditorDraft extends PlaylistDraft {
   readonly description: string;
+  readonly transition: Transition;
+  readonly shuffle: boolean;
 }
 
 /** Line ends as the API stores them: a text area may hand back CR LF on some platforms. */
@@ -64,7 +67,12 @@ function descriptionToSave(text: string): string | null {
 }
 
 export function editorDraftFromPlaylist(playlist: PlaylistDto): EditorDraft {
-  return { ...draftFromPlaylist(playlist), description: playlist.description ?? '' };
+  return {
+    ...draftFromPlaylist(playlist),
+    description: playlist.description ?? '',
+    transition: playlist.transition,
+    shuffle: playlist.shuffle,
+  };
 }
 
 /**
@@ -111,9 +119,17 @@ export function draftAfterSave(
   return { draft: carryItemKeys(editorDraftFromPlaylist(playlist), sentFrom), settled: true };
 }
 
-/** True when saving would change the stored playlist: name, description, order, durations or fit. */
+/**
+ * True when saving would change the stored playlist: name, description, playback options,
+ * order, durations or fit.
+ */
 export function editorIsDirty(draft: EditorDraft, saved: PlaylistDto): boolean {
-  return isDirty(draft, saved) || descriptionToSave(draft.description) !== saved.description;
+  return (
+    isDirty(draft, saved) ||
+    descriptionToSave(draft.description) !== saved.description ||
+    draft.transition !== saved.transition ||
+    draft.shuffle !== saved.shuffle
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -166,8 +182,8 @@ export function descriptionProblem(description: string): string | null {
 }
 
 /**
- * Builds the body of `PUT /api/playlists/:id` (the name, the description and the whole item
- * list), or every error to show. Item durations and the item limit are judged by the M0
+ * Builds the body of `PUT /api/playlists/:id` (the name, the description, the playback
+ * options and the whole item list), or every error to show. Item durations and the item limit are judged by the M0
  * `validateDraft`; the description is always sent, so clearing the field clears it.
  */
 export function validateEditorDraft(draft: EditorDraft, limits: DraftLimits): EditorResult {
@@ -180,7 +196,15 @@ export function validateEditorDraft(draft: EditorDraft, limits: DraftLimits): Ed
   if (name !== null || description !== null) {
     return { ok: false, errors: { ...NO_EDITOR_ERRORS, name, description } };
   }
-  return { ok: true, value: { ...base.value, description: descriptionToSave(draft.description) } };
+  return {
+    ok: true,
+    value: {
+      ...base.value,
+      description: descriptionToSave(draft.description),
+      transition: draft.transition,
+      shuffle: draft.shuffle,
+    },
+  };
 }
 
 export function hasProblems(errors: EditorErrors): boolean {
@@ -299,7 +323,7 @@ export function addMedia(
   const index =
     slot === undefined || !Number.isInteger(slot) ? end : Math.min(end, Math.max(0, slot));
   const moved = moveItem(appended, end, index - end);
-  return { ok: true, draft: { ...moved, description: draft.description }, index };
+  return { ok: true, draft: { ...draft, ...moved }, index };
 }
 
 /**
@@ -321,7 +345,7 @@ export function moveItemToSlot(draft: EditorDraft, fromIndex: number, slot: numb
   if (slotKeepsPlace(fromIndex, slot)) return draft;
   const target = indexAfterSlotMove(fromIndex, slot);
   const moved = moveItem(draft, fromIndex, target - fromIndex);
-  return moved === draft ? draft : { ...moved, description: draft.description };
+  return moved === draft ? draft : { ...draft, ...moved };
 }
 
 // ---------------------------------------------------------------------------

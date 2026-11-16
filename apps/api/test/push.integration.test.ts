@@ -9,11 +9,11 @@ import { randomUUID } from 'node:crypto';
 import {
   ABSOLUTE,
   DisplayDtoSchema,
-  ManifestV1Schema,
+  ManifestSchema,
   PushPlanResponseSchema,
   PushResponseSchema,
   type DisplayDto,
-  type ManifestV1,
+  type Manifest,
   type PushPlanResponse,
   type PushPlanRow,
   type PushResult,
@@ -93,7 +93,7 @@ describe('assign, then push', () => {
   async function publications(
     org: TestOrg,
     displayId: string,
-  ): Promise<{ id: string; playlistId: string; manifest: ManifestV1 }[]> {
+  ): Promise<{ id: string; playlistId: string; manifest: Manifest }[]> {
     return withOrg(t.pool, org.orgId, async (tx) => {
       const { rows } = await tx.query<{ id: string; playlist_id: string; manifest: unknown }>(
         'SELECT id, playlist_id, manifest FROM publication WHERE display_id = $1 ORDER BY created_at',
@@ -102,7 +102,7 @@ describe('assign, then push', () => {
       return rows.map((row) => ({
         id: row.id,
         playlistId: row.playlist_id,
-        manifest: ManifestV1Schema.parse(row.manifest),
+        manifest: ManifestSchema.parse(row.manifest),
       }));
     });
   }
@@ -259,6 +259,45 @@ describe('assign, then push', () => {
       });
       expect(tooLong.status).toBe(400);
     });
+
+    it('round-trips rotation and working hours, keeps them when absent, and clears hours with null', async () => {
+      const display = await createDisplay(alice, orgA, 'Turned');
+      expect(await getDisplay(alice, display.id)).toMatchObject({
+        rotation: 0,
+        workingHours: null,
+      });
+      const hours = [
+        { start: '09:00', end: '17:00' },
+        null,
+        null,
+        null,
+        null,
+        null,
+        { start: '10:00', end: '24:00' },
+      ];
+      const patch = (json: unknown): Promise<Response> =>
+        alice.fetch(`/api/displays/${display.id}`, { method: 'PATCH', json });
+
+      const set = await patch({ rotation: 90, workingHours: hours });
+      expect(set.status).toBe(200);
+      expect(DisplayDtoSchema.parse(await set.json())).toMatchObject({
+        rotation: 90,
+        workingHours: hours,
+      });
+      await patch({ name: 'Turned, renamed' });
+      expect(await getDisplay(alice, display.id)).toMatchObject({
+        rotation: 90,
+        workingHours: hours,
+      });
+      const cleared = await patch({ workingHours: null });
+      expect(DisplayDtoSchema.parse(await cleared.json())).toMatchObject({
+        rotation: 90,
+        workingHours: null,
+      });
+      for (const bad of [{ rotation: 45 }, { workingHours: Array<null>(7).fill(null) }]) {
+        expect((await patch(bad)).status, JSON.stringify(bad)).toBe(400);
+      }
+    });
   });
 
   describe('GET /api/push', () => {
@@ -387,6 +426,83 @@ describe('assign, then push', () => {
       // It still has the publication it was given.
       expect(unassigned.lastPushedAt).not.toBeNull();
       expect(await publications(orgA, displayId)).toHaveLength(1);
+    });
+
+    it('sees rotation, working hours, transition and a media window as changes', async () => {
+      const image = (await readyImage(t, alice)).id;
+      const { displayId, playlistId } = await assigned(alice, orgA, [image], 'Playback options');
+      await pushed(alice, [displayId]);
+      // A publication made at the default options is v1, and it matches them.
+      expect((await publications(orgA, displayId))[0]?.manifest.schemaVersion).toBe(1);
+      const state = async (): Promise<string> => (await planRow(alice, displayId)).state;
+      expect(await state()).toBe('up_to_date');
+      const hours = [{ start: '08:00', end: '18:00' }, null, null, null, null, null, null];
+
+      const changes: [string, () => Promise<Response>, () => Promise<Response>][] = [
+        [
+          'a rotation',
+          () =>
+            alice.fetch(`/api/displays/${displayId}`, { method: 'PATCH', json: { rotation: 180 } }),
+          () =>
+            alice.fetch(`/api/displays/${displayId}`, { method: 'PATCH', json: { rotation: 0 } }),
+        ],
+        [
+          'working hours',
+          () =>
+            alice.fetch(`/api/displays/${displayId}`, {
+              method: 'PATCH',
+              json: { workingHours: hours },
+            }),
+          () =>
+            alice.fetch(`/api/displays/${displayId}`, {
+              method: 'PATCH',
+              json: { workingHours: null },
+            }),
+        ],
+        [
+          'a transition',
+          () =>
+            alice.fetch(`/api/playlists/${playlistId}`, {
+              method: 'PUT',
+              json: { name: 'Loop', transition: 'fade', items: [imageItem(image)] },
+            }),
+          () =>
+            alice.fetch(`/api/playlists/${playlistId}`, {
+              method: 'PUT',
+              json: { name: 'Loop', transition: 'cut', items: [imageItem(image)] },
+            }),
+        ],
+        [
+          'a media window',
+          () =>
+            alice.fetch(`/api/media/${image}`, {
+              method: 'PATCH',
+              json: { availableFrom: '2026-12-01T09:00', availableUntil: null },
+            }),
+          () =>
+            alice.fetch(`/api/media/${image}`, {
+              method: 'PATCH',
+              json: { availableFrom: null, availableUntil: null },
+            }),
+        ],
+      ];
+      for (const [what, change, revert] of changes) {
+        expect((await change()).status, what).toBe(200);
+        expect(await state(), what).toBe('changes');
+        expect((await revert()).status, `${what}, reverted`).toBe(200);
+        expect(await state(), `${what}, reverted`).toBe('up_to_date');
+      }
+
+      // Pushed with hours, the display is up to date against its v2 publication.
+      await alice.fetch(`/api/displays/${displayId}`, {
+        method: 'PATCH',
+        json: { workingHours: hours },
+      });
+      const [result] = await pushed(alice, [displayId]);
+      expect(result?.outcome).toBe('published');
+      const stored = (await publications(orgA, displayId)).at(-1)?.manifest;
+      expect(stored).toMatchObject({ schemaVersion: 2, workingHours: hours });
+      expect(await state()).toBe('up_to_date');
     });
 
     it('assesses more displays than one batch of manifests, each against its own publication', async () => {

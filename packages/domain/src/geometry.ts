@@ -1,4 +1,4 @@
-import type { Canvas, FitMode, Rect } from '@tinnox/contracts';
+import type { Canvas, FitMode, Rect, Rotation } from '@tinnox/contracts';
 
 export interface Size {
   readonly width: number;
@@ -129,4 +129,31 @@ export function canvasToViewport(
     'contain',
   );
   return { scale: placement.scale, offsetX: placement.dest.x, offsetY: placement.dest.y };
+}
+
+/**
+ * How to turn the picture for a screen mounted on its side or upside down.
+ * `viewport` is the size to lay the canvas out in (width and height swapped for
+ * 90 and 270); `prefix` is the CSS transform, with origin 0 0, that maps that
+ * layout back onto the real `stage`.
+ */
+export function stageTransform(
+  rotation: Rotation,
+  stage: Size,
+): { viewport: Size; prefix: string } {
+  const W = stage.width;
+  const H = stage.height;
+  switch (rotation) {
+    case 0:
+      return { viewport: { width: W, height: H }, prefix: '' };
+    case 90:
+      return { viewport: { width: H, height: W }, prefix: `translate(${W}px,0) rotate(90deg)` };
+    case 180:
+      return {
+        viewport: { width: W, height: H },
+        prefix: `translate(${W}px,${H}px) rotate(180deg)`,
+      };
+    case 270:
+      return { viewport: { width: H, height: W }, prefix: `translate(0,${H}px) rotate(270deg)` };
+  }
 }

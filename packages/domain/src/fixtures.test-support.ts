@@ -1,7 +1,10 @@
 import { DEFAULT_LIMITS, type HeartbeatV1, type Limits } from '@tinnox/contracts';
-import type { DisplayTarget, MediaRecord } from './types.ts';
+import type { DisplayTarget, MediaRecord, PlaybackOptions } from './types.ts';
 
 export const limits: Limits = DEFAULT_LIMITS;
+
+/** Playlist options at their defaults, which keep a publication at manifest v1. */
+export const playback: PlaybackOptions = { transition: 'cut', shuffle: false };
 
 export const ID = {
   display: '11111111-1111-4111-8111-111111111111',
@@ -25,6 +28,9 @@ export function display(overrides: Partial<DisplayTarget> = {}): DisplayTarget {
     contentRect: null,
     defaultFit: 'contain',
     route: 'browser',
+    rotation: 0,
+    workingHours: null,
+    timeZone: 'Australia/Melbourne',
     ...overrides,
   };
 }
@@ -41,6 +47,8 @@ function media(id: string, overrides: Partial<MediaRecord>): MediaRecord {
     height: 900,
     durationMs: null,
     codec: null,
+    availableFrom: null,
+    availableUntil: null,
     ...overrides,
   };
 }

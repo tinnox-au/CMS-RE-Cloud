@@ -187,7 +187,8 @@ describe('the audit trail of the stage A routes', () => {
     );
     expect(mediaRefused.events).toEqual([]);
 
-    // Displays: the assignment is recorded with the playlist, in lower case.
+    // Displays: the assignment is recorded with the playlist, in lower case; the
+    // stage B fields are named like the others.
     const displayUpdate = await eventsOf(
       () =>
         operator.fetch(`/api/displays/${upper(display)}`, {
@@ -196,6 +197,8 @@ describe('the audit trail of the stage A routes', () => {
             description: `${TYPED} description`,
             tagIds: [displayTag],
             assignedPlaylistId: upper(playlist),
+            rotation: 90,
+            workingHours: null,
           },
         }),
       200,
@@ -205,7 +208,7 @@ describe('the audit trail of the stage A routes', () => {
         action: 'display.update',
         objectId: display,
         detail: {
-          fields: ['assignedPlaylistId', 'description', 'tagIds'],
+          fields: ['assignedPlaylistId', 'description', 'rotation', 'tagIds', 'workingHours'],
           assignedPlaylistId: playlist,
         },
       }),

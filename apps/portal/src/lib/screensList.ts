@@ -128,7 +128,7 @@ export const SCREEN_STATUS_FILTER_LABELS: { readonly [K in ScreenStatusFilter]: 
 
 /** One sentence per chip, for its tooltip: which statuses it gathers. */
 export const SCREEN_STATUS_FILTER_HINTS: { readonly [K in ScreenStatusFilter]: string } = {
-  in_sync: 'The player recently reported that it plays what was pushed.',
+  in_sync: 'The player recently reported that it plays what was pushed, or is standing by.',
   updating: 'Updating, Waiting for player or Nothing pushed.',
   attention: 'Error or Not reporting.',
   unpaired: 'No player holds a credential for the screen.',
@@ -225,8 +225,9 @@ const STATUS_RANK: { readonly [K in ScreenStatusKind]: number } = {
   updating: 2,
   waiting_for_player: 3,
   nothing_pushed: 4,
-  in_sync: 5,
-  not_paired: 6,
+  standing_by: 5,
+  in_sync: 6,
+  not_paired: 7,
 };
 
 export const SCREEN_SORT_ACCESSORS: SortAccessors<ScreenRow> = {

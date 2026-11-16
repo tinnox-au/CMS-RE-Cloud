@@ -30,6 +30,7 @@ import { MediaDetailsCard } from './MediaDetailsCard.tsx';
 import { SaveSplit } from './SaveSplit.tsx';
 import { useAddToPlaylist } from './useAddToPlaylist.tsx';
 import { useLeaveGuard } from '../../shared/useLeaveGuard.tsx';
+import { usePush } from '../../push/PushContext.tsx';
 import { useMediaDelete } from './useMediaDelete.tsx';
 import './media-detail.css';
 
@@ -55,6 +56,7 @@ export interface MediaEditorProps {
 export function MediaEditor({ media, onSaved, notice }: MediaEditorProps) {
   const { limits } = useSession();
   const toast = useToast();
+  const push = usePush();
   const navigate = useNavigate();
   const tags = useTags('media');
   const folders = useFolders();
@@ -98,7 +100,13 @@ export function MediaEditor({ media, onSaved, notice }: MediaEditorProps) {
 
   const change = (field: MediaDetailField, next: MediaDetailDraft) => {
     setDraft(next);
-    setErrors((current) => withoutError(current, field));
+    // The order message sits on Available until but is fixed from either side.
+    setErrors((current) =>
+      withoutError(
+        withoutError(current, field),
+        field === 'availableFrom' ? 'availableUntil' : field,
+      ),
+    );
   };
 
   const focusSummary = () => {
@@ -132,6 +140,8 @@ export function MediaEditor({ media, onSaved, notice }: MediaEditorProps) {
       if (stale.tags) tags.reload();
       if (stale.folders) folders.reload();
       toast.success('Changes saved');
+      // A new availability window changes what a push would send.
+      if (patch.availableFrom !== undefined) push.refresh();
       return true;
     } catch (error) {
       setSaveError(error);

@@ -122,7 +122,7 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
     const item = draft.items[index];
     const next = moveItem(draft, index, delta);
     if (item === undefined || next === draft) return;
-    change({ ...next, description: draft.description });
+    change({ ...draft, ...next });
     announce(movedAnnouncement(nameOf(item), index + delta + 1, draft.items.length));
   };
 
@@ -139,7 +139,7 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
     const index = draft.items.findIndex((item) => item.key === key);
     const item = draft.items[index];
     if (item === undefined) return;
-    change({ ...removeItem(draft, key), description: draft.description });
+    change({ ...draft, ...removeItem(draft, key) });
     announce(removedAnnouncement(nameOf(item), index + 1));
   };
 
@@ -147,7 +147,7 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
     key: string,
     itemChange: Partial<Pick<DraftItem, 'durationText' | 'fit'>>,
   ) => {
-    change({ ...updateItem(draft, key, itemChange), description: draft.description });
+    change({ ...draft, ...updateItem(draft, key, itemChange) });
   };
 
   const save = () => {
@@ -344,8 +344,8 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
         }}
       >
         <p>
-          The name, description and sequence go back to how <strong>{saved.name}</strong> was last
-          saved. This cannot be undone.
+          The name, description, playback settings and sequence go back to how{' '}
+          <strong>{saved.name}</strong> was last saved. This cannot be undone.
         </p>
       </ConfirmDialog>
 

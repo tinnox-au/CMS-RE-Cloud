@@ -57,6 +57,22 @@ async function writeResult(result: MediaJobResult): Promise<void> {
   await rename(tempPath, finalPath);
 }
 
+/** Best effort: a missing thumbnail never fails the media; the API serves the original. */
+async function writeThumbnail(jobId: string, thumbnail: Buffer): Promise<boolean> {
+  const tempPath = join(outbox, `${jobId}.thumb.tmp`);
+  try {
+    await writeFile(tempPath, thumbnail, { mode: 0o644, flag: 'w' });
+    await rename(tempPath, join(outbox, `${jobId}.thumb.jpg`));
+    return true;
+  } catch (error) {
+    log('thumbnail_write_failed', {
+      jobId,
+      error: error instanceof Error ? error.name : 'unknown',
+    });
+    return false;
+  }
+}
+
 function toResult(jobId: string, inspection: Inspection): MediaJobResult {
   if (inspection.outcome === 'accepted') {
     return {
@@ -192,6 +208,13 @@ async function processJob(jobId: string): Promise<void> {
     process.exit(3);
   }
 
+  // The thumbnail lands before the verdict, so the API finds it when it reads the verdict.
+  const thumbBytes =
+    outcome.outcome === 'accepted' &&
+    outcome.thumbnail !== null &&
+    (await writeThumbnail(jobId, outcome.thumbnail))
+      ? outcome.thumbnail.length
+      : 0;
   await writeResult(toResult(jobId, outcome));
   if (outcome.outcome === 'accepted') {
     log('job_accepted', {
@@ -203,6 +226,7 @@ async function processJob(jobId: string): Promise<void> {
       durationMs: outcome.durationMs,
       codec: outcome.codec,
       hasAudio: outcome.hasAudio,
+      thumbBytes,
       ms: Date.now() - started,
     });
   } else {

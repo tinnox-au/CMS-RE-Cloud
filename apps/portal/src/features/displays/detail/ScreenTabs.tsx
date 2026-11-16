@@ -1,4 +1,4 @@
-import type { DeliveryStatusView, DisplayDto } from '@tinnox/contracts';
+import type { DeliveryStatusView, DisplayDto, Rotation, SiteDto } from '@tinnox/contracts';
 import type { LoadState } from '../../../hooks/useLoad.ts';
 import type { DisplayFormValues } from '../../../lib/displayForm.ts';
 import {
@@ -6,6 +6,7 @@ import {
   SCREEN_DETAIL_TABS,
   type ScreenDetailOpenTabId,
   type ScreenDetailTabId,
+  type WorkingHoursDraft,
 } from '../../../lib/screenDetail.ts';
 import { Card, TabPanel, Tabs, type TabItem } from '../../../ui/index.ts';
 import type { TagsResource } from '../../shared/index.ts';
@@ -14,6 +15,7 @@ import { OverviewTab } from './OverviewTab.tsx';
 import { PairingTab } from './PairingTab.tsx';
 import type { RevokeState } from './types.ts';
 import { TagsTab } from './TagsTab.tsx';
+import { WorkingHoursTab } from './WorkingHoursTab.tsx';
 
 const TAB_ITEMS: readonly TabItem<ScreenDetailTabId>[] = SCREEN_DETAIL_TABS.map((tab) =>
   tab.plannedStage === null
@@ -31,13 +33,18 @@ export interface ScreenTabsProps {
   readonly tab: ScreenDetailOpenTabId;
   readonly onTab: (tab: ScreenDetailOpenTabId) => void;
   readonly display: DisplayDto;
+  readonly site: SiteDto | null;
   readonly status: LoadState<DeliveryStatusView>;
   readonly onReloadStatus: () => void;
   readonly canvasDraft: DisplayFormValues | null;
   readonly onCanvasDraft: (draft: DisplayFormValues | null) => void;
+  readonly rotationDraft: Rotation | null;
+  readonly onRotationDraft: (rotation: Rotation | null) => void;
   readonly tags: TagsResource;
   readonly tagsDraft: readonly string[] | null;
   readonly onTagsDraft: (draft: readonly string[] | null) => void;
+  readonly workingHoursDraft: WorkingHoursDraft | null;
+  readonly onWorkingHoursDraft: (draft: WorkingHoursDraft | null) => void;
   readonly onSaved: (display: DisplayDto) => void;
   readonly onPaired: () => void;
   readonly onRevoke: () => void;
@@ -89,6 +96,8 @@ function TabContent(props: ScreenTabsProps) {
           display={props.display}
           draft={props.canvasDraft}
           onDraft={props.onCanvasDraft}
+          rotationDraft={props.rotationDraft}
+          onRotationDraft={props.onRotationDraft}
           onSaved={props.onSaved}
         />
       );
@@ -109,6 +118,16 @@ function TabContent(props: ScreenTabsProps) {
           tags={props.tags}
           draft={props.tagsDraft}
           onDraft={props.onTagsDraft}
+          onSaved={props.onSaved}
+        />
+      );
+    case 'working-hours':
+      return (
+        <WorkingHoursTab
+          display={props.display}
+          site={props.site}
+          draft={props.workingHoursDraft}
+          onDraft={props.onWorkingHoursDraft}
           onSaved={props.onSaved}
         />
       );

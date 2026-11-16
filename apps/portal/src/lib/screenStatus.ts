@@ -18,6 +18,7 @@ export type ScreenStatusTone = 'ok' | 'warn' | 'danger' | 'neutral';
 /** The states an operator can see, in the order filter chips and legends list them. */
 export const SCREEN_STATUS_KINDS = [
   'in_sync',
+  'standing_by',
   'updating',
   'not_reporting',
   'error',
@@ -30,6 +31,7 @@ export type ScreenStatusKind = (typeof SCREEN_STATUS_KINDS)[number];
 /** The approved wording. Nothing else may be shown as a screen's status. */
 export const SCREEN_STATUS_LABELS: { readonly [K in ScreenStatusKind]: string } = {
   in_sync: 'In sync',
+  standing_by: 'Standing by',
   updating: 'Updating',
   not_reporting: 'Not reporting',
   error: 'Error',
@@ -40,6 +42,7 @@ export const SCREEN_STATUS_LABELS: { readonly [K in ScreenStatusKind]: string } 
 
 const KIND_OF_SUMMARY: { readonly [K in DeliverySummary]: ScreenStatusKind } = {
   in_sync: 'in_sync',
+  standing_by: 'standing_by',
   updating: 'updating',
   stale: 'not_reporting',
   error: 'error',
@@ -50,6 +53,7 @@ const KIND_OF_SUMMARY: { readonly [K in DeliverySummary]: ScreenStatusKind } = {
 
 const TONES: { readonly [K in ScreenStatusKind]: ScreenStatusTone } = {
   in_sync: 'ok',
+  standing_by: 'neutral',
   updating: 'warn',
   not_reporting: 'warn',
   error: 'danger',
@@ -61,6 +65,7 @@ const TONES: { readonly [K in ScreenStatusKind]: ScreenStatusTone } = {
 const EXPLANATIONS: { readonly [K in ScreenStatusKind]: string } = {
   in_sync:
     'This is a recent report from the player software. It is not proof of what the physical screen shows.',
+  standing_by: 'Has the latest push; nothing in it is due to show right now.',
   updating:
     'The player reports a different publication, or none, as active. It keeps its previous complete version until the new one is fully downloaded and verified.',
   not_reporting:
@@ -94,6 +99,7 @@ export type ScreenStatusGroup = 'in_sync' | 'pending' | 'attention' | 'not_paire
 
 const GROUPS: { readonly [K in ScreenStatusKind]: ScreenStatusGroup } = {
   in_sync: 'in_sync',
+  standing_by: 'in_sync',
   updating: 'pending',
   waiting_for_player: 'pending',
   nothing_pushed: 'pending',

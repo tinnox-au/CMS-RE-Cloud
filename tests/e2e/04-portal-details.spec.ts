@@ -106,6 +106,7 @@ test('media in a playlist cannot be deleted; unused media can', async () => {
   await expect(mediaRow(page, unused.originalName)).toHaveCount(0);
   expect((await operator.api.get(`/api/media/${unused.id}`)).status()).toBe(404);
   expect((await operator.api.get(`/api/media/${unused.id}/preview`)).status()).toBe(404);
+  expect((await operator.api.get(`/api/media/${unused.id}/thumbnail`)).status()).toBe(404);
 });
 
 test('a media tag can be created, given to a file and used to filter the library', async () => {

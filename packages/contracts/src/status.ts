@@ -16,6 +16,7 @@ import { PlayerErrorSchema, PlayerStateSchema, StagingPhaseSchema } from './play
  * - stale: the last report is older than the staleness threshold
  * - updating: the player reports a different (or no) active publication than desired
  * - error: the player reports an error state
+ * - standing_by: the player holds the desired publication and reports nothing is due to show now
  * - in_sync: the player recently reported that it is playing the desired publication
  */
 export const DELIVERY_SUMMARIES = [
@@ -25,6 +26,7 @@ export const DELIVERY_SUMMARIES = [
   'stale',
   'updating',
   'error',
+  'standing_by',
   'in_sync',
 ] as const;
 export const DeliverySummarySchema = z.enum(DELIVERY_SUMMARIES);

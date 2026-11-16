@@ -14,7 +14,7 @@ import {
   type TestAsset,
 } from './fakes.test-support.ts';
 import { collectGarbage, stagePublication, type StagingDeps } from './staging.ts';
-import type { ManifestV1 } from '@tinnox/contracts';
+import type { Manifest } from '@tinnox/contracts';
 
 interface World {
   state: MemoryStateStore;
@@ -26,11 +26,11 @@ interface World {
   probeFailure: PlayerFault | null;
   deps: StagingDeps;
   /** The publication that was playing before the update: assets `shared` and `oldOnly`. */
-  old: ManifestV1;
+  old: Manifest;
   shared: TestAsset;
   oldOnly: TestAsset;
   /** The update: assets `shared`, `fresh1`, `fresh2`. */
-  next: ManifestV1;
+  next: Manifest;
   fresh1: TestAsset;
   fresh2: TestAsset;
 }

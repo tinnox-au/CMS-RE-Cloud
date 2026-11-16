@@ -9,6 +9,7 @@ import {
   instantSleep,
   makeAsset,
   makeManifest,
+  makeManifestV2,
   MemoryAssetStore,
   MemoryStateStore,
   REGISTRATION_ID,
@@ -147,9 +148,17 @@ describe('syncCycle', () => {
     expect(w.api.calls.requestMediaUrls).toEqual([]);
   });
 
+  it('downloads and activates a v2 manifest', async () => {
+    const manifest = makeManifestV2([w.a.asset], { transition: 'fade', rotation: 90 });
+    w.api.manifestResults = [{ kind: 'manifest', raw: manifest }];
+    const result = await syncCycle(w.deps);
+    expect(result).toEqual({ kind: 'activated', publicationId: manifest.publicationId });
+    expect(w.state.active?.manifest).toEqual(manifest);
+  });
+
   it('reports an unsupported manifest version separately', async () => {
     w.api.manifestResults = [
-      { kind: 'manifest', raw: { ...makeManifest([w.a.asset]), schemaVersion: 2 } },
+      { kind: 'manifest', raw: { ...makeManifest([w.a.asset]), schemaVersion: 3 } },
     ];
     const result = await syncCycle(w.deps);
     expect(result.kind).toBe('update_failed');

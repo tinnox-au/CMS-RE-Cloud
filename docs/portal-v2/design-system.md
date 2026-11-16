@@ -211,7 +211,7 @@ Every list (media, apps, playlists, layouts, schedules, screens, users, audit) u
 
 ## 9. States every page must show
 
-Loading (skeleton), empty, error with a Retry button (the existing `ErrorNotice` behaviour, restyled), partial failure, and success confirmation. Processing media shows a `warn` pill "Processing" and refreshes itself. Failed media shows a `danger` pill and the reason. A screen shows what its player last reported, in the words of P2-04 (In sync, Updating, Not reporting, Error, Waiting for player, Nothing pushed, Not paired), always with when that report arrived; the portal has no "online" or "offline".
+Loading (skeleton), empty, error with a Retry button (the existing `ErrorNotice` behaviour, restyled), partial failure, and success confirmation. Processing media shows a `warn` pill "Processing" and refreshes itself. Failed media shows a `danger` pill and the reason. A screen shows what its player last reported, in the words of P2-04 (In sync, Standing by, Updating, Not reporting, Error, Waiting for player, Nothing pushed, Not paired), always with when that report arrived; the portal has no "online" or "offline".
 
 ## 10. Responsive behaviour
 

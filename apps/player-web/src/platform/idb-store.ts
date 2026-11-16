@@ -1,4 +1,4 @@
-import type { ManifestV1, PlayerError } from '@tinnox/contracts';
+import type { Manifest, PlayerError } from '@tinnox/contracts';
 import { deleteDB, openDB, type IDBPDatabase, type OpenDBCallbacks } from 'idb';
 import type { z } from 'zod';
 import {
@@ -161,7 +161,7 @@ export class IdbStateStore implements StateStore {
     await this.#db.delete(KV, KEYS.staging);
   }
 
-  async activate(registrationId: string, manifest: ManifestV1, at: string): Promise<boolean> {
+  async activate(registrationId: string, manifest: Manifest, at: string): Promise<boolean> {
     const tx = this.#db.transaction(KV, 'readwrite');
     const registration = parseOrNull(
       RegistrationRecordSchema,

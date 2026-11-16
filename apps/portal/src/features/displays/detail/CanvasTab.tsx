@@ -1,4 +1,4 @@
-import { FIT_MODES, type DisplayDto } from '@tinnox/contracts';
+import { FIT_MODES, ROTATIONS, type DisplayDto, type Rotation } from '@tinnox/contracts';
 import { useRef, useState, type FormEvent } from 'react';
 import { api } from '../../../api/index.ts';
 import {
@@ -19,6 +19,7 @@ import {
   CONTENT_RECT_OUT_OF_BOUNDS,
   DEFAULT_FIT_OPTION_LABELS,
   defaultFitHint,
+  ROTATION_LABELS,
   toCanvasPatch,
 } from '../../../lib/screenDetailCanvas.ts';
 import { useSession } from '../../../session/SessionContext.tsx';
@@ -63,6 +64,12 @@ export interface CanvasTabProps {
   /** The form as typed; null while it shows what is stored. Kept by the page across tabs. */
   readonly draft: DisplayFormValues | null;
   readonly onDraft: (draft: DisplayFormValues | null) => void;
+  /**
+   * The rotation as chosen; null while it is as stored. Kept by the page beside `draft`,
+   * because the form values are shared with the Add screen wizard, which has no rotation.
+   */
+  readonly rotationDraft: Rotation | null;
+  readonly onRotationDraft: (rotation: Rotation | null) => void;
   readonly onSaved: (display: DisplayDto) => void;
 }
 
@@ -71,12 +78,21 @@ export interface CanvasTabProps {
  * default fit, with the M0 validation rules and messages (`lib/displayForm.ts`). The name and
  * the site are not part of it: the name is edited above and the site cannot change.
  */
-export function CanvasTab({ display, draft, onDraft, onSaved }: CanvasTabProps) {
+export function CanvasTab({
+  display,
+  draft,
+  onDraft,
+  rotationDraft,
+  onRotationDraft,
+  onSaved,
+}: CanvasTabProps) {
   const { limits } = useSession();
   const toast = useToast();
   const push = usePush();
   const values = draft ?? displayFormFromDto(display);
-  const dirty = draft !== null && canvasFormDirty(draft, display);
+  const rotation = rotationDraft ?? display.rotation;
+  const dirty =
+    (draft !== null || rotationDraft !== null) && canvasFormDirty(values, display, rotation);
   const [errors, setErrors] = useState<DisplayFormErrors>({});
   const [saveError, setSaveError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
@@ -114,10 +130,11 @@ export function CanvasTab({ display, draft, onDraft, onSaved }: CanvasTabProps) 
     setSaveError(null);
     setSaving(true);
     api
-      .patchDisplay(display.id, toCanvasPatch(result.value))
+      .patchDisplay(display.id, toCanvasPatch(result.value, rotation))
       .then((saved) => {
         setSaving(false);
         onDraft(null);
+        onRotationDraft(null);
         onSaved(saved);
         push.refresh();
         toast.success('Canvas saved', {
@@ -132,6 +149,7 @@ export function CanvasTab({ display, draft, onDraft, onSaved }: CanvasTabProps) 
 
   const discard = () => {
     onDraft(null);
+    onRotationDraft(null);
     setErrors({});
     setSaveError(null);
   };
@@ -282,6 +300,30 @@ export function CanvasTab({ display, draft, onDraft, onSaved }: CanvasTabProps) 
               {FIT_MODES.map((mode) => (
                 <option key={mode} value={mode}>
                   {DEFAULT_FIT_OPTION_LABELS[mode]}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+
+        <Field
+          label="Rotation"
+          hint="For a screen mounted on its side or upside down. The canvas keeps its size; the player turns the picture."
+        >
+          {(control) => (
+            <Select
+              {...control}
+              width="lg"
+              value={String(rotation)}
+              data-testid="screen-detail-canvas-rotation"
+              onChange={(event) => {
+                const next = ROTATIONS.find((value) => String(value) === event.target.value);
+                if (next !== undefined && !saving) onRotationDraft(next);
+              }}
+            >
+              {ROTATIONS.map((value) => (
+                <option key={value} value={value}>
+                  {ROTATION_LABELS[value]}
                 </option>
               ))}
             </Select>

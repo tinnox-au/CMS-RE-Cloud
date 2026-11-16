@@ -8,6 +8,9 @@ import type {
   MediaStatus,
   PublishRejectionCode,
   Rect,
+  Rotation,
+  Transition,
+  WorkingHours,
 } from '@tinnox/contracts';
 
 /** The facts about a display that publishing needs. */
@@ -17,6 +20,10 @@ export interface DisplayTarget {
   readonly contentRect: Rect | null;
   readonly defaultFit: FitMode;
   readonly route: DeliveryRouteId;
+  readonly rotation: Rotation;
+  readonly workingHours: WorkingHours | null;
+  /** IANA zone of the display's site. */
+  readonly timeZone: string;
 }
 
 /** The facts about a media record that playlist rules need (a subset of MediaDto). */
@@ -31,6 +38,9 @@ export interface MediaRecord {
   readonly height: number | null;
   readonly durationMs: number | null;
   readonly codec: string | null;
+  /** Availability window, wall clock YYYY-MM-DDTHH:mm in each screen's site zone. */
+  readonly availableFrom: string | null;
+  readonly availableUntil: string | null;
 }
 
 export interface DraftItem {
@@ -59,6 +69,14 @@ export interface ResolvedItem {
   readonly fit: FitMode;
   readonly width: number;
   readonly height: number;
+  readonly availableFrom: string | null;
+  readonly availableUntil: string | null;
+}
+
+/** Playlist options carried into a publication. */
+export interface PlaybackOptions {
+  readonly transition: Transition;
+  readonly shuffle: boolean;
 }
 
 /**
@@ -73,6 +91,11 @@ export interface PublicationDraft {
   readonly regions: 1;
   readonly audio: false;
   readonly items: readonly ResolvedItem[];
+  readonly transition: Transition;
+  readonly shuffle: boolean;
+  readonly rotation: Rotation;
+  readonly workingHours: WorkingHours | null;
+  readonly timeZone: string;
 }
 
 /**

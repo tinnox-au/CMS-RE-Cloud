@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   FolderIdSchema,
+  LocalDateTimeSchema,
   MediaIdSchema,
   Sha256HexSchema,
   UtcTimestampSchema,
@@ -95,6 +96,12 @@ export const MediaDtoSchema = z
      * playlist. Null means the portal's own default. Always null for video.
      */
     defaultDurationMs: z.number().int().positive().max(ABSOLUTE.maxItemDurationMs).nullable(),
+    /**
+     * Availability window, wall clock in each screen's site zone. Null means no
+     * limit on that side.
+     */
+    availableFrom: LocalDateTimeSchema.nullable(),
+    availableUntil: LocalDateTimeSchema.nullable(),
     /** Null when the item is in the root of the library. */
     folderId: FolderIdSchema.nullable(),
     tagIds: TagIdsSchema,
@@ -141,6 +148,8 @@ export type MediaUploadResponse = z.infer<typeof MediaUploadResponseSchema>;
  * - `folderId`: null moves the item to the root. An unknown folder answers 404.
  * - `tagIds`: the complete new set of media tags. An unknown tag, or a tag of
  *   the display scope, answers 404.
+ * - `availableFrom` and `availableUntil`: sent together; null removes that side
+ *   of the window; from must be before until when both are set.
  */
 export const MediaPatchSchema = z
   .object({
@@ -155,9 +164,22 @@ export const MediaPatchSchema = z
       .optional(),
     folderId: FolderIdSchema.nullable().optional(),
     tagIds: TagIdsInputSchema.optional(),
+    availableFrom: LocalDateTimeSchema.nullable().optional(),
+    availableUntil: LocalDateTimeSchema.nullable().optional(),
   })
   .strict()
-  .refine((patch) => Object.keys(patch).length > 0, { message: 'at least one field is required' });
+  .refine((patch) => Object.keys(patch).length > 0, { message: 'at least one field is required' })
+  .refine((patch) => (patch.availableFrom === undefined) === (patch.availableUntil === undefined), {
+    path: ['availableUntil'],
+    message: 'send availableFrom and availableUntil together',
+  })
+  .refine(
+    (patch) =>
+      typeof patch.availableFrom !== 'string' ||
+      typeof patch.availableUntil !== 'string' ||
+      patch.availableFrom < patch.availableUntil,
+    { path: ['availableUntil'], message: 'availableUntil must be after availableFrom' },
+  );
 export type MediaPatch = z.infer<typeof MediaPatchSchema>;
 
 /**
