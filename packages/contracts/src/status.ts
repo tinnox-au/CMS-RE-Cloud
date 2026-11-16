@@ -5,6 +5,7 @@ import {
   RegistrationIdSchema,
   UtcTimestampSchema,
 } from './ids.ts';
+import { ABSOLUTE } from './limits.ts';
 import { PlayerErrorSchema, PlayerStateSchema, StagingPhaseSchema } from './player.ts';
 
 /**
@@ -69,3 +70,13 @@ export const DeliveryStatusViewSchema = z
   })
   .strict();
 export type DeliveryStatusView = z.infer<typeof DeliveryStatusViewSchema>;
+
+/**
+ * `GET /api/displays/status`: the status view of every display of the
+ * organisation in one call, built exactly like the single-display route.
+ * One item per display, in the order of `GET /api/displays`.
+ */
+export const DeliveryStatusListResponseSchema = z
+  .object({ items: z.array(DeliveryStatusViewSchema).max(ABSOLUTE.maxListItems) })
+  .strict();
+export type DeliveryStatusListResponse = z.infer<typeof DeliveryStatusListResponseSchema>;

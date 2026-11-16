@@ -1,29 +1,28 @@
 import { ROUTES } from '@tinnox/contracts';
-import { useState } from 'react';
+import { Fragment, lazy, Suspense, type ReactElement } from 'react';
 import {
   createBrowserRouter,
-  isRouteErrorResponse,
-  Link,
   Navigate,
-  NavLink,
-  Outlet,
   RouterProvider,
-  useRouteError,
+  useLocation,
+  useParams,
+  type RouteObject,
 } from 'react-router-dom';
-import { ErrorNotice, Loading, Notice } from './components/common.tsx';
-import { AuditPage } from './pages/AuditPage.tsx';
-import { DisplayDetailPage } from './pages/DisplayDetailPage.tsx';
-import { DisplayFormPage } from './pages/DisplayFormPage.tsx';
-import { DisplaysPage } from './pages/DisplaysPage.tsx';
-import { MediaPage } from './pages/MediaPage.tsx';
-import { PlaylistEditorPage } from './pages/PlaylistEditorPage.tsx';
-import { PlaylistsPage } from './pages/PlaylistsPage.tsx';
 import {
   AuthenticatedProvider,
   SessionProvider,
-  useSession,
   useSessionState,
 } from './session/SessionContext.tsx';
+import { AppShell } from './shell/AppShell.tsx';
+import { HOME_PATH, screensPathFor } from './shell/nav.ts';
+import { NotFoundPage } from './shell/NotFoundPage.tsx';
+import {
+  RouteError,
+  RouteLoading,
+  SessionCheckingScreen,
+  SessionErrorScreen,
+  SignInScreen,
+} from './shell/Screens.tsx';
 
 const RETURN_TO_PATTERN = /^\/(?!\/)[A-Za-z0-9\-._~/]*$/;
 
@@ -36,177 +35,126 @@ function loginHref(): string {
   return ROUTES.authLogin;
 }
 
-function SignInScreen({ reason }: { readonly reason: 'signed_out' | 'ended' | 'none' }) {
-  return (
-    <main className="signin">
-      <div className="signin-card">
-        <p className="brand brand-large">TINNOX CMS</p>
-        <h1>Operator sign-in</h1>
-        {reason === 'ended' && (
-          <Notice tone="warn" live>
-            <p>Your session has ended. Sign in again to continue.</p>
-          </Notice>
-        )}
-        {reason === 'signed_out' && (
-          <Notice tone="neutral" live>
-            <p>You have signed out.</p>
-          </Notice>
-        )}
-        <p>
-          Sign-in happens at your organisation&apos;s identity provider and needs your password and
-          a one-time code from your authenticator app.
-        </p>
-        <p>
-          <a className="button button-primary button-wide" href={loginHref()}>
-            Sign in
-          </a>
-        </p>
-        <p className="small muted">Internal engineering prototype. Synthetic data only.</p>
-      </div>
-    </main>
-  );
-}
-
-function Layout() {
-  const session = useSession();
-  const { signOut } = useSessionState();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
-
-  const handleSignOut = () => {
-    setBusy(true);
-    setError(null);
-    signOut().catch((reason: unknown) => {
-      setError(reason);
-      setBusy(false);
-    });
+/**
+ * A route whose page is loaded on first visit, so each feature is its own bundle. The page
+ * modules export named components (see the table in src/ui/README.md, "Shell"); `render`
+ * picks the component and gives it its props.
+ */
+function page<M>(
+  path: string,
+  load: () => Promise<M>,
+  render: (module: M) => ReactElement,
+): RouteObject {
+  return {
+    path,
+    hydrateFallbackElement: <RouteLoading />,
+    lazy: async () => ({ element: render(await load()) }),
   };
-
-  return (
-    <div className="shell">
-      <a className="skip-link" href="#main">
-        Skip to content
-      </a>
-      <header className="topbar">
-        <Link to="/displays" className="brand">
-          TINNOX CMS
-        </Link>
-        <nav aria-label="Main">
-          <ul className="nav">
-            <li>
-              <NavLink to="/displays">Displays</NavLink>
-            </li>
-            <li>
-              <NavLink to="/media">Media</NavLink>
-            </li>
-            <li>
-              <NavLink to="/playlists">Playlists</NavLink>
-            </li>
-            <li>
-              <NavLink to="/audit">Audit</NavLink>
-            </li>
-          </ul>
-        </nav>
-        <div className="account">
-          <span className="account-text">
-            <span className="account-org">{session.organization.name}</span>
-            <span className="small muted">{session.user.displayName}</span>
-          </span>
-          <button type="button" className="button" onClick={handleSignOut} disabled={busy}>
-            {busy ? 'Signing out…' : 'Sign out'}
-          </button>
-        </div>
-      </header>
-      <main id="main" className="content" tabIndex={-1}>
-        {error !== null && <ErrorNotice error={error} title="Sign-out did not complete" />}
-        <Outlet />
-      </main>
-      <footer className="footer small muted">
-        Internal engineering prototype. Synthetic data only. Player status is reported by player
-        software and is not proof of what a physical screen shows.
-      </footer>
-    </div>
-  );
 }
 
-function RouteError() {
-  const error = useRouteError();
-  const notFound = isRouteErrorResponse(error) && error.status === 404;
-  return (
-    <main className="content">
-      <h1>{notFound ? 'Page not found' : 'Something went wrong'}</h1>
-      <p>
-        {notFound
-          ? 'There is no page at this address.'
-          : 'This page failed to display. Reload the page; if it keeps happening, report it.'}
-      </p>
-      <p>
-        <a className="button" href="/displays">
-          Go to displays
-        </a>
-      </p>
-    </main>
-  );
+const dashboard = () => import('./features/dashboard/DashboardPage.tsx');
+const mediaLibrary = () => import('./features/media/MediaLibraryPage.tsx');
+const mediaDetail = () => import('./features/media/MediaDetailPage.tsx');
+const playlists = () => import('./features/playlists/PlaylistsPage.tsx');
+const playlistEditor = () => import('./features/playlists/PlaylistEditorPage.tsx');
+const displays = () => import('./features/displays/DisplaysPage.tsx');
+const displayWizard = () => import('./features/displays/DisplayWizardPage.tsx');
+const displayDetail = () => import('./features/displays/DisplayDetailPage.tsx');
+const settings = () => import('./features/settings/SettingsPage.tsx');
+const tags = () => import('./features/settings/TagsPage.tsx');
+const audit = () => import('./features/audit/AuditPage.tsx');
+const planned = () => import('./features/planned/PlannedPage.tsx');
+
+/**
+ * Mounts a detail page afresh for each object. React Router keeps a route's element mounted
+ * when only its `:id` changes (Back and Forward, a link from one playlist or screen to
+ * another), and `useLoad` deliberately keeps the data it has while it fetches again. Without
+ * the key the page would show the previous object under the new address until the new one
+ * arrived, and keep showing it, flagged as a failed refresh, when the new id does not exist.
+ * The key starts the page in its loading state instead, so a missing object reaches the
+ * page's own "not found" state.
+ */
+function PerObject({ children }: { readonly children: ReactElement }) {
+  const { id = '' } = useParams();
+  return <Fragment key={id}>{children}</Fragment>;
 }
 
-function NotFound() {
-  return (
-    <>
-      <h1>Page not found</h1>
-      <p>There is no page at this address.</p>
-      <p>
-        <Link className="button" to="/displays">
-          Go to displays
-        </Link>
-      </p>
-    </>
-  );
+/** The M0 edit address. The canvas form is now a tab of the screen's page. */
+function ScreenEditRedirect() {
+  const { id = '' } = useParams();
+  return <Navigate to={`/screens/${encodeURIComponent(id)}?tab=canvas`} replace />;
 }
 
+/**
+ * The M0 addresses under `/displays`. An operator sees "screen" everywhere (decision P2-03),
+ * so the pages live under `/screens`; an old link or bookmark lands on the same page there,
+ * with its query and fragment kept.
+ */
+function OldDisplaysRedirect() {
+  const { pathname, search, hash } = useLocation();
+  return <Navigate to={{ pathname: screensPathFor(pathname), search, hash }} replace />;
+}
+
+/** The route table of docs/portal-v2/stage-a.md, section 1. */
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <Layout />,
+    element: <AppShell />,
     errorElement: <RouteError />,
     children: [
-      { index: true, element: <Navigate to="/displays" replace /> },
-      { path: 'displays', element: <DisplaysPage /> },
-      { path: 'displays/new', element: <DisplayFormPage /> },
-      { path: 'displays/:id', element: <DisplayDetailPage /> },
-      { path: 'displays/:id/edit', element: <DisplayFormPage /> },
-      { path: 'media', element: <MediaPage /> },
-      { path: 'playlists', element: <PlaylistsPage /> },
-      { path: 'playlists/:id', element: <PlaylistEditorPage /> },
-      { path: 'audit', element: <AuditPage /> },
-      { path: '*', element: <NotFound /> },
+      { index: true, element: <Navigate to={HOME_PATH} replace /> },
+      page('dashboard', dashboard, (m) => <m.DashboardPage />),
+
+      page('media', mediaLibrary, (m) => <m.MediaLibraryPage kind="all" />),
+      page('media/images', mediaLibrary, (m) => <m.MediaLibraryPage kind="image" />),
+      page('media/videos', mediaLibrary, (m) => <m.MediaLibraryPage kind="video" />),
+      page('media/audio', planned, (m) => <m.PlannedPage section="audio" />),
+      page('media/documents', planned, (m) => <m.PlannedPage section="documents" />),
+      page('media/web-pages', planned, (m) => <m.PlannedPage section="web-pages" />),
+      page('media/:id', mediaDetail, (m) => (
+        <PerObject>
+          <m.MediaDetailPage />
+        </PerObject>
+      )),
+
+      page('apps', planned, (m) => <m.PlannedPage section="apps" />),
+      page('layouts', planned, (m) => <m.PlannedPage section="layouts" />),
+      page('schedules', planned, (m) => <m.PlannedPage section="schedules" />),
+      page('users', planned, (m) => <m.PlannedPage section="users" />),
+
+      page('playlists', playlists, (m) => <m.PlaylistsPage />),
+      page('playlists/:id', playlistEditor, (m) => (
+        <PerObject>
+          <m.PlaylistEditorPage />
+        </PerObject>
+      )),
+
+      page('screens', displays, (m) => <m.DisplaysPage />),
+      page('screens/new', displayWizard, (m) => <m.DisplayWizardPage />),
+      page('screens/:id', displayDetail, (m) => (
+        <PerObject>
+          <m.DisplayDetailPage />
+        </PerObject>
+      )),
+      { path: 'screens/:id/edit', element: <ScreenEditRedirect /> },
+      { path: 'displays/*', element: <OldDisplaysRedirect /> },
+
+      page('settings', settings, (m) => <m.SettingsPage />),
+      page('settings/tags', tags, (m) => <m.TagsPage />),
+      page('audit', audit, (m) => <m.AuditPage />),
+
+      { path: '*', element: <NotFoundPage /> },
     ],
   },
 ]);
 
 function Gate() {
   const { state, retry } = useSessionState();
-  if (state.status === 'loading') {
-    return (
-      <main className="signin">
-        <Loading label="Checking your session…" />
-      </main>
-    );
+  if (state.status === 'loading') return <SessionCheckingScreen />;
+  if (state.status === 'error') return <SessionErrorScreen error={state.error} onRetry={retry} />;
+  if (state.status === 'anonymous') {
+    return <SignInScreen reason={state.reason} loginHref={loginHref()} />;
   }
-  if (state.status === 'error') {
-    return (
-      <main className="signin">
-        <div className="signin-card">
-          <p className="brand brand-large">TINNOX CMS</p>
-          <ErrorNotice
-            error={state.error}
-            title="The session could not be checked"
-            onRetry={retry}
-          />
-        </div>
-      </main>
-    );
-  }
-  if (state.status === 'anonymous') return <SignInScreen reason={state.reason} />;
   return (
     <AuthenticatedProvider session={state.session}>
       <RouterProvider router={router} />
@@ -214,7 +162,26 @@ function Gate() {
   );
 }
 
+/**
+ * The component gallery (docs/portal-v2/stage-a.md, route `/styleguide`). Development builds
+ * only: in a production build the condition is the constant `false`, so the dynamic import
+ * and everything behind it are dropped from the bundle. It is shown without a session, so it
+ * stays outside the session gate and the application's router.
+ */
+const StyleguidePage = import.meta.env.DEV
+  ? lazy(() => import('./features/styleguide/StyleguidePage.tsx'))
+  : null;
+
+const STYLEGUIDE_PATH = /^\/styleguide\/?$/;
+
 export function App() {
+  if (StyleguidePage !== null && STYLEGUIDE_PATH.test(window.location.pathname)) {
+    return (
+      <Suspense fallback={null}>
+        <StyleguidePage />
+      </Suspense>
+    );
+  }
   return (
     <SessionProvider>
       <Gate />

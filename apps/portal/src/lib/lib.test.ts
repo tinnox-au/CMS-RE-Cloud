@@ -27,7 +27,6 @@ import {
   updateItem,
   validateDraft,
 } from './playlistDraft.ts';
-import { intentAfter, intentFor, intentSignature } from './publishIntent.ts';
 import { presentStatus } from './status.ts';
 import { newEntry, nextToStart, patchEntry, preflightMessage } from './uploadQueue.ts';
 
@@ -161,6 +160,9 @@ describe('display form validation', () => {
       id: ID(2),
       siteId: ID(1),
       name: 'Column',
+      description: null,
+      tagIds: [],
+      assignedPlaylist: null,
       canvas: { width: 640, height: 1344 },
       contentRect: { x: 0, y: 64, width: 640, height: 1280 },
       defaultFit: 'cover',
@@ -365,7 +367,13 @@ function media(n: number, kind: 'image' | 'video', change: Partial<MediaDto> = {
     id: ID(n),
     kind,
     status: 'ready',
+    name: `file-${n}`,
     originalName: `file-${n}`,
+    description: null,
+    defaultDurationMs: null,
+    folderId: null,
+    tagIds: [],
+    usageCount: 0,
     mimeType: kind === 'image' ? 'image/png' : 'video/mp4',
     bytes: 1000,
     sha256: 'a'.repeat(64),
@@ -385,6 +393,7 @@ function playlist(): PlaylistDto {
   return {
     id: ID(9),
     name: 'Lobby loop',
+    description: null,
     createdAt: T,
     updatedAt: T,
     items: [
@@ -494,41 +503,6 @@ describe('playlist draft', () => {
   });
 });
 
-/* ---------- publish idempotency ---------- */
-
-describe('publish intent', () => {
-  const keys = () => {
-    let n = 0;
-    return () => `key-${++n}`;
-  };
-
-  it('reuses the key for a retry whose outcome is unknown', () => {
-    const newKey = keys();
-    const signature = intentSignature(ID(9), ID(1), T);
-    const first = intentFor(null, signature, newKey);
-    const pending = intentAfter(first, 'unknown');
-    expect(intentFor(pending, signature, newKey).key).toBe(first.key);
-  });
-
-  it('uses a fresh key after a definite answer', () => {
-    const newKey = keys();
-    const signature = intentSignature(ID(9), ID(1), T);
-    const first = intentFor(null, signature, newKey);
-    expect(intentFor(intentAfter(first, 'succeeded'), signature, newKey).key).not.toBe(first.key);
-    expect(intentFor(intentAfter(first, 'refused'), signature, newKey).key).toBe('key-3');
-  });
-
-  it('uses a fresh key when the display or the saved revision changes', () => {
-    const newKey = keys();
-    const first = intentFor(null, intentSignature(ID(9), ID(1), T), newKey);
-    const pending = intentAfter(first, 'unknown');
-    expect(intentFor(pending, intentSignature(ID(9), ID(2), T), newKey).key).not.toBe(first.key);
-    expect(
-      intentFor(pending, intentSignature(ID(9), ID(1), '2026-11-14T04:00:00.000Z'), newKey).key,
-    ).not.toBe(first.key);
-  });
-});
-
 /* ---------- uploads and formatting ---------- */
 
 describe('upload queue', () => {
@@ -570,6 +544,16 @@ describe('formatting', () => {
     expect(formatDurationMs(10_000)).toBe('10 s');
     expect(formatDurationMs(65_000)).toBe('1 min 5 s');
     expect(formatDurationMs(3_600_000)).toBe('1 h 0 min');
+  });
+
+  it('rounds a duration before choosing its unit', () => {
+    expect(formatDurationMs(59_940)).toBe('59.9 s');
+    expect(formatDurationMs(59_950)).toBe('1 min 0 s');
+    expect(formatDurationMs(59_999)).toBe('1 min 0 s');
+    expect(formatDurationMs(9_990)).toBe('10 s');
+    expect(formatDurationMs(4_449)).toBe('4.4 s');
+    expect(formatDurationMs(0)).toBe('0 s');
+    expect(formatDurationMs(3_599_600)).toBe('1 h 0 min');
   });
 
   it('formats relative age without ever going negative', () => {

@@ -15,10 +15,14 @@ import { HttpError, registerErrorHandling, sendFrameworkError } from './errors.t
 import { registerAuditRoutes } from './routes/audit.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
 import { registerDisplayRoutes } from './routes/displays.ts';
+import { registerFolderRoutes } from './routes/folders.ts';
 import { registerMediaRoutes } from './routes/media.ts';
 import { registerOpsRoutes } from './routes/ops.ts';
+import { registerOverviewRoutes } from './routes/overview.ts';
 import { registerPlaylistRoutes } from './routes/playlists.ts';
 import { registerPlayerRoutes } from './routes/player.ts';
+import { registerPushRoutes } from './routes/push.ts';
+import { registerTagRoutes } from './routes/tags.ts';
 
 export interface BuildAppOptions {
   /** A pino logger, or false for silence (tests). */
@@ -102,6 +106,10 @@ export async function buildApp(
     registerDisplayRoutes(api, ctx);
     registerMediaRoutes(api, ctx);
     registerPlaylistRoutes(api, ctx);
+    registerTagRoutes(api, ctx);
+    registerFolderRoutes(api, ctx);
+    registerPushRoutes(api, ctx);
+    registerOverviewRoutes(api, ctx);
     registerAuditRoutes(api, ctx);
   });
 

@@ -24,19 +24,38 @@ interface AuditRow {
   detail: unknown;
 }
 
-/** Organisation-scoped audit trail, newest first. Events without an organisation are not exposed here. */
+/**
+ * Organisation-scoped audit trail, newest first, optionally narrowed to one
+ * category (the part of the action before the first dot) and one result.
+ * Events without an organisation are not exposed here.
+ */
 export function registerAuditRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get(ROUTES.audit, async (request): Promise<AuditListResponse> => {
     const session = operatorOf(request);
     const query = parseInput(AuditListQuerySchema, request.query, 'query');
+    // A filter is part of the statement only when it was asked for, so the planner
+    // sees a plain equality on a column and can use the index made for it. The
+    // category is a column the database computes from the action (migration 0005):
+    // under row-level security a condition that calls split_part() could not be
+    // used as an index condition. Only fixed text and parameter numbers are put
+    // into the statement; every value from the request is a parameter.
+    const values: unknown[] = [query.limit + 1];
+    const conditions: string[] = [];
+    const parameter = (value: unknown): string => `$${values.push(value)}`;
+    if (query.before !== undefined) conditions.push(`id < ${parameter(query.before)}::bigint`);
+    if (query.category !== undefined) {
+      conditions.push(`category = ${parameter(query.category)}`);
+    }
+    if (query.result !== undefined) conditions.push(`result = ${parameter(query.result)}`);
+    const where = ['org_id = app_org_id()', ...conditions].join(' AND ');
     return withOrg(ctx.pool, session.orgId, async (tx) => {
       const { rows } = await tx.query<AuditRow>(
         `SELECT id, occurred_at, actor_type, actor_id, action, object_type, object_id, result, detail
          FROM audit_event
-         WHERE org_id = app_org_id() AND ($2::bigint IS NULL OR id < $2::bigint)
+         WHERE ${where}
          ORDER BY id DESC
          LIMIT $1`,
-        [query.limit + 1, query.before ?? null],
+        values,
       );
       const page = rows.slice(0, query.limit);
       const last = page[page.length - 1];

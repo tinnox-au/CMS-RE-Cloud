@@ -91,9 +91,11 @@ test('the second organisation sees none of the first organisation’s objects an
   expect((await first.api.status(display.id)).desired?.publicationId).toBe(published.publicationId);
 
   // And the portal of the second organisation shows only its own (empty) world.
-  await second.page.goto(`${PORTAL_URL}/displays`);
-  await expect(second.page.getByText('Isolation Test Organisation')).toBeVisible();
+  await second.page.goto(`${PORTAL_URL}/screens`);
+  await expect(second.page.getByText('Isolation Test Organisation').first()).toBeVisible();
   await expect(second.page.getByText(`E2E isolation ${runId}`)).toHaveCount(0);
-  await second.page.goto(`${PORTAL_URL}/displays/${display.id}`);
-  await expect(second.page.getByText('The display could not be loaded')).toBeVisible();
+  await second.page.goto(`${PORTAL_URL}/screens/${display.id}`);
+  await expect(second.page.getByTestId('screen-detail-missing')).toContainText(
+    'This screen could not be loaded',
+  );
 });

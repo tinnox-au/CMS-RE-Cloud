@@ -1,0 +1,347 @@
+import { describe, expect, it } from 'vitest';
+import type { FitMode, ManifestAssetV1, ManifestV1 } from '@tinnox/contracts';
+import { ID, display, library, limits } from './fixtures.test-support.ts';
+import { buildManifest, type PlanPublicationResult } from './manifest.ts';
+import { buildPublicationDraft } from './playlist.ts';
+import { decidePushState, draftMatchesManifest, firstDraftManifestDifference } from './push.ts';
+import type { DisplayTarget, DraftItem, PublicationDraft } from './types.ts';
+
+const image = (
+  mediaId: string,
+  durationMs: number | null = 5000,
+  fit: FitMode | null = null,
+): DraftItem => ({ mediaId, durationMs, fit });
+const video = (mediaId: string, fit: FitMode | null = null): DraftItem => ({
+  mediaId,
+  durationMs: null,
+  fit,
+});
+
+/** The playlist most cases start from: an image, a video, another image. */
+const BASE: readonly DraftItem[] = [image(ID.jpeg), video(ID.video), image(ID.png, 8000, 'cover')];
+
+function draftOf(
+  items: readonly DraftItem[] = BASE,
+  target: DisplayTarget = display(),
+): PublicationDraft {
+  const built = buildPublicationDraft(target, items, library(), limits);
+  if (!built.ok) throw new Error(`fixture playlist is not publishable: ${built.issues[0]?.code}`);
+  return built.draft;
+}
+
+/** The manifest a display holds after `items` were published to `target`. */
+function publishedManifest(
+  items: readonly DraftItem[] = BASE,
+  target: DisplayTarget = display(),
+): ManifestV1 {
+  return buildManifest(draftOf(items, target), {
+    publicationId: ID.pubA,
+    createdAt: new Date('2026-11-14T00:00:00.000Z'),
+  });
+}
+
+/** A stored manifest whose entry at `index` differs in the given facts. */
+function withAsset(
+  manifest: ManifestV1,
+  index: number,
+  change: Partial<ManifestAssetV1>,
+): ManifestV1 {
+  return {
+    ...manifest,
+    assets: manifest.assets.map((asset, i) => (i === index ? { ...asset, ...change } : asset)),
+  };
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+}
+
+describe('draftMatchesManifest', () => {
+  it('matches the manifest that was built from the same playlist and display', () => {
+    expect(firstDraftManifestDifference(draftOf(), publishedManifest())).toBeNull();
+    expect(draftMatchesManifest(draftOf(), publishedManifest())).toBe(true);
+  });
+
+  it('ignores the publication id and the time of publication', () => {
+    const later = buildManifest(draftOf(), {
+      publicationId: ID.pubB,
+      createdAt: new Date('2027-01-01T00:00:00.000Z'),
+    });
+    expect(draftMatchesManifest(draftOf(), later)).toBe(true);
+  });
+
+  it('matches a manifest that went through JSON, as a stored one has', () => {
+    const stored = JSON.parse(JSON.stringify(publishedManifest())) as ManifestV1;
+    expect(draftMatchesManifest(draftOf(), stored)).toBe(true);
+  });
+
+  it('compares identifiers without regard to letter case', () => {
+    const manifest = publishedManifest();
+    const shouted: ManifestV1 = {
+      ...manifest,
+      displayId: manifest.displayId.toUpperCase(),
+      assets: manifest.assets.map((asset) => ({ ...asset, assetId: asset.assetId.toUpperCase() })),
+    };
+    expect(draftMatchesManifest(draftOf(), shouted)).toBe(true);
+  });
+
+  it('sees reordered items', () => {
+    const reordered = [BASE[1]!, BASE[0]!, BASE[2]!];
+    expect(firstDraftManifestDifference(draftOf(reordered), publishedManifest())).toEqual({
+      kind: 'item',
+      index: 0,
+      field: 'assetId',
+    });
+    expect(draftMatchesManifest(draftOf(reordered), publishedManifest())).toBe(false);
+  });
+
+  it('sees a reordering that only swaps the last two items', () => {
+    const reordered = [BASE[0]!, BASE[2]!, BASE[1]!];
+    expect(firstDraftManifestDifference(draftOf(reordered), publishedManifest())).toMatchObject({
+      kind: 'item',
+      index: 1,
+    });
+  });
+
+  it('sees an added and a removed item', () => {
+    const longer = [...BASE, image(ID.jpeg, 3000)];
+    expect(firstDraftManifestDifference(draftOf(longer), publishedManifest())).toEqual({
+      kind: 'item_count',
+      draftItems: 4,
+      manifestItems: 3,
+    });
+    const shorter = BASE.slice(0, 2);
+    expect(firstDraftManifestDifference(draftOf(shorter), publishedManifest())).toEqual({
+      kind: 'item_count',
+      draftItems: 2,
+      manifestItems: 3,
+    });
+  });
+
+  it('sees an item replaced by another file', () => {
+    const replaced = [BASE[0]!, BASE[1]!, image(ID.jpeg, 8000, 'cover')];
+    expect(firstDraftManifestDifference(draftOf(replaced), publishedManifest())).toEqual({
+      kind: 'item',
+      index: 2,
+      field: 'assetId',
+    });
+  });
+
+  it('sees a changed image duration, down to one millisecond', () => {
+    const changed = [image(ID.jpeg, 5001), BASE[1]!, BASE[2]!];
+    expect(firstDraftManifestDifference(draftOf(changed), publishedManifest())).toEqual({
+      kind: 'item',
+      index: 0,
+      field: 'durationMs',
+    });
+  });
+
+  it('sees a changed fit on one item', () => {
+    const changed = [BASE[0]!, video(ID.video, 'cover'), BASE[2]!];
+    expect(firstDraftManifestDifference(draftOf(changed), publishedManifest())).toEqual({
+      kind: 'item',
+      index: 1,
+      field: 'fit',
+    });
+  });
+
+  it('sees a fit that changed because the display default changed', () => {
+    // Items 0 and 1 leave the fit to the display; item 2 sets its own.
+    const coverByDefault = display({ defaultFit: 'cover' });
+    expect(
+      firstDraftManifestDifference(draftOf(BASE, coverByDefault), publishedManifest()),
+    ).toEqual({ kind: 'item', index: 0, field: 'fit' });
+    // A playlist in which every item sets its own fit is untouched by the default.
+    const explicit = [image(ID.jpeg, 5000, 'contain'), video(ID.video, 'cover')];
+    expect(
+      draftMatchesManifest(draftOf(explicit, coverByDefault), publishedManifest(explicit)),
+    ).toBe(true);
+  });
+
+  it('treats a fit left to the display and the same fit set on the item as equal', () => {
+    const inherited = [image(ID.jpeg, 5000, null)];
+    const explicit = [image(ID.jpeg, 5000, 'contain')];
+    expect(draftMatchesManifest(draftOf(explicit), publishedManifest(inherited))).toBe(true);
+    expect(
+      draftMatchesManifest(
+        draftOf(inherited, display({ defaultFit: 'cover' })),
+        publishedManifest([image(ID.jpeg, 5000, 'cover')]),
+      ),
+    ).toBe(true);
+  });
+
+  it('sees a changed canvas, in either dimension', () => {
+    for (const canvas of [
+      { width: 1080, height: 1080 },
+      { width: 1920, height: 1200 },
+      { width: 1080, height: 1920 },
+    ]) {
+      expect(
+        firstDraftManifestDifference(draftOf(BASE, display({ canvas })), publishedManifest()),
+        JSON.stringify(canvas),
+      ).toEqual({ kind: 'canvas' });
+    }
+  });
+
+  it('sees a content rectangle that was added, removed, moved or resized', () => {
+    const rect = { x: 0, y: 60, width: 1920, height: 960 };
+    const withRect = display({ contentRect: rect });
+    expect(firstDraftManifestDifference(draftOf(BASE, withRect), publishedManifest())).toEqual({
+      kind: 'content_rect',
+    });
+    expect(firstDraftManifestDifference(draftOf(), publishedManifest(BASE, withRect))).toEqual({
+      kind: 'content_rect',
+    });
+    for (const changed of [
+      { ...rect, x: 16 },
+      { ...rect, y: 0 },
+      { ...rect, width: 1280 },
+      { ...rect, height: 480 },
+    ]) {
+      expect(
+        draftMatchesManifest(
+          draftOf(BASE, display({ contentRect: changed })),
+          publishedManifest(BASE, withRect),
+        ),
+        JSON.stringify(changed),
+      ).toBe(false);
+    }
+    // Equal by value, not by identity.
+    expect(
+      draftMatchesManifest(
+        draftOf(BASE, display({ contentRect: { ...rect } })),
+        publishedManifest(BASE, withRect),
+      ),
+    ).toBe(true);
+  });
+
+  it('handles repeated assets: the same repeats match, and each repeat is compared in place', () => {
+    const repeated = [image(ID.jpeg, 5000), video(ID.video), image(ID.jpeg, 9000, 'cover')];
+    expect(draftMatchesManifest(draftOf(repeated), publishedManifest(repeated))).toBe(true);
+
+    // One repeat fewer.
+    expect(
+      firstDraftManifestDifference(draftOf(repeated.slice(0, 2)), publishedManifest(repeated)),
+    ).toMatchObject({ kind: 'item_count' });
+
+    // The same set of assets, the repeats in other positions.
+    const moved = [image(ID.jpeg, 5000), image(ID.jpeg, 9000, 'cover'), video(ID.video)];
+    expect(firstDraftManifestDifference(draftOf(moved), publishedManifest(repeated))).toEqual({
+      kind: 'item',
+      index: 1,
+      field: 'assetId',
+    });
+
+    // The durations of the two repeats swapped: same assets in the same order, different play list.
+    const swapped = [image(ID.jpeg, 9000), video(ID.video), image(ID.jpeg, 5000, 'cover')];
+    expect(firstDraftManifestDifference(draftOf(swapped), publishedManifest(repeated))).toEqual({
+      kind: 'item',
+      index: 0,
+      field: 'durationMs',
+    });
+
+    // Only the second repeat changed.
+    const second = [image(ID.jpeg, 5000), video(ID.video), image(ID.jpeg, 9000, 'contain')];
+    expect(firstDraftManifestDifference(draftOf(second), publishedManifest(repeated))).toEqual({
+      kind: 'item',
+      index: 2,
+      field: 'fit',
+    });
+  });
+
+  it('sees content that changed under the same asset id', () => {
+    const cases: [Partial<ManifestAssetV1>, string][] = [
+      [{ sha256: 'cd'.repeat(32) }, 'sha256'],
+      [{ bytes: 119_999 }, 'bytes'],
+      [{ mediaType: 'image/png' }, 'mediaType'],
+      [{ kind: 'video' }, 'kind'],
+      [{ width: 1601 }, 'width'],
+      [{ height: 901 }, 'height'],
+    ];
+    for (const [change, field] of cases) {
+      expect(
+        firstDraftManifestDifference(draftOf(), withAsset(publishedManifest(), 0, change)),
+        field,
+      ).toEqual({ kind: 'item', index: 0, field });
+    }
+  });
+
+  it('sees a video whose natural length differs from the published one', () => {
+    expect(
+      firstDraftManifestDifference(
+        draftOf(),
+        withAsset(publishedManifest(), 1, { durationMs: 12_000 }),
+      ),
+    ).toEqual({ kind: 'item', index: 1, field: 'durationMs' });
+  });
+
+  it('does not match a manifest of another display', () => {
+    const other = publishedManifest(BASE, display({ id: ID.otherDisplay }));
+    expect(firstDraftManifestDifference(draftOf(), other)).toEqual({ kind: 'display' });
+  });
+
+  it('reports the first difference when several exist', () => {
+    const everythingChanged = draftOf(
+      [image(ID.png, 1000)],
+      display({ canvas: { width: 640, height: 1344 }, defaultFit: 'cover' }),
+    );
+    expect(firstDraftManifestDifference(everythingChanged, publishedManifest())).toEqual({
+      kind: 'canvas',
+    });
+  });
+
+  it('does not change its inputs', () => {
+    const draft = deepFreeze(draftOf());
+    const manifest = deepFreeze(publishedManifest());
+    expect(draftMatchesManifest(draft, manifest)).toBe(true);
+    const other = deepFreeze(draftOf([image(ID.png)]));
+    expect(draftMatchesManifest(other, manifest)).toBe(false);
+  });
+});
+
+describe('decidePushState', () => {
+  const ok = (draft: PublicationDraft): PlanPublicationResult => ({ ok: true, draft });
+  const refused: PlanPublicationResult = {
+    ok: false,
+    issues: [{ index: null, code: 'playlist_empty', message: 'The playlist has no items.' }],
+  };
+
+  it('is nothing_assigned when no playlist is assigned, with or without a publication', () => {
+    expect(decidePushState({ plan: null, currentManifest: null })).toBe('nothing_assigned');
+    expect(decidePushState({ plan: null, currentManifest: publishedManifest() })).toBe(
+      'nothing_assigned',
+    );
+  });
+
+  it('is blocked when the assigned playlist cannot be published, with or without a publication', () => {
+    expect(decidePushState({ plan: refused, currentManifest: null })).toBe('blocked');
+    expect(decidePushState({ plan: refused, currentManifest: publishedManifest() })).toBe(
+      'blocked',
+    );
+  });
+
+  it('is never_pushed when the display has no publication yet', () => {
+    expect(decidePushState({ plan: ok(draftOf()), currentManifest: null })).toBe('never_pushed');
+  });
+
+  it('is up_to_date when the draft equals the current publication', () => {
+    expect(decidePushState({ plan: ok(draftOf()), currentManifest: publishedManifest() })).toBe(
+      'up_to_date',
+    );
+  });
+
+  it('is changes when the draft differs from the current publication', () => {
+    const edited = draftOf([...BASE, image(ID.png, 2000)]);
+    expect(decidePushState({ plan: ok(edited), currentManifest: publishedManifest() })).toBe(
+      'changes',
+    );
+    const otherPlaylist = draftOf([image(ID.png, 2000)]);
+    expect(decidePushState({ plan: ok(otherPlaylist), currentManifest: publishedManifest() })).toBe(
+      'changes',
+    );
+  });
+});

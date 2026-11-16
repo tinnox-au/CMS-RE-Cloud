@@ -3,6 +3,7 @@
  * Every query runs inside withOrg with the organisation of the verified session.
  */
 import {
+  ABSOLUTE,
   CanvasSpecSchema,
   DisplayCreateSchema,
   DisplayPatchSchema,
@@ -13,6 +14,7 @@ import {
   ROUTES,
   StagingPhaseSchema,
   type Canvas,
+  type DeliveryStatusListResponse,
   type DeliveryStatusView,
   type DisplayDto,
   type DisplayListResponse,
@@ -22,19 +24,28 @@ import {
   type RevokePlayerResponse,
   type SiteListResponse,
 } from '@tinnox/contracts';
-import { auditScoped, pairingClaim, withOrg, type Tx } from '@tinnox/db';
+import {
+  auditScoped,
+  pairingClaim,
+  STAGE_A_CONSTRAINTS,
+  violatedConstraint,
+  withOrg,
+  type Tx,
+} from '@tinnox/db';
 import { buildDeliveryStatusView, type ReportedState } from '@tinnox/domain';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { operatorOf } from '../auth/session.ts';
 import { perMinute, type AppContext } from '../context.ts';
 import { accept, bigintToNumber, iso, isoOrNull, refuse, withOrgDecision } from '../db-helpers.ts';
-import { HttpError, notFound, parseInput } from '../errors.ts';
+import { HttpError, notFound, parseInput, pgErrorCode } from '../errors.ts';
+import { isUnknownTag, replaceTags } from './tags.ts';
 
 interface DisplayRow {
   id: string;
   site_id: string;
   name: string;
+  description: string | null;
   canvas_width: number;
   canvas_height: number;
   content_x: number | null;
@@ -47,16 +58,26 @@ interface DisplayRow {
   updated_at: Date;
   registration_id: string | null;
   registered_at: Date | null;
+  tag_ids: string[];
+  assigned_playlist_id: string | null;
+  /** Null when nothing is assigned. A deleted playlist cannot be assigned. */
+  assigned_playlist_name: string | null;
 }
 
 const DISPLAY_SELECT = `
-  SELECT d.id, d.site_id, d.name, d.canvas_width, d.canvas_height,
+  SELECT d.id, d.site_id, d.name, d.description, d.canvas_width, d.canvas_height,
          d.content_x, d.content_y, d.content_width, d.content_height,
          d.default_fit, d.route, d.created_at, d.updated_at,
-         pr.id AS registration_id, pr.created_at AS registered_at
+         pr.id AS registration_id, pr.created_at AS registered_at,
+         ARRAY(SELECT dt.tag_id FROM display_tag dt
+               WHERE dt.display_id = d.id AND dt.org_id = d.org_id
+               ORDER BY dt.created_at, dt.tag_id)::text[] AS tag_ids,
+         ap.id AS assigned_playlist_id, ap.name AS assigned_playlist_name
   FROM display d
   LEFT JOIN player_registration pr
     ON pr.display_id = d.id AND pr.org_id = d.org_id AND pr.revoked_at IS NULL
+  LEFT JOIN playlist ap
+    ON ap.id = d.assigned_playlist_id AND ap.org_id = d.org_id AND ap.deleted_at IS NULL
   WHERE d.org_id = app_org_id()`;
 
 export function contentRectOf(row: {
@@ -86,6 +107,7 @@ function toDisplayDto(row: DisplayRow): DisplayDto {
     id: row.id,
     siteId: row.site_id,
     name: row.name,
+    description: row.description,
     canvas: { width: row.canvas_width, height: row.canvas_height },
     contentRect: contentRectOf(row),
     defaultFit: row.default_fit,
@@ -94,6 +116,11 @@ function toDisplayDto(row: DisplayRow): DisplayDto {
       row.registration_id === null || row.registered_at === null
         ? null
         : { registrationId: row.registration_id, registeredAt: iso(row.registered_at) },
+    tagIds: row.tag_ids.slice(0, ABSOLUTE.maxTagsPerItem),
+    assignedPlaylist:
+      row.assigned_playlist_id === null || row.assigned_playlist_name === null
+        ? null
+        : { id: row.assigned_playlist_id, name: row.assigned_playlist_name },
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
@@ -188,6 +215,49 @@ export function reportedStateOf(row: DeliveryRow | undefined): ReportedState {
 
 export type { DeliveryRow };
 
+type StatusRow = DeliveryRow & { display_id: string; registration_id: string | null };
+
+/**
+ * The delivery status view of one display (`displayId`) or of every display of
+ * the organisation (null), in the order of the display list. One query either
+ * way; a display that never had a publication or a report simply has no
+ * delivery columns. At most `ABSOLUTE.maxListItems` displays are returned.
+ */
+export async function loadStatusViews(
+  tx: Tx,
+  ctx: AppContext,
+  displayId: string | null,
+): Promise<DeliveryStatusView[]> {
+  const { rows } = await tx.query<StatusRow>(
+    `SELECT d.id AS display_id, pr.id AS registration_id,
+            dd.desired_publication_id, dd.desired_at, dd.reporting_registration_id, dd.last_seq,
+            dd.downloaded_publication_id, dd.active_publication_id, dd.active_item_index,
+            dd.player_state, dd.staging, dd.last_errors, dd.last_heartbeat_at
+     FROM display d
+     LEFT JOIN player_registration pr
+       ON pr.display_id = d.id AND pr.org_id = d.org_id AND pr.revoked_at IS NULL
+     LEFT JOIN display_delivery dd ON dd.display_id = d.id AND dd.org_id = d.org_id
+     WHERE d.org_id = app_org_id() AND ($1::uuid IS NULL OR d.id = $1::uuid)
+     ORDER BY d.created_at, d.id
+     LIMIT $2`,
+    [displayId, ABSOLUTE.maxListItems],
+  );
+  const now = ctx.now();
+  return rows.map((row) =>
+    buildDeliveryStatusView({
+      displayId: row.display_id,
+      activeRegistrationId: row.registration_id,
+      desired:
+        row.desired_publication_id === null || row.desired_at === null
+          ? null
+          : { publicationId: row.desired_publication_id, publishedAt: iso(row.desired_at) },
+      reported: reportedStateOf(row),
+      now,
+      staleAfterSeconds: ctx.config.limits.heartbeatStaleAfterSeconds,
+    }),
+  );
+}
+
 export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { pool, config } = ctx;
 
@@ -259,66 +329,121 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     return withOrg(pool, session.orgId, async (tx) => {
       const row = await loadDisplay(tx, id);
-      if (row === null) throw notFound('The display');
+      if (row === null) throw notFound('The screen');
       return toDisplayDto(row);
     });
   });
 
+  /**
+   * Partial update. Assigning a playlist changes nothing on the display: what
+   * it plays stays its current publication until a push (decision P2-05).
+   */
   app.patch(ROUTES.displayPattern, async (request): Promise<DisplayDto> => {
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     const patch = parseInput(DisplayPatchSchema, request.body, 'display');
-    return withOrg(pool, session.orgId, async (tx) => {
-      const locked = await tx.query<DisplayRow>(
-        `SELECT d.id, d.site_id, d.name, d.canvas_width, d.canvas_height,
-                d.content_x, d.content_y, d.content_width, d.content_height,
-                d.default_fit, d.route, d.created_at, d.updated_at,
-                NULL::uuid AS registration_id, NULL::timestamptz AS registered_at
-         FROM display d WHERE d.id = $1 AND d.org_id = app_org_id() FOR UPDATE`,
-        [id],
-      );
-      const current = locked.rows[0];
-      if (current === undefined) throw notFound('The display');
-      // The combined result is re-checked: a canvas change can push an existing rectangle out of bounds.
-      const spec = parseInput(
-        CanvasSpecSchema,
-        {
-          canvas: patch.canvas ?? { width: current.canvas_width, height: current.canvas_height },
-          contentRect: patch.contentRect === undefined ? contentRectOf(current) : patch.contentRect,
-        },
-        'display',
-      );
-      assertCanvasWithinLimits(spec.canvas, config.limits);
-      await tx.query(
-        `UPDATE display
-         SET name = $2, canvas_width = $3, canvas_height = $4,
-             content_x = $5, content_y = $6, content_width = $7, content_height = $8, default_fit = $9
-         WHERE id = $1 AND org_id = app_org_id()`,
-        [
-          id,
-          patch.name ?? current.name,
-          spec.canvas.width,
-          spec.canvas.height,
-          spec.contentRect?.x ?? null,
-          spec.contentRect?.y ?? null,
-          spec.contentRect?.width ?? null,
-          spec.contentRect?.height ?? null,
-          patch.defaultFit ?? current.default_fit,
-        ],
-      );
-      await auditScoped(tx, {
-        actorType: 'operator',
-        actorId: session.membershipId,
-        action: 'display.update',
-        objectType: 'display',
-        objectId: id,
-        result: 'success',
-        detail: { fields: Object.keys(patch).sort() },
+    try {
+      return await withOrg(pool, session.orgId, async (tx) => {
+        const locked = await tx.query<{
+          name: string;
+          description: string | null;
+          canvas_width: number;
+          canvas_height: number;
+          content_x: number | null;
+          content_y: number | null;
+          content_width: number | null;
+          content_height: number | null;
+          default_fit: 'contain' | 'cover';
+          assigned_playlist_id: string | null;
+        }>(
+          `SELECT d.name, d.description, d.canvas_width, d.canvas_height,
+                  d.content_x, d.content_y, d.content_width, d.content_height,
+                  d.default_fit, d.assigned_playlist_id
+           FROM display d WHERE d.id = $1 AND d.org_id = app_org_id() FOR UPDATE`,
+          [id],
+        );
+        const current = locked.rows[0];
+        if (current === undefined) throw notFound('The screen');
+        // The combined result is re-checked: a canvas change can push an existing rectangle out of bounds.
+        const spec = parseInput(
+          CanvasSpecSchema,
+          {
+            canvas: patch.canvas ?? { width: current.canvas_width, height: current.canvas_height },
+            contentRect:
+              patch.contentRect === undefined ? contentRectOf(current) : patch.contentRect,
+          },
+          'display',
+        );
+        assertCanvasWithinLimits(spec.canvas, config.limits);
+
+        const assign = patch.assignedPlaylistId;
+        if (assign !== undefined && assign !== null) {
+          // Held until commit, so the playlist cannot be deleted under the assignment.
+          const playlist = await tx.query(
+            `SELECT 1 FROM playlist
+             WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL FOR SHARE`,
+            [assign],
+          );
+          if (playlist.rowCount !== 1) throw notFound('The playlist');
+        }
+
+        // A change of tags alone leaves the row, and so its updated_at, as it is.
+        const { tagIds, ...columns } = patch;
+        if (Object.keys(columns).length > 0) {
+          await tx.query(
+            `UPDATE display
+             SET name = $2, canvas_width = $3, canvas_height = $4,
+                 content_x = $5, content_y = $6, content_width = $7, content_height = $8,
+                 default_fit = $9, description = $10, assigned_playlist_id = $11
+             WHERE id = $1 AND org_id = app_org_id()`,
+            [
+              id,
+              patch.name ?? current.name,
+              spec.canvas.width,
+              spec.canvas.height,
+              spec.contentRect?.x ?? null,
+              spec.contentRect?.y ?? null,
+              spec.contentRect?.width ?? null,
+              spec.contentRect?.height ?? null,
+              patch.defaultFit ?? current.default_fit,
+              patch.description === undefined ? current.description : patch.description,
+              assign === undefined ? current.assigned_playlist_id : assign,
+            ],
+          );
+        }
+        if (tagIds !== undefined) await replaceTags(tx, 'display', id, tagIds);
+
+        await auditScoped(tx, {
+          actorType: 'operator',
+          actorId: session.membershipId,
+          action: 'display.update',
+          objectType: 'display',
+          objectId: id,
+          result: 'success',
+          detail: {
+            fields: Object.keys(patch).sort(),
+            // Lower case, as the database stores it: one spelling per object in the trail.
+            ...(assign === undefined ? {} : { assignedPlaylistId: assign?.toLowerCase() ?? null }),
+          },
+        });
+        const row = await loadDisplay(tx, id);
+        if (row === null) throw new Error('updated display is not visible');
+        return toDisplayDto(row);
       });
-      const row = await loadDisplay(tx, id);
-      if (row === null) throw new Error('updated display is not visible');
-      return toDisplayDto(row);
-    });
+    } catch (error) {
+      // The playlist or a tag went away between the check above and the write. The
+      // database refuses in both cases; the answer is the same as for an unknown id.
+      const constraint = violatedConstraint(error);
+      const pg = pgErrorCode(error);
+      if (
+        (pg === '23503' && constraint === STAGE_A_CONSTRAINTS.displayAssignedPlaylist) ||
+        (pg === '23001' && constraint === STAGE_A_CONSTRAINTS.assignedPlaylistDeleted)
+      ) {
+        throw notFound('The playlist');
+      }
+      if (isUnknownTag(error)) throw notFound('The tag');
+      throw error;
+    }
   });
 
   // D9: the operator claims a pairing code for one of the organisation's displays.
@@ -337,7 +462,7 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
           maxFailures: config.limits.pairingMaxWrongAttempts,
           windowSeconds: config.limits.pairingSessionWindowSeconds,
         });
-        if (result.outcome === 'display_not_found') throw notFound('The display');
+        if (result.outcome === 'display_not_found') throw notFound('The screen');
         if (result.outcome === 'claimed') {
           await auditScoped(tx, {
             actorType: 'operator',
@@ -403,7 +528,7 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
         'SELECT 1 FROM display WHERE id = $1 AND org_id = app_org_id() FOR UPDATE',
         [id],
       );
-      if (display.rowCount !== 1) throw notFound('The display');
+      if (display.rowCount !== 1) throw notFound('The screen');
       const revoked = await tx.query<{ id: string }>(
         `UPDATE player_registration
          SET revoked_at = now(), revoked_reason = 'operator'
@@ -434,25 +559,17 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     return withOrg(pool, session.orgId, async (tx) => {
-      const display = await loadDisplay(tx, id);
-      if (display === null) throw notFound('The display');
-      const delivery = await tx.query<DeliveryRow>(
-        `SELECT ${DELIVERY_COLUMNS} FROM display_delivery
-         WHERE display_id = $1 AND org_id = app_org_id()`,
-        [id],
-      );
-      const row = delivery.rows[0];
-      return buildDeliveryStatusView({
-        displayId: id,
-        activeRegistrationId: display.registration_id,
-        desired:
-          row === undefined || row.desired_publication_id === null || row.desired_at === null
-            ? null
-            : { publicationId: row.desired_publication_id, publishedAt: iso(row.desired_at) },
-        reported: reportedStateOf(row),
-        now: ctx.now(),
-        staleAfterSeconds: config.limits.heartbeatStaleAfterSeconds,
-      });
+      const [view] = await loadStatusViews(tx, ctx, id);
+      if (view === undefined) throw notFound('The screen');
+      return view;
     });
+  });
+
+  // The same view for every display, in the order of the display list, in one query.
+  app.get(ROUTES.displaysStatus, async (request): Promise<DeliveryStatusListResponse> => {
+    const session = operatorOf(request);
+    return withOrg(pool, session.orgId, async (tx) => ({
+      items: await loadStatusViews(tx, ctx, null),
+    }));
   });
 }

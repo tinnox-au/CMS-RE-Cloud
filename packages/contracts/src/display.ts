@@ -1,21 +1,20 @@
 import { z } from 'zod';
 import { CanvasSchema, contentRectProblem, FitModeSchema, RectSchema } from './canvas.ts';
-import { DisplayIdSchema, RegistrationIdSchema, SiteIdSchema, UtcTimestampSchema } from './ids.ts';
-import { ABSOLUTE } from './limits.ts';
+import {
+  DisplayIdSchema,
+  PlaylistIdSchema,
+  RegistrationIdSchema,
+  SiteIdSchema,
+  UtcTimestampSchema,
+} from './ids.ts';
+import { PlaylistRefSchema } from './refs.ts';
+import { TagIdsInputSchema, TagIdsSchema } from './tag.ts';
+import { DescriptionInputSchema, DescriptionSchema, NameSchema } from './text.ts';
 
 /** Delivery routes known to the product. Only `browser` exists in M0. */
 export const DELIVERY_ROUTE_IDS = ['browser'] as const;
 export const DeliveryRouteIdSchema = z.enum(DELIVERY_ROUTE_IDS);
 export type DeliveryRouteId = z.infer<typeof DeliveryRouteIdSchema>;
-
-export const NameSchema = z
-  .string()
-  .trim()
-  .min(1, 'name is required')
-  .max(ABSOLUTE.maxNameLength)
-  // Reject control characters; names are rendered as text only.
-  // eslint-disable-next-line no-control-regex -- matching control characters is the purpose of this pattern
-  .regex(/^[^\u0000-\u001f\u007f]*$/, 'name must not contain control characters');
 
 export const SiteDtoSchema = z
   .object({
@@ -35,6 +34,7 @@ export const DisplayDtoSchema = z
     id: DisplayIdSchema,
     siteId: SiteIdSchema,
     name: z.string(),
+    description: DescriptionSchema.nullable(),
     canvas: CanvasSchema,
     contentRect: RectSchema.nullable(),
     defaultFit: FitModeSchema,
@@ -47,6 +47,12 @@ export const DisplayDtoSchema = z
       })
       .strict()
       .nullable(),
+    tagIds: TagIdsSchema,
+    /**
+     * The playlist assigned to the display, or null. Assigning changes nothing on
+     * the display; a push builds the publication (see `push.ts`).
+     */
+    assignedPlaylist: PlaylistRefSchema.nullable(),
     createdAt: UtcTimestampSchema,
     updatedAt: UtcTimestampSchema,
   })
@@ -74,15 +80,23 @@ export type DisplayCreate = z.infer<typeof DisplayCreateSchema>;
 export type DisplayCreateInput = z.input<typeof DisplayCreateSchema>;
 
 /**
- * Partial update. When canvas or contentRect changes, the API must re-check the
- * combined result with `CanvasSpecSchema` before saving.
+ * `PATCH /api/displays/:id`: partial update, at least one field.
+ * - When `canvas` or `contentRect` changes, the API must re-check the combined
+ *   result with `CanvasSpecSchema` before saving.
+ * - `tagIds`: the complete new set of display tags. An unknown tag, or a tag of
+ *   the media scope, answers 404.
+ * - `assignedPlaylistId`: null removes the assignment. An unknown or deleted
+ *   playlist answers 404. Nothing reaches the display until a push.
  */
 export const DisplayPatchSchema = z
   .object({
     name: NameSchema.optional(),
+    description: DescriptionInputSchema.optional(),
     canvas: CanvasSchema.optional(),
     contentRect: RectSchema.nullable().optional(),
     defaultFit: FitModeSchema.optional(),
+    tagIds: TagIdsInputSchema.optional(),
+    assignedPlaylistId: PlaylistIdSchema.nullable().optional(),
   })
   .strict()
   .refine((p) => Object.keys(p).length > 0, { message: 'at least one field is required' });

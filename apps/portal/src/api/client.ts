@@ -21,6 +21,8 @@ export interface ApiRequestErrorInit {
   readonly requestId?: string | null;
   /** True when code and message come from the API's error envelope. */
   readonly fromApi: boolean;
+  /** How long the server asked to wait before trying again (`Retry-After`), if it said. */
+  readonly retryAfterMs?: number | null;
 }
 
 /** The one error type thrown by the API client and the upload helper. */
@@ -30,6 +32,8 @@ export class ApiRequestError extends Error {
   readonly details: readonly ApiErrorDetail[];
   readonly requestId: string | null;
   readonly fromApi: boolean;
+  /** From a `Retry-After` header (a 429 or 503 answer); null when there was none. */
+  readonly retryAfterMs: number | null;
 
   constructor(init: ApiRequestErrorInit) {
     super(init.message);
@@ -39,7 +43,25 @@ export class ApiRequestError extends Error {
     this.details = init.details ?? [];
     this.requestId = init.requestId ?? null;
     this.fromApi = init.fromApi;
+    this.retryAfterMs = init.retryAfterMs ?? null;
   }
+}
+
+/** The longest `Retry-After` taken at its word; a larger value is read as this. */
+export const MAX_RETRY_AFTER_MS = 10 * 60 * 1000;
+
+/**
+ * Reads a `Retry-After` header: delay-seconds or an HTTP date (RFC 9110, 10.2.3). Null when
+ * the header is missing or unreadable; a date in the past reads as 0.
+ */
+export function parseRetryAfter(header: string | null, now: number = Date.now()): number | null {
+  if (header === null) return null;
+  const text = header.trim();
+  if (/^\d{1,10}$/.test(text)) return Math.min(Number(text) * 1000, MAX_RETRY_AFTER_MS);
+  if (!/[a-z]/i.test(text)) return null;
+  const at = Date.parse(text);
+  if (Number.isNaN(at)) return null;
+  return Math.min(Math.max(0, at - now), MAX_RETRY_AFTER_MS);
 }
 
 export function isApiRequestError(value: unknown): value is ApiRequestError {
@@ -68,7 +90,9 @@ export function errorFromResponse(
   status: number,
   bodyText: string,
   requestIdHeader: string | null,
+  retryAfterHeader: string | null = null,
 ): ApiRequestError {
+  const retryAfterMs = parseRetryAfter(retryAfterHeader);
   let parsed: unknown = null;
   if (bodyText.length > 0 && bodyText.length <= MAX_ERROR_BODY_CHARS) {
     try {
@@ -87,6 +111,7 @@ export function errorFromResponse(
       details: details ?? [],
       requestId: requestId ?? requestIdHeader,
       fromApi: true,
+      retryAfterMs,
     });
   }
   return new ApiRequestError({
@@ -98,6 +123,7 @@ export function errorFromResponse(
         : `The server answered with HTTP ${status} and no readable error description.`,
     requestId: requestIdHeader,
     fromApi: false,
+    retryAfterMs,
   });
 }
 
@@ -199,7 +225,12 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
       });
     }
     if (response.ok) return { status: response.status, text };
-    throw errorFromResponse(response.status, text, response.headers.get(HEADERS.requestId));
+    throw errorFromResponse(
+      response.status,
+      text,
+      response.headers.get(HEADERS.requestId),
+      response.headers.get('retry-after'),
+    );
   }
 
   async function sendWithRecovery(

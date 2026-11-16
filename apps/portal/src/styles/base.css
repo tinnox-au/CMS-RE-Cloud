@@ -1,0 +1,322 @@
+/*
+ * Base layer: reset, typography, focus, selection, scrollbars, motion and helpers.
+ *
+ * Element defaults are written inside one zero-specificity guard, `:where(*)`, so any class
+ * rule of a component or a page overrides them.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-gutter: stable;
+}
+
+body {
+  margin: 0;
+  min-block-size: 100dvh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  letter-spacing: -0.005em;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+:where(*) {
+  &:where(h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd, pre) {
+    margin: 0;
+  }
+
+  &:where(ul, ol) {
+    margin: 0;
+    padding-inline-start: 1.25em;
+  }
+
+  &:where(h1) {
+    font: 700 26px/32px var(--font-head);
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  &:where(h2) {
+    font: 700 18px/24px var(--font-head);
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  &:where(h3) {
+    font: 600 15px/20px var(--font-body);
+    letter-spacing: -0.01em;
+  }
+
+  &:where(h4, h5, h6) {
+    font: 600 14px/20px var(--font-body);
+    letter-spacing: -0.005em;
+  }
+
+  &:where(a) {
+    color: var(--brand);
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: color-mix(in srgb, currentColor 36%, transparent);
+    text-underline-offset: 3px;
+    transition:
+      color var(--t-fast) var(--ease),
+      text-decoration-color var(--t-fast) var(--ease);
+  }
+
+  &:where(a:hover) {
+    color: var(--brand-hover);
+    text-decoration-color: currentColor;
+  }
+
+  &:where(strong, b) {
+    font-weight: 600;
+  }
+
+  &:where(code, kbd, samp, pre) {
+    font-family: var(--font-mono);
+    font-size: 0.925em;
+    letter-spacing: 0;
+  }
+
+  &:where(button, input, select, textarea) {
+    margin: 0;
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+  }
+
+  &:where(button, [role='button'], summary, label:has(input:enabled)) {
+    cursor: pointer;
+  }
+
+  &:where(:disabled, [aria-disabled='true']) {
+    cursor: not-allowed;
+  }
+
+  &:where(img, video, canvas) {
+    display: block;
+    max-inline-size: 100%;
+  }
+
+  &:where(table) {
+    border-collapse: collapse;
+    border-spacing: 0;
+  }
+
+  &:where(th) {
+    font-weight: inherit;
+    text-align: start;
+  }
+
+  &:where(fieldset) {
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  &:where(legend) {
+    padding: 0;
+  }
+
+  &:where(hr) {
+    margin: 0;
+    border: 0;
+    border-block-start: 1px solid var(--line);
+  }
+
+  /*
+   * One focus ring everywhere: a gap in the surface colour, then the ring. The transparent
+   * outline keeps a visible indicator in forced-colours mode, where shadows are dropped.
+   */
+  &:focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    box-shadow: var(--focus-ring);
+  }
+
+  &::selection {
+    background: color-mix(in srgb, var(--brand) 24%, transparent);
+  }
+}
+
+[hidden] {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* ---------- Type styles (design-system.md, section 3) ---------- */
+
+.tx-display {
+  font: 700 32px/38px var(--font-head);
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.tx-h1 {
+  font: 700 26px/32px var(--font-head);
+  letter-spacing: -0.02em;
+}
+
+.tx-h2 {
+  font: 700 18px/24px var(--font-head);
+  letter-spacing: -0.01em;
+}
+
+.tx-h3 {
+  font: 600 15px/20px var(--font-body);
+  letter-spacing: -0.01em;
+}
+
+.tx-body {
+  font: 400 14px/20px var(--font-body);
+  letter-spacing: -0.005em;
+}
+
+.tx-strong {
+  font-weight: 600;
+}
+
+.tx-small {
+  font: 400 13px/18px var(--font-body);
+  letter-spacing: 0;
+}
+
+.tx-caption {
+  font: 600 12px/16px var(--font-body);
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}
+
+.tx-muted {
+  color: var(--ink-2);
+}
+
+.tx-mono {
+  font-family: var(--font-mono);
+  font-size: 0.925em;
+  letter-spacing: 0;
+}
+
+/* Numbers that line up in columns: tables, counters, durations. */
+.tx-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.tx-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-break {
+  overflow-wrap: anywhere;
+}
+
+.tx-nowrap {
+  white-space: nowrap;
+}
+
+/* An API error code or another literal value shown inside a sentence. */
+.tx-code {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 12px/18px var(--font-mono);
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  vertical-align: baseline;
+}
+
+/* ---------- Helpers ---------- */
+
+.tx-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* First in the tab order; slides into view when focused. */
+.tx-skip-link {
+  position: fixed;
+  inset-block-start: var(--s-2);
+  inset-inline-start: var(--s-2);
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  block-size: var(--h-md);
+  padding: 0 var(--s-4);
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  color: var(--on-brand);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(calc(-100% - var(--s-4)));
+  transition: transform var(--t) var(--ease);
+}
+
+.tx-skip-link:hover {
+  color: var(--on-brand);
+}
+
+.tx-skip-link:focus {
+  transform: none;
+}
+
+/* Translucent "glass" for the sidebar and the sticky header. */
+.tx-glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tx-glass {
+    background: var(--surface);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .tx-glass {
+    background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+.tx-icon {
+  flex: none;
+  display: inline-block;
+  vertical-align: -0.25em;
+}

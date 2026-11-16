@@ -1,0 +1,292 @@
+/* Chip, StatusPill, Badge, Avatar, Kbd. */
+
+/* ---------- Chip ---------- */
+
+.tx-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-inline-size: 100%;
+  block-size: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 13px/18px var(--font-body);
+  letter-spacing: 0;
+  text-decoration: none;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.tx-chip--sm {
+  gap: 5px;
+  block-size: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.tx-chip__label {
+  /* Keeps visually hidden text inside the label within its clip. */
+  position: relative;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tx-chip__icon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+/* The colour dot of a tag. The label carries the meaning; the dot only helps scanning. */
+.tx-chip__dot {
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--tx-chip-dot, var(--tag-slate));
+}
+
+.tx-chip--teal {
+  --tx-chip-dot: var(--tag-teal);
+}
+
+.tx-chip--sky {
+  --tx-chip-dot: var(--tag-sky);
+}
+
+.tx-chip--slate {
+  --tx-chip-dot: var(--tag-slate);
+}
+
+.tx-chip--green {
+  --tx-chip-dot: var(--tag-green);
+}
+
+.tx-chip--amber {
+  --tx-chip-dot: var(--tag-amber);
+}
+
+.tx-chip--red {
+  --tx-chip-dot: var(--tag-red);
+}
+
+.tx-chip--violet {
+  --tx-chip-dot: var(--tag-violet);
+}
+
+.tx-chip--pink {
+  --tx-chip-dot: var(--tag-pink);
+}
+
+/* Selectable (filter) chips are buttons with aria-pressed. */
+button.tx-chip {
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+
+button.tx-chip:hover {
+  background: var(--surface-2);
+}
+
+button.tx-chip[aria-pressed='true'] {
+  border-color: var(--brand);
+  background: var(--surface-3);
+}
+
+button.tx-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tx-chip__check {
+  flex: none;
+  margin-inline-start: -2px;
+  color: var(--brand);
+}
+
+/* Removable chips end in a small close button with a 24 px target. */
+.tx-chip--removable {
+  padding-inline-end: 2px;
+}
+
+.tx-chip__remove {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  margin-inline-start: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.tx-chip--sm .tx-chip__remove {
+  margin-block: -1px;
+}
+
+.tx-chip__remove:hover {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+.tx-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The list takes focus itself only after its last removable chip has gone. */
+.tx-chip-list:focus-visible {
+  border-radius: var(--r-sm);
+}
+
+/* ---------- StatusPill ---------- */
+
+.tx-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-inline-size: 100%;
+  block-size: 24px;
+  padding: 0 10px 0 8px;
+  border-radius: var(--r-pill);
+  background: var(--neutral-bg);
+  color: var(--ink-2);
+  font: 600 12px/16px var(--font-body);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.tx-pill--ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.tx-pill--warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.tx-pill--danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.tx-pill__dot {
+  flex: none;
+  inline-size: 6px;
+  block-size: 6px;
+  margin-inline: 2px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.tx-pill__icon {
+  flex: none;
+}
+
+.tx-pill__label {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Badge (count) ---------- */
+
+.tx-badge {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 20px;
+  block-size: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  color: var(--on-brand);
+  font: 600 12px/16px var(--font-body);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+/* On a brand-filled button the colours swap. */
+.tx-badge--inverse {
+  background: var(--on-brand);
+  color: var(--brand);
+}
+
+.tx-badge--neutral {
+  background: var(--neutral-bg);
+  color: var(--ink-2);
+}
+
+.tx-badge--danger {
+  background: var(--danger);
+  color: var(--on-brand);
+}
+
+/* ---------- Avatar ---------- */
+
+.tx-avatar {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  inline-size: 36px;
+  block-size: 36px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--brand);
+  font: 600 13px/1 var(--font-body);
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.tx-avatar--sm {
+  inline-size: 28px;
+  block-size: 28px;
+  font-size: 11px;
+}
+
+.tx-avatar--lg {
+  inline-size: 44px;
+  block-size: 44px;
+  font-size: 15px;
+}
+
+/* ---------- Kbd ---------- */
+
+.tx-kbd {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 22px;
+  block-size: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  border-block-end-width: 2px;
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: 500 12px/1 var(--font-body);
+  letter-spacing: 0;
+  white-space: nowrap;
+  vertical-align: middle;
+}

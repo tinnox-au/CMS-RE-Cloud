@@ -1,0 +1,99 @@
+/* Toast: bottom centre, pill-shaped. The stack is raised into the top layer when it has content. */
+
+.tx-toasts {
+  position: fixed;
+  inset: auto 0 calc(var(--s-6) + var(--tx-toast-lift, 0px));
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
+  inline-size: fit-content;
+  max-inline-size: min(560px, calc(100vw - 32px));
+  block-size: auto;
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  background: none;
+  color: inherit;
+  pointer-events: none;
+}
+
+/* A selection bar occupies the same spot; toasts stack above it. */
+body:has(.tx-selection-bar) .tx-toasts {
+  --tx-toast-lift: 64px;
+}
+
+/* On a phone the bar wraps onto a second line (styles/table.css). */
+@media (max-width: 559px) {
+  body:has(.tx-selection-bar) .tx-toasts {
+    --tx-toast-lift: 104px;
+  }
+}
+
+.tx-toasts:empty {
+  display: none;
+}
+
+.tx-toast {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-block-size: 44px;
+  max-inline-size: 100%;
+  padding: 4px 6px 4px 14px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  color: var(--ink);
+  pointer-events: auto;
+}
+
+.tx-toast__icon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.tx-toast--ok .tx-toast__icon {
+  color: var(--ok);
+}
+
+.tx-toast--danger .tx-toast__icon {
+  color: var(--danger);
+}
+
+.tx-toast--warn .tx-toast__icon {
+  color: var(--warn);
+}
+
+.tx-toast__text {
+  flex: 1;
+  min-inline-size: 0;
+  padding-block: 6px;
+  padding-inline-end: var(--s-1);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.tx-toast__detail {
+  display: block;
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tx-toast {
+    transition:
+      opacity var(--t) var(--ease),
+      translate var(--t) var(--ease);
+  }
+
+  @starting-style {
+    .tx-toast {
+      opacity: 0;
+      translate: 0 12px;
+    }
+  }
+}

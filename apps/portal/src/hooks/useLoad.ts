@@ -26,6 +26,12 @@ export interface LoadResult<T> {
  * With `poll` it repeats after each completed attempt while the tab is visible; `poll`
  * may be a function of the latest data, for example "only while something is processing".
  * A failed refresh never discards data that was already shown; it is flagged instead.
+ *
+ * A new `load` (another filter, a status read forced after pairing) also keeps the current
+ * data on screen until its answer arrives, and a failure is flagged as `refreshError`. That
+ * is right for another view of the same thing, not for another object: a page that shows one
+ * object by id must be mounted under a key of that id (App.tsx does this for the detail
+ * routes), so a different id starts from 'loading' and a missing one ends in 'error'.
  */
 export function useLoad<T>(
   load: (signal: AbortSignal) => Promise<T>,
@@ -94,18 +100,4 @@ export function useLoad<T>(
   }, []);
 
   return { state, reload, setData };
-}
-
-/** Re-renders the caller every `intervalMs` so relative times keep moving. */
-export function useTick(intervalMs: number): number {
-  const [now, setNow] = useState(() => performance.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(performance.now());
-    }, intervalMs);
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [intervalMs]);
-  return now;
 }

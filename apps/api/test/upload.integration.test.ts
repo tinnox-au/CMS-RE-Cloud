@@ -16,6 +16,7 @@ import {
   publishImages,
   readyImage,
   signIn,
+  settleStrayMediaJobs,
   startTestApp,
   uploadBytes,
   type Operator,
@@ -50,6 +51,10 @@ describe('upload limits and validation results', () => {
     });
     org = await createOrg('Upload A');
     operator = await signIn(t, org);
+    // The timeout test below measures when a job is given up. That depends on how many
+    // jobs are ahead of it in the one queue of the database, so rows left in
+    // "processing" by a file that ran just before this one are cleared first.
+    await settleStrayMediaJobs(t.pool);
   });
   afterAll(async () => {
     await t.close();

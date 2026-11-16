@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
@@ -68,6 +69,17 @@ function contentSecurityPolicy(): Plugin {
 
 export default defineConfig({
   plugins: [react(), contentSecurityPolicy()],
+  resolve: {
+    alias: [
+      // Every `zod` import in the bundle goes through src/zodJitless.ts, which stops zod
+      // from probing for `new Function` (a Content-Security-Policy violation report).
+      // The module itself imports `zod/v4`, which this exact-match rule leaves alone.
+      {
+        find: /^zod$/,
+        replacement: fileURLToPath(new URL('./src/zodJitless.ts', import.meta.url)),
+      },
+    ],
+  },
   server: {
     host: '127.0.0.1',
     port: 5173,

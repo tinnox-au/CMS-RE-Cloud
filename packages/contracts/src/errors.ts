@@ -17,6 +17,7 @@ export const API_ERROR_CODES = [
   'storage_quota_exceeded',
   'media_not_ready',
   'media_in_use',
+  'playlist_in_use',
   'publication_rejected',
   'pairing_code_invalid',
   'pairing_expired',

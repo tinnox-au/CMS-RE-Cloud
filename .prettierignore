@@ -4,6 +4,7 @@ data
 coverage
 test-results
 playwright-report
+tests/.run
 package-lock.json
 infra/.generated
 docs

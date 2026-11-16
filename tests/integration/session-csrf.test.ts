@@ -4,6 +4,7 @@
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { API_PREFIX, ROUTES } from '@tinnox/contracts';
 import {
   arrangeAsDefiner,
   createDisplay,
@@ -34,27 +35,84 @@ describe('operator session, CSRF and origin checks', () => {
   });
 
   const id = randomUUID();
-  const OPERATOR_ROUTES: [string, string][] = [
+  /**
+   * Every route of the operator API, as registered (`:id` is a UUID). The test
+   * below fails when the application serves an operator route that is not listed
+   * here, so a new route cannot skip the session, CSRF and Origin checks unnoticed.
+   */
+  const OPERATOR_ROUTE_PATTERNS: [string, string][] = [
     ['GET', '/api/sites'],
     ['GET', '/api/displays'],
     ['POST', '/api/displays'],
-    ['GET', `/api/displays/${id}`],
-    ['PATCH', `/api/displays/${id}`],
-    ['POST', `/api/displays/${id}/claim`],
-    ['POST', `/api/displays/${id}/revoke-player`],
-    ['GET', `/api/displays/${id}/status`],
+    ['GET', '/api/displays/status'],
+    ['GET', '/api/displays/:id'],
+    ['PATCH', '/api/displays/:id'],
+    ['POST', '/api/displays/:id/claim'],
+    ['POST', '/api/displays/:id/revoke-player'],
+    ['GET', '/api/displays/:id/status'],
     ['GET', '/api/media'],
     ['POST', '/api/media'],
-    ['GET', `/api/media/${id}`],
-    ['GET', `/api/media/${id}/preview`],
-    ['DELETE', `/api/media/${id}`],
+    ['GET', '/api/media/:id'],
+    ['PATCH', '/api/media/:id'],
+    ['DELETE', '/api/media/:id'],
+    ['GET', '/api/media/:id/preview'],
+    ['GET', '/api/media/:id/usage'],
+    ['GET', '/api/tags'],
+    ['POST', '/api/tags'],
+    ['PATCH', '/api/tags/:id'],
+    ['DELETE', '/api/tags/:id'],
+    ['GET', '/api/folders'],
+    ['POST', '/api/folders'],
+    ['PATCH', '/api/folders/:id'],
+    ['DELETE', '/api/folders/:id'],
     ['GET', '/api/playlists'],
     ['POST', '/api/playlists'],
-    ['GET', `/api/playlists/${id}`],
-    ['PUT', `/api/playlists/${id}`],
-    ['POST', `/api/playlists/${id}/publish`],
+    ['GET', '/api/playlists/:id'],
+    ['PUT', '/api/playlists/:id'],
+    ['DELETE', '/api/playlists/:id'],
+    ['POST', '/api/playlists/:id/duplicate'],
+    ['POST', '/api/playlists/:id/publish'],
+    ['GET', '/api/push'],
+    ['POST', '/api/push'],
+    ['GET', '/api/overview'],
     ['GET', '/api/audit'],
   ];
+  const OPERATOR_ROUTES: [string, string][] = OPERATOR_ROUTE_PATTERNS.map(([method, pattern]) => [
+    method,
+    pattern.replace(':id', id),
+  ]);
+  const STATE_CHANGING_ROUTES = OPERATOR_ROUTES.filter(([method]) => method !== 'GET');
+  /** Routes under /api that deliberately work without an operator session. */
+  const PUBLIC_API_ROUTES: [string, string][] = [
+    ['GET', ROUTES.authLogin],
+    ['GET', ROUTES.authCallback],
+    ['GET', ROUTES.session],
+  ];
+  /** Signing out needs the session, the token and the Origin, but is not in the operator plugin. */
+  const LOGOUT: [string, string] = ['POST', ROUTES.authLogout];
+
+  it('lists every /api route the application serves', () => {
+    const listed = new Set(
+      [...OPERATOR_ROUTE_PATTERNS, ...PUBLIC_API_ROUTES, LOGOUT].map(
+        ([method, pattern]) => `${method} ${pattern}`,
+      ),
+    );
+    // Every path the contracts know, under every method: what the application answers to.
+    const patterns = new Set<string>();
+    for (const value of Object.values(ROUTES) as unknown[]) {
+      if (typeof value === 'string' && value.startsWith(`${API_PREFIX}/`)) patterns.add(value);
+    }
+    expect(patterns.size).toBeGreaterThan(20);
+    const served: string[] = [];
+    for (const url of patterns) {
+      for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const) {
+        if (t.app.hasRoute({ method, url })) served.push(`${method} ${url}`);
+      }
+    }
+    expect(served.filter((route) => !listed.has(route))).toEqual([]);
+    // And nothing is listed that the application does not serve.
+    expect([...listed].filter((route) => !served.includes(route))).toEqual([]);
+  });
 
   it('refuses every operator route without a session, with or without a made-up cookie', async () => {
     for (const [method, path] of OPERATOR_ROUTES) {
@@ -182,6 +240,43 @@ describe('operator session, CSRF and origin checks', () => {
         (event) => event.action === 'security.csrf_rejected' && event.result === 'denied',
       ).length,
     ).toBeGreaterThanOrEqual(refused.length);
+  });
+
+  it('applies the CSRF token and the Origin check to every state-changing operator route', async () => {
+    const other = await signIn(t, org);
+    for (const [method, path] of [...STATE_CHANGING_ROUTES, LOGOUT]) {
+      const what = `${method} ${path}`;
+      const send = (headers: Record<string, string>): Promise<Response> =>
+        fetch(`${t.url}${path}`, { method, headers: { cookie: operator.cookie, ...headers } });
+
+      for (const token of [undefined, other.csrfToken]) {
+        const response = await send({
+          origin: PORTAL_ORIGIN,
+          ...(token === undefined ? {} : { 'x-csrf-token': token }),
+        });
+        expect(response.status, `${what} without this session's token`).toBe(403);
+        expect(((await response.json()) as { error: { code: string } }).error.code, what).toBe(
+          'csrf_failed',
+        );
+      }
+      for (const origin of [undefined, PLAYER_ORIGIN, 'https://attacker.example']) {
+        const response = await send({
+          'x-csrf-token': operator.csrfToken,
+          ...(origin === undefined ? {} : { origin }),
+        });
+        expect(response.status, `${what} from ${origin ?? 'no origin'}`).toBe(403);
+        expect(((await response.json()) as { error: { code: string } }).error.code, what).toBe(
+          'origin_not_allowed',
+        );
+      }
+      // With both, the request gets past the checks: whatever it answers, it is not 401 or 403.
+      if (path !== LOGOUT[1]) {
+        const passed = await send({ origin: PORTAL_ORIGIN, 'x-csrf-token': operator.csrfToken });
+        expect([401, 403], what).not.toContain(passed.status);
+      }
+    }
+    // The session survived every refused request, the refused sign-out included.
+    expect((await operator.fetch('/api/displays')).status).toBe(200);
   });
 
   it('never grants cross-origin access to the operator API', async () => {

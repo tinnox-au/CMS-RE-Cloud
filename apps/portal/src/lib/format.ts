@@ -17,8 +17,11 @@ export function formatBytes(bytes: number): string {
 /** 4500 -> "4.5 s", 65000 -> "1 min 5 s", 3600000 -> "1 h 0 min". */
 export function formatDurationMs(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return 'unknown';
-  if (ms < 60_000) {
-    const seconds = ms / 1000;
+  // Round to the tenth shown before choosing the unit, so 59 950 ms reads "1 min 0 s", not
+  // "60.0 s", and 9 990 ms reads "10 s" like 10 000 ms does.
+  const tenths = Math.round(ms / 100);
+  if (tenths < 600) {
+    const seconds = tenths / 10;
     return `${Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(1)} s`;
   }
   const totalSeconds = Math.round(ms / 1000);
@@ -58,9 +61,4 @@ export function formatTimestamp(iso: string): string {
   const time = Date.parse(iso);
   if (Number.isNaN(time)) return iso;
   return timestampFormat.format(time);
-}
-
-/** First block of a UUID, for compact display next to the full value. */
-export function shortId(id: string): string {
-  return id.slice(0, 8);
 }

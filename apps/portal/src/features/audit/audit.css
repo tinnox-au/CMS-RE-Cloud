@@ -1,0 +1,212 @@
+/*
+ * The audit log (docs/portal-v2/stage-a.md, section 3.10). Tokens only; class prefix
+ * `tx-audit`.
+ */
+
+.tx-audit-intro {
+  max-inline-size: 72ch;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* ---------- Filters ---------- */
+
+.tx-audit-filters {
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.tx-audit-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.tx-audit-filter__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  color: var(--ink-2);
+  font: 600 12px/16px var(--font-body);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* ---------- Cells ---------- */
+
+.tx-audit-time {
+  display: grid;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tx-audit-time__date {
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-audit-time__clock {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-audit-action {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.tx-audit-action__words {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+/* The raw action as recorded: small, monospace, readable (never --ink-3). */
+.tx-audit-raw {
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+  font: 400 12px/16px var(--font-mono);
+}
+
+.tx-audit-object {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.tx-audit-object__name {
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.tx-audit-object__name {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+a.tx-audit-object__name:hover {
+  color: var(--brand-hover);
+}
+
+.tx-audit-object__name--gone {
+  color: var(--ink-2);
+}
+
+.tx-audit-object__gone {
+  font-style: italic;
+}
+
+.tx-audit-object__meta {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-audit-object__meta .tx-mono {
+  font-size: 12px;
+}
+
+.tx-audit-summary {
+  display: -webkit-box;
+  /* Its entries do not widen the column (it keeps the width the table gives it). */
+  contain: inline-size;
+  overflow: hidden;
+  color: var(--ink-2);
+  font: 400 12px/16px var(--font-mono);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/*
+ * One `key: value` entry: whole on its line, never split in the middle of a key. An entry
+ * longer than the column ends with an ellipsis; the title and the details dialog show it all.
+ */
+.tx-audit-summary__pair {
+  display: inline-block;
+  overflow: hidden;
+  max-inline-size: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.tx-audit-none {
+  color: var(--ink-2);
+}
+
+/* ---------- Paging ---------- */
+
+.tx-audit-more {
+  display: flex;
+  justify-content: center;
+  padding-block: var(--s-2);
+}
+
+.tx-audit-end {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* ---------- Details dialog ---------- */
+
+.tx-audit-dialog__facts dd {
+  min-inline-size: 0;
+}
+
+.tx-audit-dialog__caption {
+  margin-block-end: var(--s-2);
+}
+
+.tx-audit-json {
+  position: relative;
+  overflow: auto;
+  max-block-size: 320px;
+  margin: 0;
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: 400 12px/18px var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tx-audit-json:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--focus);
+}
+
+/*
+ * Phone widths (below the 768 px the portal is laid out for): the Result pill keeps its icon
+ * and gives its words to screen readers only, so the remaining columns fit without a
+ * sideways scroll, like the other lists.
+ */
+@media (max-width: 479px) {
+  .tx-audit-result .tx-pill__label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

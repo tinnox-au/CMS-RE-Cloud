@@ -388,7 +388,9 @@ Egress is about 35% of cost at 2,000 screens, so player caching and content-hash
 
 ## 18. Branding and design
 
-TINNOX will supply logo, colours and typography later (TINNOX answer Q5). Until then the interface uses provisional tokens taken from tinnox.com.au: primary Deep Teal #0f4761, ink Midnight #12212a, accent Signal Sky #72afc2; Manrope for headings and Inter for body text, both under the SIL Open Font Licence (VERIFIED_FULL_PAGE, R5). The logo is not embedded until TINNOX supplies it, and use of the tokens meanwhile is to be confirmed (Q-T13). The interface is designed from scratch: a left navigation for Media, Playlists, Layouts, Schedules, Displays, Reports and Settings in the portal; Customers, Fleet, Devices, Controllers, Contracts, Releases and Audit in the console. A preview-first layout editor and a delivery-state-first display page are the two signature screens. No Yodeck imagery, copy or layout is reused.
+TINNOX will supply logo, colours and typography later (TINNOX answer Q5). Until then the interface uses provisional tokens taken from tinnox.com.au: primary Deep Teal #0f4761, ink Midnight #12212a, accent Signal Sky #72afc2; Manrope for headings and Inter for body text, both under the SIL Open Font Licence (VERIFIED_FULL_PAGE, R5). The logo is not embedded until TINNOX supplies it. Use of the tokens meanwhile was confirmed on 2026-11-15 (DEC-31).
+
+Revised 2026-11-15 (DEC-30, DEC-31): the portal follows Yodeck's information architecture and interaction patterns, as observed in `yodeck-ui-observation.md`, with TINNOX's own identity. The portal's left navigation is Dashboard, Media, Apps, Playlists, Layouts, Schedules and Displays, with Settings, Users and the Audit log behind the account menu; the console keeps Customers, Fleet, Devices, Controllers, Contracts, Releases and Audit. A preview-first layout editor and a delivery-state-first display page remain the two signature screens. No Yodeck code, imagery, icons, templates or copy is reused. The design is specified in `portal-v2/design-system.md` and the build plan in `portal-v2/README.md`.
 
 ## 19. Traceability to the brief
 

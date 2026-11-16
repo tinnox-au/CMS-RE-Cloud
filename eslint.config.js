@@ -15,6 +15,8 @@ export default tseslint.config(
       '**/coverage/**',
       '**/test-results/**',
       '**/playwright-report/**',
+      // local, gitignored run state and check scripts (outside every tsconfig)
+      'tests/.run/**',
     ],
   },
   js.configs.recommended,

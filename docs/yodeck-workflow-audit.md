@@ -1,5 +1,7 @@
 # Yodeck workflow audit
 
+> Note, 2026-11-15: the signed-in Yodeck portal has since been observed directly. That walkthrough is in `yodeck-ui-observation.md`. This document is unchanged and remains a documentation audit; where the two differ on what a screen shows, the observation is the better evidence.
+
 Date: 2026-11-03. Revised the same day after the round-2 full-page verification. Status: DOCUMENTATION AUDIT, NOT AN OBSERVATION. This document records how Yodeck's workflows are described in Yodeck's own documentation, in Yodeck's public API specification and in third-party material, as a reference for designing TINNOX CMS. Nothing in it was observed in the Yodeck application. The authenticated Yodeck UI was not inspected at any point. Yodeck was studied only to learn from; nothing is copied.
 
 ## 1. How to read this document

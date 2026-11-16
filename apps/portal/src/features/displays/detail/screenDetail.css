@@ -1,0 +1,671 @@
+/*
+ * The screen details page (docs/portal-v2/stage-a.md, section 3.8). Class prefix
+ * `tx-screen-detail-`. Colour comes from the tokens only. The canvas-shaped frame is dark in
+ * both themes, as an unlit panel is; no text is drawn on it, only the decorative marks.
+ */
+
+.tx-screen-detail-failed {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.tx-screen-detail-missing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-2);
+  max-inline-size: 720px;
+  padding-block-end: var(--s-6);
+}
+
+.tx-screen-detail-missing__answer {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.tx-screen-detail-block {
+  display: block;
+}
+
+/* ---------- Status headline ---------- */
+
+.tx-screen-detail-headline__pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0;
+}
+
+.tx-screen-detail-headline__text {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* The M0 report badge ("STALE", "NO REPORT"): words in the attention colours. */
+.tx-screen-detail-badge {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 20px;
+  padding: 0 var(--s-2);
+  border-radius: var(--r-xs);
+  background: var(--warn-bg);
+  color: var(--warn);
+  font: 700 11px/16px var(--font-body);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+/* ---------- Preview ---------- */
+
+.tx-screen-detail-preview {
+  margin: 0;
+}
+
+.tx-screen-detail-preview__caption {
+  display: grid;
+  gap: 2px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Forms ---------- */
+
+.tx-screen-detail-form {
+  display: grid;
+  gap: var(--s-5);
+}
+
+.tx-screen-detail-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+}
+
+.tx-screen-detail-facts {
+  margin-block-start: var(--s-6);
+  padding-block-start: var(--s-5);
+  border-block-start: 1px solid var(--line);
+}
+
+.tx-screen-detail-idrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  max-inline-size: 100%;
+}
+
+.tx-screen-detail-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3) var(--s-4);
+}
+
+.tx-screen-detail-quad {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--s-3) var(--s-4);
+}
+
+.tx-screen-detail-summary-list {
+  display: grid;
+  gap: var(--s-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tx-screen-detail-warning {
+  color: var(--warn);
+}
+
+/* ---------- Content card ---------- */
+
+.tx-screen-detail-content {
+  display: grid;
+  gap: var(--s-5);
+}
+
+.tx-screen-detail-pushstate__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  margin: 0;
+}
+
+/* ---------- Overview tab ---------- */
+
+.tx-screen-detail-overview {
+  display: grid;
+  gap: var(--s-6);
+}
+
+.tx-screen-detail-pubrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-2);
+}
+
+.tx-screen-detail-noerrors {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.tx-screen-detail-noerrors svg {
+  color: var(--ok);
+}
+
+/* ---------- Pairing tab ---------- */
+
+.tx-screen-detail-pairing__state {
+  margin: 0;
+}
+
+.tx-screen-detail-pairform {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.tx-screen-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-6);
+  align-items: start;
+  min-inline-size: 0;
+}
+
+@media (min-width: 1100px) {
+  .tx-screen-detail {
+    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  }
+}
+
+.tx-screen-detail__column {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-6);
+  min-inline-size: 0;
+}
+
+/* On a wide, tall window the summary stays in view while the tabs scroll. */
+@media (min-width: 1100px) and (min-height: 860px) {
+  .tx-screen-detail__aside {
+    position: sticky;
+    inset-block-start: calc(var(--header-h) + var(--s-6));
+  }
+}
+
+.tx-screen-detail-caption {
+  color: var(--ink-2);
+  font: 600 12px/16px var(--font-body);
+  letter-spacing: 0.02em;
+}
+
+.tx-screen-detail-note {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-screen-detail-id {
+  font: 500 12px/18px var(--font-mono);
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.tx-screen-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+}
+
+.tx-screen-detail-unsaved {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* A button that reads as a link inside running text: the entries of an error summary. */
+.tx-screen-detail-link {
+  display: inline;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--brand);
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.tx-screen-detail-link:hover {
+  color: var(--brand-hover);
+}
+
+/* ---------- Canvas-shaped frame (colours: ../canvasDiagram.css) ---------- */
+
+.tx-screen-detail-stage {
+  --tx-screen-detail-frame-max: 200px;
+
+  display: grid;
+  place-items: center;
+  min-block-size: calc(var(--tx-screen-detail-frame-max) * 0.6 + 2 * var(--s-4));
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+.tx-screen-detail-stage--sm {
+  --tx-screen-detail-frame-max: 150px;
+}
+
+.tx-screen-detail-stage--lg {
+  --tx-screen-detail-frame-max: 176px;
+
+  min-block-size: 208px;
+}
+
+.tx-screen-detail-stage__empty {
+  max-inline-size: 28ch;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: center;
+}
+
+/*
+ * The frame takes the shape of the canvas and is as large as the stage allows: the full
+ * width, unless that would make it taller than the limit.
+ */
+.tx-screen-detail-frame {
+  position: relative;
+  inline-size: min(100%, calc(var(--tx-screen-detail-frame-max) * var(--tx-frame-ratio, 1.7778)));
+  min-inline-size: 6px;
+  min-block-size: 6px;
+  aspect-ratio: var(--tx-frame-ratio, 1.7778);
+  border-radius: var(--r-xs);
+  background: var(--tx-canvas-fill);
+  box-shadow: 0 0 0 1px var(--tx-canvas-edge);
+  overflow: hidden;
+}
+
+.tx-screen-detail-frame__content {
+  position: absolute;
+  inset-block-start: var(--tx-content-top, 0%);
+  inset-inline-start: var(--tx-content-left, 0%);
+  inline-size: var(--tx-content-width, 100%);
+  block-size: var(--tx-content-height, 100%);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: var(--tx-canvas-mark);
+  container-type: size;
+}
+
+/*
+ * A content rectangle is outlined, so the unused part of the canvas can be told apart. A
+ * frame that shows proportions only always draws its content area this way, whole or not,
+ * as the wizard and the screens list do.
+ */
+.tx-screen-detail-frame__content--limited,
+.tx-screen-detail-frame__content--bare {
+  outline: 1px dashed var(--tx-canvas-mark);
+  outline-offset: -1px;
+}
+
+.tx-screen-detail-frame__content--bare {
+  background: color-mix(in srgb, var(--tx-canvas-mark) 26%, transparent);
+}
+
+/* Inside the frame the thumbnail takes the shape of the content area, not its own. */
+.tx-screen-detail-frame__content .tx-shared-thumb,
+.tx-screen-detail-frame__content .tx-thumb {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+
+/* Bars beside a contained item are the unlit panel, not a placeholder tint. */
+.tx-screen-detail-frame__content .tx-thumb[data-state='loaded'] {
+  background: transparent;
+}
+
+.tx-screen-detail-frame__content .tx-shared-thumb__state {
+  border-radius: 0;
+}
+
+.tx-screen-detail-frame__mark {
+  display: grid;
+  place-items: center;
+}
+
+/* A strip of a frame has no room for a mark. */
+@container (max-width: 31px) or (max-height: 31px) {
+  .tx-screen-detail-frame__mark {
+    display: none;
+  }
+}
+
+/* ---------- Summary card ---------- */
+
+.tx-screen-detail-summary {
+  container-type: inline-size;
+}
+
+.tx-screen-detail-summary__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-6);
+}
+
+@container (min-width: 600px) {
+  .tx-screen-detail-summary__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.tx-screen-detail-summary__part {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-3);
+  min-inline-size: 0;
+}
+
+.tx-screen-detail-summary__caption {
+  display: grid;
+  gap: 2px;
+}
+
+.tx-screen-detail-headline {
+  display: grid;
+  justify-items: start;
+  gap: var(--s-2);
+}
+
+.tx-screen-detail-report {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-2);
+}
+
+.tx-screen-detail-report__age {
+  font-variant-numeric: tabular-nums;
+}
+
+.tx-screen-detail-summary__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-block-start: var(--s-1);
+}
+
+.tx-screen-detail-summary__actions > :first-child {
+  flex: 1 1 auto;
+}
+
+/* ---------- Details and content ---------- */
+
+.tx-screen-detail-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-5);
+  max-inline-size: 560px;
+}
+
+.tx-screen-detail-playlist {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3) var(--s-4);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.tx-screen-detail-playlist__text {
+  flex: 1 1 160px;
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.tx-screen-detail-playlist__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.tx-screen-detail-playlist__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.tx-screen-detail-playlist__empty {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 72px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-md);
+  background: var(--neutral-bg);
+  color: var(--ink-2);
+}
+
+.tx-screen-detail-pushstate {
+  display: grid;
+  justify-items: start;
+  gap: var(--s-2);
+}
+
+.tx-screen-detail-issues {
+  display: grid;
+  gap: var(--s-1);
+}
+
+/* ---------- Tabs ---------- */
+
+.tx-screen-detail-tabs {
+  container-type: inline-size;
+}
+
+/* The tab row reaches the card's edges so its underline runs the full width. */
+.tx-screen-detail-tabs__list {
+  margin-block-start: calc(-1 * var(--s-3));
+  margin-inline: calc(-1 * var(--s-6));
+  padding-inline: var(--s-4);
+}
+
+/*
+ * Seven tabs are wider than the card at most window sizes. They stay on one line and scroll
+ * sideways (the kit default), so the underline and hairline stay a single row. Where the
+ * browser can tie an animation to scrolling, the edge with more tabs behind it fades out;
+ * a row that fits has no scroll timeline and no fade.
+ */
+@property --tx-screen-tabs-fade-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --tx-screen-tabs-fade-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes tx-screen-tabs-fade {
+  0% {
+    --tx-screen-tabs-fade-start: 0px;
+    --tx-screen-tabs-fade-end: 40px;
+  }
+
+  8% {
+    --tx-screen-tabs-fade-start: 40px;
+  }
+
+  92% {
+    --tx-screen-tabs-fade-end: 40px;
+  }
+
+  100% {
+    --tx-screen-tabs-fade-start: 40px;
+    --tx-screen-tabs-fade-end: 0px;
+  }
+}
+
+@supports (animation-timeline: scroll()) {
+  .tx-screen-detail-tabs__list {
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--tx-screen-tabs-fade-start),
+      #000 calc(100% - var(--tx-screen-tabs-fade-end)),
+      transparent 100%
+    );
+    animation: tx-screen-tabs-fade linear both;
+    animation-timeline: scroll(self inline);
+  }
+}
+
+.tx-screen-detail-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-3);
+}
+
+.tx-screen-detail-errors {
+  display: grid;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tx-screen-detail-errors > li {
+  display: grid;
+  gap: 2px;
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--danger-bg);
+  overflow-wrap: anywhere;
+}
+
+.tx-screen-detail-errors__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--s-3);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-screen-detail-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2) var(--s-4);
+  padding-block-start: var(--s-5);
+  border-block-start: 1px solid var(--line);
+}
+
+.tx-screen-detail-canvas {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-6);
+}
+
+@container (min-width: 640px) {
+  .tx-screen-detail-canvas {
+    grid-template-columns: minmax(0, 1fr) minmax(200px, 260px);
+    align-items: start;
+  }
+}
+
+.tx-screen-detail-canvas__form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-5);
+  min-inline-size: 0;
+}
+
+.tx-screen-detail-canvas__shape {
+  display: grid;
+  gap: var(--s-2);
+  min-inline-size: 0;
+}
+
+.tx-screen-detail-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  inline-size: 100%;
+}
+
+.tx-screen-detail-pairing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-4);
+  max-inline-size: 560px;
+}
+
+.tx-screen-detail-tags {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-5);
+  max-inline-size: 560px;
+}
+
+/* ---------- Loading ---------- */
+
+.tx-screen-detail-skeleton {
+  display: grid;
+  gap: var(--s-4);
+}
+
+/* ---------- Narrow cards: facts stack, label above value ---------- */
+
+.tx-screen-detail-card {
+  container-type: inline-size;
+}
+
+@container (max-width: 480px) {
+  .tx-screen-detail-card .tx-facts,
+  .tx-screen-detail-tabs .tx-facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .tx-screen-detail-card .tx-facts > dt,
+  .tx-screen-detail-tabs .tx-facts > dt {
+    font: 600 12px/16px var(--font-body);
+    letter-spacing: 0.02em;
+  }
+
+  .tx-screen-detail-card .tx-facts > dd,
+  .tx-screen-detail-tabs .tx-facts > dd {
+    margin-block-end: var(--s-3);
+  }
+}

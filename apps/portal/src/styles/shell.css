@@ -1,0 +1,752 @@
+/*
+ * The application shell (design-system.md, section 4): sidebar, navigation drawer, sticky page
+ * header, environment strip, content column, and the screens shown without the shell
+ * (sign-in, session check, route error). Components: src/shell/.
+ */
+
+/* ---------- Frame ---------- */
+
+.tx-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  min-block-size: 100dvh;
+  transition: grid-template-columns var(--t) var(--ease);
+}
+
+.tx-shell--collapsed {
+  grid-template-columns: var(--sidebar-w-collapsed) minmax(0, 1fr);
+}
+
+.tx-shell--drawer {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The column beside the sidebar: environment strip, then the page's header and content. */
+.tx-shell__column {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 100dvh;
+}
+
+/* A thin line at the top while the next page's code is loading. Shown only if it takes time. */
+.tx-shell__progress {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: var(--z-toast);
+  block-size: 2px;
+  background: var(--brand);
+  opacity: 0;
+  transform-origin: 0 50%;
+  animation: tx-shell-progress 1.6s var(--ease) 240ms infinite;
+  pointer-events: none;
+}
+
+@keyframes tx-shell-progress {
+  0% {
+    opacity: 1;
+    scale: 0 1;
+  }
+
+  70% {
+    opacity: 1;
+    scale: 0.85 1;
+  }
+
+  100% {
+    opacity: 0;
+    scale: 1 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tx-shell__progress {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* ---------- Brand mark (design-system.md, section 6) ---------- */
+
+.tx-wordmark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.tx-wordmark:hover {
+  color: var(--ink);
+}
+
+.tx-wordmark__text {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.tx-wordmark__name {
+  font: 800 18px/24px var(--font-head);
+  letter-spacing: 0.08em;
+}
+
+.tx-wordmark__tag {
+  display: inline-block;
+  padding: 0 7px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  color: var(--brand);
+  font: 600 11px/18px var(--font-body);
+  letter-spacing: 0.04em;
+}
+
+/* The square "T" shows only in the compact form. */
+.tx-wordmark__mark {
+  display: none;
+  place-items: center;
+  inline-size: 36px;
+  block-size: 36px;
+  border-radius: var(--r-sm);
+  background: var(--brand);
+  color: var(--on-brand);
+  font: 800 18px/1 var(--font-head);
+}
+
+.tx-wordmark--compact .tx-wordmark__mark {
+  display: grid;
+}
+
+.tx-wordmark--compact .tx-wordmark__text {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.tx-wordmark--lg .tx-wordmark__name {
+  font-size: 22px;
+  line-height: 28px;
+}
+
+/* ---------- Sidebar ---------- */
+
+.tx-sidebar {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  block-size: 100dvh;
+  border-inline-end: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.tx-sidebar__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  block-size: var(--header-h);
+  padding-inline: var(--s-5) var(--s-3);
+}
+
+.tx-sidebar__nav {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+.tx-sidebar__scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-block-size: 0;
+  padding: var(--s-1) var(--s-2) var(--s-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.tx-sidebar__foot {
+  flex: none;
+  padding: var(--s-2) var(--s-2) 0;
+  border-block-start: 1px solid var(--line);
+}
+
+.tx-sidebar__collapse {
+  flex: none;
+  padding: 2px var(--s-2) var(--s-2);
+}
+
+.tx-nav__list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-inline-start: 0;
+  list-style: none;
+}
+
+/* A navigation row: a link, a group's disclosure button, or the collapse button. */
+.tx-nav__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  inline-size: 100%;
+  block-size: 40px;
+  padding: 0 var(--s-3);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink);
+  font: 500 14px/20px var(--font-body);
+  letter-spacing: -0.005em;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+
+.tx-nav__item:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.tx-nav__item:active {
+  background: var(--surface-3);
+}
+
+.tx-nav__icon,
+.tx-nav__chevron {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.tx-nav__label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-nav__chevron {
+  transition: rotate var(--t) var(--ease);
+}
+
+.tx-nav__item[aria-expanded='true'] > .tx-nav__chevron {
+  rotate: 180deg;
+}
+
+/* The current page: a soft fill, brand icon and text, and more weight. */
+.tx-nav__item[aria-current='page'] {
+  background: var(--surface-2);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.tx-nav__item[aria-current='page'] > .tx-nav__icon,
+.tx-nav__item--holds-current,
+.tx-nav__item--holds-current > .tx-nav__icon {
+  color: var(--brand);
+}
+
+.tx-nav__item--holds-current {
+  font-weight: 600;
+}
+
+.tx-nav__planned {
+  flex: none;
+  padding: 0 7px;
+  border-radius: var(--r-pill);
+  background: var(--neutral-bg);
+  color: var(--ink-2);
+  font: 600 11px/18px var(--font-body);
+  letter-spacing: 0.01em;
+}
+
+/* The links of a disclosure group, one step in and one step smaller. */
+.tx-nav__sub {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 var(--s-1);
+  padding-inline-start: var(--s-4);
+  list-style: none;
+}
+
+.tx-nav__item--sub {
+  gap: 10px;
+  block-size: 36px;
+  padding: 0 10px;
+  font-size: 13px;
+  line-height: 18px;
+  letter-spacing: 0;
+}
+
+/* Collapsed: icons only. The words stay in the document for assistive technology. */
+.tx-sidebar--collapsed .tx-sidebar__head {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.tx-sidebar--collapsed .tx-nav__item {
+  justify-content: center;
+  padding: 0;
+}
+
+.tx-sidebar--collapsed :is(.tx-nav__label, .tx-nav__planned) {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- Navigation drawer (under 900 px) ---------- */
+
+.tx-drawer {
+  position: fixed;
+  inset: 0 auto 0 0;
+  inline-size: min(304px, calc(100vw - 56px));
+  max-inline-size: none;
+  block-size: 100dvh;
+  max-block-size: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+  color: var(--ink);
+}
+
+.tx-drawer[open] {
+  display: block;
+}
+
+.tx-drawer:focus-visible {
+  box-shadow: var(--shadow-3);
+}
+
+.tx-drawer::backdrop {
+  background: var(--scrim);
+}
+
+html:has(.tx-drawer[open]) {
+  overflow: hidden;
+}
+
+.tx-sidebar--drawer {
+  position: static;
+  border-inline-end: 0;
+}
+
+.tx-sidebar--drawer .tx-sidebar__foot {
+  padding-block-end: max(var(--s-2), env(safe-area-inset-bottom));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tx-drawer {
+    translate: -100% 0;
+    transition:
+      translate var(--t-slow) var(--ease),
+      overlay var(--t-slow) allow-discrete,
+      display var(--t-slow) allow-discrete;
+  }
+
+  .tx-drawer[open] {
+    translate: 0 0;
+  }
+
+  .tx-drawer::backdrop {
+    opacity: 0;
+    transition:
+      opacity var(--t-slow) var(--ease),
+      overlay var(--t-slow) allow-discrete,
+      display var(--t-slow) allow-discrete;
+  }
+
+  .tx-drawer[open]::backdrop {
+    opacity: 1;
+  }
+
+  @starting-style {
+    .tx-drawer[open] {
+      translate: -100% 0;
+    }
+
+    .tx-drawer[open]::backdrop {
+      opacity: 0;
+    }
+  }
+}
+
+/* ---------- Environment strip ---------- */
+
+.tx-env-strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-block-size: 32px;
+  padding: 2px var(--s-2) 2px var(--gutter);
+  background: var(--neutral-bg);
+  color: var(--ink-2);
+  font: 500 12px/16px var(--font-body);
+  letter-spacing: 0.01em;
+}
+
+.tx-env-strip__icon {
+  flex: none;
+}
+
+.tx-env-strip__text {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* ---------- Page header ---------- */
+
+.tx-page-header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: var(--z-sticky);
+  flex: none;
+  border-block-end: 1px solid var(--line);
+}
+
+.tx-page-header__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+  inline-size: 100%;
+  max-inline-size: var(--content-max);
+  min-block-size: var(--header-h);
+  margin-inline: auto;
+  padding: 6px var(--gutter);
+}
+
+.tx-page-header__menu {
+  margin-inline-start: -8px;
+}
+
+.tx-page-header__heading {
+  flex: 1 1 auto;
+  display: grid;
+  justify-items: start;
+  min-inline-size: 0;
+}
+
+.tx-page-header__title {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-page-header__actions,
+.tx-page-header__global {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-inline-size: 0;
+}
+
+/* A hairline sets the page's own actions apart from the global controls. */
+.tx-page-header__actions::after {
+  content: '';
+  flex: none;
+  inline-size: 1px;
+  block-size: 24px;
+  margin-inline-start: var(--s-2);
+  background: var(--line);
+}
+
+/* "Saved" or "Unsaved changes", before an editor's Cancel and Save. */
+.tx-page-header__status {
+  margin-inline-end: var(--s-1);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+/* The organisation: a quiet label now, the workspace switcher later. */
+.tx-org-label {
+  /*
+   * Its width is capped, and capped harder on narrower windows, so a long name is cut with an
+   * ellipsis and the page title keeps the rest of the line. It never shrinks below that: a
+   * label squeezed to its icon and a sliver of text reads as a fault.
+   */
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-inline-size: 240px;
+  block-size: var(--h-sm);
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  color: var(--ink-2);
+  font: 500 13px/18px var(--font-body);
+  letter-spacing: 0;
+}
+
+.tx-org-label__icon {
+  flex: none;
+}
+
+/* The label and the controls after it read as one group: 8 px apart, not the header's 16. */
+.tx-org-label + .tx-page-header__global {
+  margin-inline-start: calc(var(--s-2) - var(--s-4));
+}
+
+.tx-org-label__name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The account menu's button: the avatar and a chevron in one pill. */
+.tx-account-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  block-size: 40px;
+  padding: 2px var(--s-2) 2px 2px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--t-fast) var(--ease);
+}
+
+.tx-account-button:hover {
+  background: var(--surface-2);
+}
+
+.tx-account-button:active,
+.tx-account-button[aria-expanded='true'] {
+  background: var(--surface-3);
+}
+
+.tx-account-button__chevron {
+  flex: none;
+}
+
+/* Who is signed in, at the top of the account menu. */
+.tx-account-card {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-inline-size: 200px;
+}
+
+.tx-account-card__text {
+  display: grid;
+  min-inline-size: 0;
+}
+
+.tx-account-card__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.tx-account-card__meta {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Content column ---------- */
+
+.tx-page-main {
+  flex: 1 1 auto;
+  inline-size: 100%;
+  max-inline-size: var(--content-max);
+  margin-inline: auto;
+  padding: var(--s-6) var(--gutter) var(--s-9);
+}
+
+/* The skip link lands here; a ring around the whole column would say nothing. */
+.tx-page-main:focus-visible {
+  box-shadow: none;
+}
+
+.tx-page-main__notice {
+  margin-block-end: var(--s-4);
+}
+
+/* ---------- Narrow screens ---------- */
+
+@media (max-width: 1199px) {
+  .tx-org-label {
+    max-inline-size: 168px;
+  }
+}
+
+/*
+ * Under 760 px the header takes two lines: the menu button and the title, then the page's
+ * actions and the global controls. Document order is unchanged, so focus order still
+ * follows what is seen.
+ */
+@media (max-width: 759px) {
+  .tx-page-header__inner {
+    flex-wrap: wrap;
+    padding-block: var(--s-2);
+  }
+
+  .tx-page-header__heading {
+    flex-basis: calc(100% - 48px);
+  }
+
+  .tx-page-header__actions {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+  }
+
+  .tx-page-header__actions::after {
+    content: none;
+  }
+
+  /* The organisation label and the global controls keep to the end of the second line. */
+  .tx-org-label,
+  .tx-page-header__global {
+    margin-inline-start: auto;
+  }
+
+  /*
+   * Editor pages (a back link above the title): the back link and title, with the account
+   * menu at the end of that first line, then the status and the actions on one second line,
+   * the status first and allowed to shorten, the buttons at the end. Kept to two lines so the
+   * sticky header stays about 120 px tall on a phone instead of stacking into four rows.
+   * The account menu is drawn before the actions here but still follows them in the DOM, so
+   * focus goes title, actions, account menu, as on a wide screen.
+   */
+  .tx-page-header--editor .tx-page-header__heading {
+    flex: 1 1 0;
+  }
+
+  .tx-page-header--editor .tx-page-header__actions {
+    order: 1;
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+  }
+
+  .tx-page-header--editor .tx-page-header__status {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    margin-inline-end: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tx-page-header--editor .tx-page-header__global {
+    margin-inline-start: 0;
+  }
+
+  .tx-page-main {
+    padding-block-start: var(--s-4);
+  }
+}
+
+/* On a phone the push button keeps its icon and count; its name stays for assistive technology. */
+@media (max-width: 479px) {
+  .tx-push-button {
+    --_pad: 10px;
+  }
+
+  .tx-push-button__text {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .tx-push-button .tx-button__icon:first-child {
+    margin-inline-start: 0;
+  }
+
+  .tx-org-label {
+    max-inline-size: 132px;
+  }
+}
+
+/* ---------- Screens without the shell: sign-in, session check, route error ---------- */
+
+.tx-screen {
+  display: grid;
+  place-items: center;
+  min-block-size: 100dvh;
+  padding: var(--s-6) var(--s-4);
+}
+
+.tx-screen__card {
+  display: grid;
+  gap: var(--s-4);
+  justify-items: start;
+  inline-size: min(100%, 440px);
+  padding: var(--s-8);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.tx-screen__card > .tx-wordmark {
+  margin-block-end: var(--s-2);
+}
+
+.tx-screen__card > .tx-banner {
+  justify-self: stretch;
+}
+
+.tx-screen__text {
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 22px;
+  text-wrap: pretty;
+}
+
+.tx-screen__action {
+  justify-self: stretch;
+  margin-block-start: var(--s-2);
+}
+
+.tx-screen__note {
+  justify-self: center;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+
+@media (max-width: 479px) {
+  .tx-screen__card {
+    padding: var(--s-6);
+  }
+}

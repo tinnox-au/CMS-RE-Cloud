@@ -16,8 +16,8 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { MediaJobResult } from '@tinnox/contracts';
-import { createPool, poolAsTx, sessionCreate, sha256, type Pool } from '@tinnox/db';
+import type { MediaJobResult, PlaylistItemInput } from '@tinnox/contracts';
+import { createPool, poolAsTx, sessionCreate, sha256, withOrg, type Pool } from '@tinnox/db';
 import { createDeliveryRegistry } from '@tinnox/delivery';
 import { LocalObjectStorage } from '@tinnox/storage';
 import type { FastifyInstance } from 'fastify';
@@ -408,6 +408,157 @@ export async function publishImages(
     throw new Error(`publish failed: ${publish.status} ${await publish.text()}`);
   const body = (await publish.json()) as { publicationId: string };
   return { publicationId: body.publicationId, playlistId: playlist.id };
+}
+
+/**
+ * Uploads bytes that begin like an MP4 file and lets the "worker" accept them as an
+ * H.264 video. Nothing decodes the bytes here; the real worker is exercised by
+ * tests/integration/media-worker.test.ts.
+ */
+export async function readyVideo(
+  t: TestApp,
+  operator: Operator,
+  durationMs = 8000,
+): Promise<{ id: string }> {
+  const head = Buffer.from([0, 0, 0, 32, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
+  const upload = await uploadBytes(operator, Buffer.concat([head, randomBytes(52)]), 'clip.mp4');
+  if (upload.status !== 201)
+    throw new Error(`upload failed: ${upload.status} ${await upload.text()}`);
+  const { media } = (await upload.json()) as { media: { id: string } };
+  await actAsWorker(t, {
+    schemaVersion: 1,
+    jobId: media.id,
+    outcome: 'accepted',
+    kind: 'video',
+    mimeType: 'video/mp4',
+    width: 1280,
+    height: 720,
+    durationMs,
+    codec: 'h264',
+  });
+  await t.ctx.media.tick();
+  const after = await operator.fetch(`/api/media/${media.id}`);
+  const dto = (await after.json()) as { id: string; status: string };
+  if (dto.status !== 'ready') throw new Error(`video did not become ready: ${JSON.stringify(dto)}`);
+  return { id: dto.id };
+}
+
+/** Creates a playlist and, when items are given, saves them. Returns its id. */
+export async function createPlaylist(
+  operator: Operator,
+  name: string,
+  items: readonly PlaylistItemInput[] = [],
+): Promise<string> {
+  const created = await operator.fetch('/api/playlists', { method: 'POST', json: { name } });
+  if (created.status !== 201) throw new Error(`playlist create failed: ${created.status}`);
+  const { id } = (await created.json()) as { id: string };
+  if (items.length > 0) {
+    const saved = await operator.fetch(`/api/playlists/${id}`, {
+      method: 'PUT',
+      json: { name, items },
+    });
+    if (saved.status !== 200)
+      throw new Error(`playlist save failed: ${saved.status} ${await saved.text()}`);
+  }
+  return id;
+}
+
+/** One image item of `seconds` seconds with the display's default fit. */
+export function imageItem(mediaId: string, seconds = 5): PlaylistItemInput {
+  return { mediaId, durationMs: seconds * 1000, fit: null };
+}
+
+/** Assigns a playlist to a display (null removes the assignment). Nothing is pushed. */
+export async function assignPlaylist(
+  operator: Operator,
+  displayId: string,
+  playlistId: string | null,
+): Promise<void> {
+  const response = await operator.fetch(`/api/displays/${displayId}`, {
+    method: 'PATCH',
+    json: { assignedPlaylistId: playlistId },
+  });
+  if (response.status !== 200)
+    throw new Error(`assignment failed: ${response.status} ${await response.text()}`);
+}
+
+/** `POST /api/push` for the given displays; a fresh Idempotency-Key unless one is passed. */
+export function push(
+  operator: Operator,
+  displayIds: readonly string[],
+  key: string = randomUUID(),
+): Promise<Response> {
+  return operator.fetch('/api/push', {
+    method: 'POST',
+    json: { displayIds },
+    headers: { 'idempotency-key': key },
+  });
+}
+
+/** The publication a display is currently meant to play, as its status view reports it. */
+export async function desiredPublicationId(
+  operator: Operator,
+  displayId: string,
+): Promise<string | null> {
+  const response = await operator.fetch(`/api/displays/${displayId}/status`);
+  if (response.status !== 200) throw new Error(`status failed: ${response.status}`);
+  const view = (await response.json()) as { desired: { publicationId: string } | null };
+  return view.desired?.publicationId ?? null;
+}
+
+export interface AuditEntry {
+  readonly action: string;
+  readonly result: string;
+  readonly actorId: string | null;
+  readonly objectType: string | null;
+  readonly objectId: string | null;
+  readonly detail: Record<string, unknown> | null;
+}
+
+/** The newest audit events of the operator's organisation, newest first. */
+export async function auditEvents(operator: Operator, filter = ''): Promise<AuditEntry[]> {
+  const response = await operator.fetch(`/api/audit?limit=200${filter}`);
+  if (response.status !== 200) throw new Error(`audit list failed: ${response.status}`);
+  return ((await response.json()) as { items: AuditEntry[] }).items;
+}
+
+/**
+ * Fails every media row that is still waiting for validation, in whatever
+ * organisation, and returns how many there were.
+ *
+ * The pipeline has one queue for the whole database, oldest job first, and the
+ * deadline of a job grows with every job ahead of it. A test file that finished
+ * may have left rows in `processing` (an upload that was never given a verdict,
+ * a media row inserted for a database test), and for 30 seconds nothing clears
+ * them. A test that measures when a job times out calls this first, so that its
+ * result does not depend on which file happened to run before it.
+ */
+export async function settleStrayMediaJobs(pool: Pool): Promise<number> {
+  let settled = 0;
+  for (;;) {
+    const { rows } = await poolAsTx(pool).query<{ media_id: string; org_id: string }>(
+      'SELECT media_id, org_id FROM sec.media_processing_jobs($1)',
+      [5000],
+    );
+    if (rows.length === 0) return settled;
+    const byOrg = new Map<string, string[]>();
+    for (const row of rows) byOrg.set(row.org_id, [...(byOrg.get(row.org_id) ?? []), row.media_id]);
+    let changed = 0;
+    for (const [orgId, mediaIds] of byOrg) {
+      changed += await withOrg(pool, orgId, async (tx) => {
+        const done = await tx.query(
+          `UPDATE media
+           SET status = 'failed', error_code = 'inspection_timeout',
+               error_detail = 'Left in processing by an earlier test file.'
+           WHERE org_id = app_org_id() AND id = ANY($1::uuid[]) AND status = 'processing'`,
+          [mediaIds],
+        );
+        return done.rowCount ?? 0;
+      });
+    }
+    if (changed === 0) throw new Error('media rows in processing could not be settled');
+    settled += changed;
+  }
 }
 
 export async function listDir(path: string): Promise<string[]> {

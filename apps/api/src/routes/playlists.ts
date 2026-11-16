@@ -4,47 +4,66 @@
  * A playlist is an editable draft. Publishing copies everything a player needs
  * into an immutable `publication` row, so later edits to the playlist or the
  * display never change what was published.
+ *
+ * A deleted playlist keeps its row (`deleted_at`), because its publications
+ * refer to it for good, but nothing else: its items are removed with it, so it
+ * no longer uses any media, and every query below leaves deleted rows out.
  */
-import { randomUUID } from 'node:crypto';
 import {
-  HEADERS,
   IdParamSchema,
-  IdempotencyKeySchema,
   ManifestV1Schema,
-  MediaMimeTypeSchema,
+  MEDIA_KINDS,
+  PLAYLIST_PREVIEW_COUNT,
   PlaylistCreateSchema,
   PlaylistReplaceSchema,
   PublishRequestSchema,
   ROUTES,
-  type ApiErrorDetail,
+  duplicatePlaylistName,
   type FitMode,
-  type ManifestV1,
+  type MediaKind,
   type PlaylistDto,
+  type PlaylistDuplicateResponse,
   type PlaylistListResponse,
   type PublishResponse,
 } from '@tinnox/contracts';
-import { auditScoped, withOrg, type Tx } from '@tinnox/db';
-import {
-  buildManifest,
-  planPublication,
-  validatePlaylist,
-  type DraftItem,
-  type MediaRecord,
-  type PublishIssue,
-} from '@tinnox/domain';
+import { auditScoped, STAGE_A_CONSTRAINTS, violatedConstraint, withOrg, type Tx } from '@tinnox/db';
+import { validatePlaylist } from '@tinnox/domain';
 import type { FastifyInstance } from 'fastify';
 import { operatorOf } from '../auth/session.ts';
 import { perMinute, type AppContext } from '../context.ts';
 import { accept, bigintToNumber, iso, refuse, withOrgDecision } from '../db-helpers.ts';
 import { HttpError, notFound, parseInput, pgErrorCode } from '../errors.ts';
-import { contentRectOf } from './displays.ts';
+import {
+  auditRejectedPublication,
+  createPublication,
+  findPublicationByKey,
+  idempotencyKeyOf,
+  issueDetails,
+  loadMediaRecords,
+  loadPlaylistDrafts,
+  lockDisplayForPublish,
+  lockPublishKey,
+  planDraft,
+  publicationRejected,
+  type PublicationRow,
+} from '../publishing.ts';
 import { MEDIA_COLUMNS, toMediaDto, type MediaRow } from './media.ts';
 
 interface PlaylistRow {
   id: string;
   name: string;
+  description: string | null;
   created_at: Date;
   updated_at: Date;
+}
+
+interface SummaryRow extends PlaylistRow {
+  item_count: string;
+  total_duration_ms: string;
+  has_image: boolean;
+  has_video: boolean;
+  preview_media_ids: string[];
+  assigned_display_count: string;
 }
 
 interface ItemRow {
@@ -55,42 +74,17 @@ interface ItemRow {
   fit: FitMode | null;
 }
 
-function toMediaRecord(row: MediaRow): MediaRecord {
-  const mime = MediaMimeTypeSchema.safeParse(row.mime_type);
-  return {
-    id: row.id,
-    kind: row.kind,
-    status: row.status,
-    mimeType: mime.success ? mime.data : null,
-    bytes: row.bytes === null ? null : bigintToNumber(row.bytes),
-    sha256: row.sha256,
-    width: row.width,
-    height: row.height,
-    durationMs: row.duration_ms,
-    codec: row.codec,
-  };
-}
-
-function issueDetails(issues: readonly PublishIssue[]): ApiErrorDetail[] {
-  return issues.slice(0, 100).map((issue) => ({
-    path: issue.index === null ? 'playlist' : `items[${issue.index}]`,
-    message: issue.message.slice(0, 500),
-    code: issue.code,
-  }));
-}
-
 async function loadPlaylistDto(tx: Tx, id: string): Promise<PlaylistDto | null> {
   const playlist = await tx.query<PlaylistRow>(
-    'SELECT id, name, created_at, updated_at FROM playlist WHERE id = $1 AND org_id = app_org_id()',
+    `SELECT id, name, description, created_at, updated_at FROM playlist
+     WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL`,
     [id],
   );
   const row = playlist.rows[0];
   if (row === undefined) return null;
   const items = await tx.query<ItemRow & MediaRow>(
     `SELECT i.id AS item_id, i.position, i.media_id, i.duration_ms AS item_duration_ms, i.fit,
-            m.id, m.kind, m.status, m.error_code, m.error_detail, m.mime_type, m.bytes, m.sha256,
-            m.width, m.height, m.duration_ms, m.codec, m.storage_key, m.original_name,
-            m.created_at, m.updated_at
+            ${MEDIA_COLUMNS}
      FROM playlist_item i
      JOIN media m ON m.id = i.media_id AND m.org_id = i.org_id
      WHERE i.playlist_id = $1 AND i.org_id = app_org_id()
@@ -100,6 +94,7 @@ async function loadPlaylistDto(tx: Tx, id: string): Promise<PlaylistDto | null> 
   return {
     id: row.id,
     name: row.name,
+    description: row.description,
     items: items.rows.map((item) => ({
       id: item.item_id,
       position: item.position,
@@ -111,32 +106,6 @@ async function loadPlaylistDto(tx: Tx, id: string): Promise<PlaylistDto | null> 
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
-}
-
-/** Loads the media rows for a set of ids; `lock` keeps them from being deleted until commit. */
-async function loadMedia(
-  tx: Tx,
-  ids: readonly string[],
-  lock: boolean,
-): Promise<Map<string, MediaRecord>> {
-  const byId = new Map<string, MediaRecord>();
-  if (ids.length === 0) return byId;
-  const { rows } = await tx.query<MediaRow>(
-    `SELECT ${MEDIA_COLUMNS} FROM media
-     WHERE org_id = app_org_id() AND deleted_at IS NULL AND id = ANY($1::uuid[])
-     ${lock ? 'FOR KEY SHARE' : ''}`,
-    [[...new Set(ids)]],
-  );
-  for (const row of rows) byId.set(row.id, toMediaRecord(row));
-  return byId;
-}
-
-interface PublicationRow {
-  id: string;
-  display_id: string;
-  playlist_id: string;
-  manifest: unknown;
-  created_at: Date;
 }
 
 function toPublishResponse(row: PublicationRow, replayed: boolean): PublishResponse {
@@ -156,24 +125,60 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
   const { pool, config } = ctx;
   const limits = config.limits;
 
+  /**
+   * One row per live playlist. The loop length adds each image's time on screen
+   * and each video's own length; an item with no length yet counts as zero.
+   */
   app.get(ROUTES.playlists, async (request): Promise<PlaylistListResponse> => {
     const session = operatorOf(request);
     return withOrg(pool, session.orgId, async (tx) => {
-      const { rows } = await tx.query<PlaylistRow & { item_count: string }>(
-        `SELECT p.id, p.name, p.created_at, p.updated_at,
-                (SELECT count(*) FROM playlist_item i
-                 WHERE i.playlist_id = p.id AND i.org_id = p.org_id) AS item_count
-         FROM playlist p WHERE p.org_id = app_org_id()
+      const { rows } = await tx.query<SummaryRow>(
+        `SELECT p.id, p.name, p.description, p.created_at, p.updated_at,
+                COALESCE(s.item_count, 0) AS item_count,
+                COALESCE(s.total_duration_ms, 0) AS total_duration_ms,
+                COALESCE(s.has_image, false) AS has_image,
+                COALESCE(s.has_video, false) AS has_video,
+                ARRAY(SELECT f.media_id
+                      FROM (SELECT i.media_id, min(i.position) AS first_position
+                            FROM playlist_item i
+                            WHERE i.playlist_id = p.id AND i.org_id = p.org_id
+                            GROUP BY i.media_id) f
+                      ORDER BY f.first_position
+                      LIMIT $1)::text[] AS preview_media_ids,
+                (SELECT count(*) FROM display d
+                 WHERE d.assigned_playlist_id = p.id AND d.org_id = p.org_id)
+                  AS assigned_display_count
+         FROM playlist p
+         LEFT JOIN LATERAL (
+           SELECT count(*) AS item_count,
+                  sum(CASE WHEN m.kind = 'image' THEN COALESCE(i.duration_ms, 0)
+                           ELSE COALESCE(m.duration_ms, 0) END) AS total_duration_ms,
+                  bool_or(m.kind = 'image') AS has_image,
+                  bool_or(m.kind = 'video') AS has_video
+           FROM playlist_item i
+           JOIN media m ON m.id = i.media_id AND m.org_id = i.org_id
+           WHERE i.playlist_id = p.id AND i.org_id = p.org_id
+         ) s ON true
+         WHERE p.org_id = app_org_id() AND p.deleted_at IS NULL
          ORDER BY p.created_at, p.id`,
+        [PLAYLIST_PREVIEW_COUNT],
       );
       return {
-        items: rows.map((r) => ({
-          id: r.id,
-          name: r.name,
-          itemCount: bigintToNumber(r.item_count),
-          createdAt: iso(r.created_at),
-          updatedAt: iso(r.updated_at),
-        })),
+        items: rows.map((r) => {
+          const present: Record<MediaKind, boolean> = { image: r.has_image, video: r.has_video };
+          return {
+            id: r.id,
+            name: r.name,
+            description: r.description,
+            itemCount: bigintToNumber(r.item_count),
+            totalDurationMs: bigintToNumber(r.total_duration_ms),
+            kinds: MEDIA_KINDS.filter((kind) => present[kind]),
+            previewMediaIds: r.preview_media_ids,
+            assignedDisplayCount: bigintToNumber(r.assigned_display_count),
+            createdAt: iso(r.created_at),
+            updatedAt: iso(r.updated_at),
+          };
+        }),
       };
     });
   });
@@ -215,7 +220,8 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
     });
   });
 
-  // Replaces the name and the whole ordered item list in one transaction.
+  // Replaces the name and the whole ordered item list in one transaction. The
+  // description is replaced only when the request carries one (null clears it).
   app.put(ROUTES.playlistPattern, async (request): Promise<PlaylistDto> => {
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
@@ -223,12 +229,13 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
     try {
       return await withOrg(pool, session.orgId, async (tx) => {
         const locked = await tx.query(
-          'SELECT 1 FROM playlist WHERE id = $1 AND org_id = app_org_id() FOR UPDATE',
+          `SELECT 1 FROM playlist
+           WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL FOR UPDATE`,
           [id],
         );
         if (locked.rowCount !== 1) throw notFound('The playlist');
 
-        const mediaById = await loadMedia(
+        const mediaById = await loadMediaRecords(
           tx,
           input.items.map((item) => item.mediaId),
           true,
@@ -264,10 +271,12 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
           );
         }
         // Always touches the row, so updated_at reflects item changes too.
-        await tx.query('UPDATE playlist SET name = $2 WHERE id = $1 AND org_id = app_org_id()', [
-          id,
-          input.name,
-        ]);
+        await tx.query(
+          `UPDATE playlist
+           SET name = $2, description = CASE WHEN $3::boolean THEN $4::text ELSE description END
+           WHERE id = $1 AND org_id = app_org_id()`,
+          [id, input.name, input.description !== undefined, input.description ?? null],
+        );
         await auditScoped(tx, {
           actorType: 'operator',
           actorId: session.membershipId,
@@ -294,191 +303,199 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
   });
 
   /**
+   * Copies a playlist: its description and every item, under the name "Copy of X".
+   * The copy is assigned to no display.
+   */
+  app.post(
+    ROUTES.playlistDuplicatePattern,
+    async (request, reply): Promise<PlaylistDuplicateResponse> => {
+      const session = operatorOf(request);
+      const { id } = parseInput(IdParamSchema, request.params, 'address');
+      const dto = await withOrg(pool, session.orgId, async (tx) => {
+        // Held until commit, so the items copied below are the items of one moment.
+        const source = await tx.query<{ name: string; description: string | null }>(
+          `SELECT name, description FROM playlist
+           WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL FOR SHARE`,
+          [id],
+        );
+        const original = source.rows[0];
+        if (original === undefined) throw notFound('The playlist');
+        const inserted = await tx.query<{ id: string }>(
+          `INSERT INTO playlist (org_id, name, description) VALUES (app_org_id(), $1, $2)
+           RETURNING id`,
+          [duplicatePlaylistName(original.name), original.description],
+        );
+        const copyId = inserted.rows[0]?.id;
+        if (copyId === undefined) throw new Error('playlist insert returned no row');
+        const copied = await tx.query(
+          `INSERT INTO playlist_item (org_id, playlist_id, position, media_id, duration_ms, fit)
+           SELECT app_org_id(), $2, i.position, i.media_id, i.duration_ms, i.fit
+           FROM playlist_item i
+           WHERE i.playlist_id = $1 AND i.org_id = app_org_id()`,
+          [id, copyId],
+        );
+        await auditScoped(tx, {
+          actorType: 'operator',
+          actorId: session.membershipId,
+          action: 'playlist.create',
+          objectType: 'playlist',
+          objectId: copyId,
+          result: 'success',
+          detail: { duplicatedFrom: id.toLowerCase(), itemCount: copied.rowCount ?? 0 },
+        });
+        const created = await loadPlaylistDto(tx, copyId);
+        if (created === null) throw new Error('duplicated playlist is not visible');
+        return created;
+      });
+      void reply.code(201);
+      return dto;
+    },
+  );
+
+  /**
+   * Deletes a playlist. Refused while a display has it assigned: the operator
+   * assigns something else first, so no display is left pointing at nothing by
+   * accident. Otherwise the row is kept but hidden (`deleted_at`), because its
+   * publications refer to it for good, and its items are removed, so the media
+   * it used is free to be deleted. What displays are playing is not affected:
+   * a publication is a snapshot.
+   */
+  app.delete(ROUTES.playlistPattern, async (request, reply) => {
+    const session = operatorOf(request);
+    const { id } = parseInput(IdParamSchema, request.params, 'address');
+    const inUse = (details?: { path: string; message: string }[]): HttpError =>
+      new HttpError(
+        409,
+        'playlist_in_use',
+        'This playlist is assigned to a screen. Assign other content to the screen first.',
+        details === undefined ? {} : { details },
+      );
+    try {
+      await withOrg(pool, session.orgId, async (tx) => {
+        const locked = await tx.query(
+          `SELECT 1 FROM playlist
+           WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL FOR UPDATE`,
+          [id],
+        );
+        if (locked.rowCount !== 1) throw notFound('The playlist');
+        const assigned = await tx.query<{ name: string }>(
+          `SELECT d.name FROM display d
+           WHERE d.assigned_playlist_id = $1 AND d.org_id = app_org_id()
+           ORDER BY lower(d.name), d.id LIMIT 5`,
+          [id],
+        );
+        if (assigned.rows.length > 0) {
+          throw inUse(assigned.rows.map((r) => ({ path: 'display', message: r.name })));
+        }
+        const removed = await tx.query(
+          'DELETE FROM playlist_item WHERE playlist_id = $1 AND org_id = app_org_id()',
+          [id],
+        );
+        await tx.query(
+          'UPDATE playlist SET deleted_at = now() WHERE id = $1 AND org_id = app_org_id()',
+          [id],
+        );
+        await auditScoped(tx, {
+          actorType: 'operator',
+          actorId: session.membershipId,
+          action: 'playlist.delete',
+          objectType: 'playlist',
+          objectId: id,
+          result: 'success',
+          detail: { itemCount: removed.rowCount ?? 0 },
+        });
+      });
+    } catch (error) {
+      // A display was given this playlist between the check above and the delete;
+      // the database guard refuses, and the answer is the same.
+      if (
+        pgErrorCode(error) === '23001' &&
+        violatedConstraint(error) === STAGE_A_CONSTRAINTS.playlistStillAssigned
+      ) {
+        throw inUse();
+      }
+      throw error;
+    }
+    return reply.code(204).send();
+  });
+
+  /**
    * Publish. Idempotency: the key is unique per display. Concurrent requests with
    * the same key are serialised by a transaction-level advisory lock, so exactly
    * one creates the publication and the others return it with `replayed: true`.
+   *
+   * Publishing a playlist to a display also assigns it to that display, in the
+   * same transaction (decision P2-05), so "assigned" never lags behind what an
+   * operator last published there.
    */
   app.post(
     ROUTES.playlistPublishPattern,
     { config: { rateLimit: perMinute(ctx, 60) } },
     async (request, reply): Promise<PublishResponse> => {
       const session = operatorOf(request);
-      const { id: playlistId } = parseInput(IdParamSchema, request.params, 'address');
-      const { displayId } = parseInput(PublishRequestSchema, request.body, 'publish request');
-      const rawKey = request.headers[HEADERS.idempotencyKey];
-      if (typeof rawKey !== 'string') {
-        throw new HttpError(
-          400,
-          'bad_request',
-          'The Idempotency-Key header is required to publish.',
-        );
-      }
-      const key = parseInput(IdempotencyKeySchema, rawKey, 'Idempotency-Key header');
+      const params = parseInput(IdParamSchema, request.params, 'address');
+      const body = parseInput(PublishRequestSchema, request.body, 'publish request');
+      const key = idempotencyKeyOf(request, 'publish');
+      // Identifiers compare without regard to letter case; the database returns lower case.
+      const playlistId = params.id.toLowerCase();
+      const displayId = body.displayId.toLowerCase();
 
       const attempt = (): Promise<{ response: PublishResponse; created: boolean }> =>
         withOrgDecision<{ response: PublishResponse; created: boolean }>(
           pool,
           session.orgId,
           async (tx) => {
-            await tx.query(
-              "SELECT pg_advisory_xact_lock(hashtextextended('tinnox.publish:' || $1 || ':' || $2, 0))",
-              [displayId, key],
-            );
-            const existing = await tx.query<PublicationRow>(
-              `SELECT id, display_id, playlist_id, manifest, created_at FROM publication
-             WHERE org_id = app_org_id() AND display_id = $1 AND idempotency_key = $2`,
-              [displayId, key],
-            );
-            const previous = existing.rows[0];
-            if (previous !== undefined) {
+            await lockPublishKey(tx, displayId, key);
+            const previous = await findPublicationByKey(tx, displayId, key);
+            if (previous !== null) {
               if (previous.playlist_id !== playlistId) {
                 return refuse(
                   new HttpError(
                     409,
                     'idempotency_conflict',
-                    'This Idempotency-Key was already used to publish a different playlist to this display.',
+                    'This Idempotency-Key was already used to publish a different playlist to this screen.',
                   ),
                 );
               }
               return accept({ response: toPublishResponse(previous, true), created: false });
             }
 
-            const displayResult = await tx.query<{
-              id: string;
-              canvas_width: number;
-              canvas_height: number;
-              content_x: number | null;
-              content_y: number | null;
-              content_width: number | null;
-              content_height: number | null;
-              default_fit: FitMode;
-              route: 'browser';
-            }>(
-              `SELECT id, canvas_width, canvas_height, content_x, content_y, content_width, content_height,
-                    default_fit, route
-             FROM display WHERE id = $1 AND org_id = app_org_id() FOR SHARE`,
-              [displayId],
-            );
-            const display = displayResult.rows[0];
-            if (display === undefined) throw notFound('The display');
-            const playlist = await tx.query(
-              'SELECT 1 FROM playlist WHERE id = $1 AND org_id = app_org_id() FOR SHARE',
-              [playlistId],
-            );
-            if (playlist.rowCount !== 1) throw notFound('The playlist');
-
-            const itemRows = await tx.query<{
-              media_id: string;
-              duration_ms: number | null;
-              fit: FitMode | null;
-            }>(
-              `SELECT media_id, duration_ms, fit FROM playlist_item
-             WHERE playlist_id = $1 AND org_id = app_org_id() ORDER BY position`,
-              [playlistId],
-            );
-            const items: DraftItem[] = itemRows.rows.map((r) => ({
-              mediaId: r.media_id,
-              durationMs: r.duration_ms,
-              fit: r.fit,
-            }));
-            const mediaById = await loadMedia(
+            const display = await lockDisplayForPublish(tx, displayId);
+            if (display === null) throw notFound('The screen');
+            const playlist = (await loadPlaylistDrafts(tx, [playlistId], true)).get(playlistId);
+            if (playlist === undefined) throw notFound('The playlist');
+            const mediaById = await loadMediaRecords(
               tx,
-              items.map((item) => item.mediaId),
+              playlist.items.map((item) => item.mediaId),
               true,
             );
 
-            // Domain rule plus the target route's capability profile (D12, D15).
-            const route = ctx.delivery.get(display.route);
-            const plan = planPublication({
-              display: {
-                id: display.id,
-                canvas: { width: display.canvas_width, height: display.canvas_height },
-                contentRect: contentRectOf(display),
-                defaultFit: display.default_fit,
-                route: display.route,
-              },
-              items,
-              mediaById,
-              limits,
-              route,
-            });
+            const plan = planDraft(ctx, display, playlist, mediaById);
             if (!plan.ok) {
-              await auditScoped(tx, {
-                actorType: 'operator',
-                actorId: session.membershipId,
-                action: 'publication.create',
-                objectType: 'playlist',
-                objectId: playlistId,
-                result: 'failure',
-                detail: {
-                  displayId,
-                  reasons: [...new Set(plan.issues.map((i) => i.code))].slice(0, 20),
-                },
+              await auditRejectedPublication(tx, {
+                membershipId: session.membershipId,
+                playlistId,
+                displayId,
+                issues: plan.issues,
+                via: 'publish',
               });
-              const first = plan.issues[0];
-              return refuse(
-                new HttpError(
-                  422,
-                  'publication_rejected',
-                  plan.issues.length === 1 && first !== undefined
-                    ? first.message
-                    : `The playlist cannot be published: ${plan.issues.length} problems were found.`,
-                  { details: issueDetails(plan.issues) },
-                ),
-              );
+              return refuse(publicationRejected(plan.issues));
             }
 
-            const publicationId = randomUUID();
-            const createdAt = ctx.now();
-            const manifest: ManifestV1 = buildManifest(plan.draft, { publicationId, createdAt });
-            // The browser route is pull-based: preparing has no side effect. A later
-            // push route would hand `prepared` to its target after the commit.
-            route.prepare(manifest);
-
-            const inserted = await tx.query<PublicationRow>(
-              `INSERT INTO publication (id, org_id, display_id, playlist_id, manifest, idempotency_key, created_by, created_at)
-             VALUES ($1, app_org_id(), $2, $3, $4::jsonb, $5, $6, $7)
-             RETURNING id, display_id, playlist_id, manifest, created_at`,
-              [
-                publicationId,
-                displayId,
-                playlistId,
-                JSON.stringify(manifest),
-                key,
-                session.membershipId,
-                createdAt,
-              ],
-            );
-            const row = inserted.rows[0];
-            if (row === undefined) throw new Error('publication insert returned no row');
-            await tx.query(
-              `INSERT INTO publication_asset (publication_id, position, org_id, media_id)
-             SELECT $1, (t.ordinal - 1)::int, app_org_id(), t.media_id
-             FROM unnest($2::uuid[]) WITH ORDINALITY AS t(media_id, ordinal)`,
-              [publicationId, manifest.assets.map((asset) => asset.assetId)],
-            );
-            await tx.query(
-              `INSERT INTO display_delivery (display_id, org_id, desired_publication_id, desired_at)
-             VALUES ($1, app_org_id(), $2, $3)
-             ON CONFLICT (display_id) DO UPDATE
-               SET desired_publication_id = EXCLUDED.desired_publication_id,
-                   desired_at = EXCLUDED.desired_at`,
-              [displayId, publicationId, createdAt],
-            );
-            await auditScoped(tx, {
-              actorType: 'operator',
-              actorId: session.membershipId,
-              action: 'publication.create',
-              objectType: 'publication',
-              objectId: publicationId,
-              result: 'success',
-              detail: {
-                displayId,
-                playlistId,
-                items: manifest.assets.length,
-                route: display.route,
-              },
+            const row = await createPublication(tx, ctx, {
+              display,
+              playlistId,
+              draft: plan.draft,
+              idempotencyKey: key,
+              membershipId: session.membershipId,
+              via: 'publish',
             });
+            await tx.query(
+              `UPDATE display SET assigned_playlist_id = $2::uuid
+               WHERE id = $1 AND org_id = app_org_id()
+                 AND assigned_playlist_id IS DISTINCT FROM $2::uuid`,
+              [displayId, playlistId],
+            );
             return accept({ response: toPublishResponse(row, false), created: true });
           },
         );
@@ -495,7 +512,7 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
           throw new HttpError(
             409,
             'conflict',
-            'A file or display used by this playlist changed meanwhile. Try again.',
+            'A file or screen used by this playlist changed meanwhile. Try again.',
           );
         } else {
           throw error;

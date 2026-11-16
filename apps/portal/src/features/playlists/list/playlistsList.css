@@ -1,0 +1,201 @@
+/*
+ * The playlists list (docs/portal-v2/stage-a.md, section 3.4). The page is built from the
+ * component kit; these rules only add what is particular to it. Tokens only, no raw colours.
+ */
+
+/* ---------- Table cells ---------- */
+
+/* Two lines of the description, then an ellipsis; the whole text is in the cell's title. */
+.tx-playlists-list__description {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.tx-playlists-list__none {
+  color: var(--ink-2);
+}
+
+/*
+ * The second line of the name cell repeats Items, Length and Screens. It shows once the
+ * table has dropped those columns for want of room (all three leave together at
+ * `data-drop="2"`, Modified at "3"; set by the kit's DataTable when it measures what fits),
+ * so a narrow window and a phone still read them, and never while the columns show them.
+ */
+.tx-playlists-list__summary {
+  display: none;
+}
+
+.tx-playlists-list .tx-table[data-drop='2'] .tx-playlists-list__summary,
+.tx-playlists-list .tx-table[data-drop='3'] .tx-playlists-list__summary {
+  display: inline;
+}
+
+/* ---------- Toolbar ---------- */
+
+.tx-playlists-list__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* On a phone the words leave the row (they stay the select's name) so the controls fit on one line. */
+@media (max-width: 479px) {
+  .tx-playlists-list__sort-label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* ---------- Grid view ---------- */
+
+.tx-playlists-list__tile-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.tx-playlists-list__grid-empty {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.tx-playlists-list__grid-footer {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+/* ---------- Delete dialog ---------- */
+
+.tx-playlists-list__names {
+  position: relative;
+  display: grid;
+  gap: 0;
+  max-block-size: 240px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.tx-playlists-list__names > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px var(--s-3);
+  padding: 10px var(--s-3);
+}
+
+.tx-playlists-list__names > li + li {
+  border-block-start: 1px solid var(--line);
+}
+
+.tx-playlists-list__names-note {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-playlists-list__failures {
+  display: grid;
+  gap: var(--s-2);
+  margin: 0;
+  padding-inline-start: var(--s-5);
+}
+
+.tx-playlists-list__hint {
+  display: block;
+  margin-block-start: 2px;
+}
+
+/* ---------- Result of "Assign to screens" ---------- */
+
+.tx-playlists-list__results {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  list-style: none;
+}
+
+.tx-playlists-list__result {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-1) var(--s-3);
+  min-block-size: 56px;
+  padding: var(--s-2) var(--s-3);
+}
+
+.tx-playlists-list__result + .tx-playlists-list__result {
+  border-block-start: 1px solid var(--line);
+}
+
+.tx-playlists-list__result-icon {
+  display: grid;
+  place-items: center;
+  inline-size: 36px;
+  block-size: 36px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.tx-playlists-list__result-text {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.tx-playlists-list__result-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--s-1);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-playlists-list__result-meta--failed {
+  display: block;
+  color: var(--ink);
+}
+
+.tx-playlists-list__result-end {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+@media (max-width: 479px) {
+  .tx-playlists-list__result {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .tx-playlists-list__result-end {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+}
