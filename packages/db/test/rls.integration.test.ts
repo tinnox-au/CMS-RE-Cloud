@@ -831,4 +831,47 @@ describe('immutable publications and append-only audit', () => {
       await pgCode(insert(second, { ...good, publicationId: second }, 'key-aaaaaaaaaaaaaaaa')),
     ).toBe(PG.unique);
   });
+
+  it('rejects a manifest that lacks a required field, and ready media without a size (0008)', async () => {
+    const id = randomUUID();
+    const good: Record<string, unknown> = {
+      schemaVersion: 1,
+      publicationId: id,
+      displayId: a.displayId,
+      assets: [{ assetId: a.mediaId }],
+    };
+    const insert = (manifest: Record<string, unknown>) =>
+      withOrg(pool, a.orgId, (tx) =>
+        tx.query(
+          'INSERT INTO publication (id, org_id, display_id, playlist_id, manifest, idempotency_key, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+          [
+            id,
+            a.orgId,
+            a.displayId,
+            a.playlistId,
+            JSON.stringify(manifest),
+            `key-${randomUUID()}`,
+            a.membershipId,
+          ],
+        ),
+      );
+    expect(await pgCode(insert({})), 'empty manifest').toBe(PG.check);
+    for (const field of Object.keys(good)) {
+      const { [field]: _omitted, ...rest } = good;
+      expect(await pgCode(insert(rest)), `without ${field}`).toBe(PG.check);
+      expect(await pgCode(insert({ ...good, [field]: null })), `${field}: null`).toBe(PG.check);
+    }
+
+    const ready = await withOrg(pool, a.orgId, (tx) =>
+      tx.query<{ status: string }>('SELECT status FROM media WHERE id = $1', [a.mediaId]),
+    );
+    expect(ready.rows[0]?.status).toBe('ready');
+    expect(
+      await pgCode(
+        withOrg(pool, a.orgId, (tx) =>
+          tx.query('UPDATE media SET bytes = NULL WHERE id = $1', [a.mediaId]),
+        ),
+      ),
+    ).toBe(PG.check);
+  });
 });
