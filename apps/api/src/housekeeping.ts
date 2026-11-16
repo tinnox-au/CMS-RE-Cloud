@@ -32,14 +32,7 @@ export async function runHousekeeping(deps: HousekeepingDeps): Promise<Housekeep
   const tx = poolAsTx(deps.pool);
   const sessions = await sessionPurgeExpired(tx);
   const pairings = await pairingPurge(tx, 24 * 60 * 60);
-  // The local storage implementation leaves temp files behind on a crash; others may not.
-  const storage = deps.storage as ObjectStorage & {
-    removeStaleTempFiles?: (olderThanMs: number) => Promise<number>;
-  };
-  const temp =
-    typeof storage.removeStaleTempFiles === 'function'
-      ? await storage.removeStaleTempFiles(60 * 60 * 1000)
-      : 0;
+  const temp = await deps.storage.removeStaleTempFiles(60 * 60 * 1000);
   const heartbeats = await heartbeatLogPurge(tx, deps.limits.heartbeatLogRetentionHours * 3600);
   const jobFiles = await deps.media.sweep();
   return { sessions, pairings, temp, heartbeats, jobFiles };

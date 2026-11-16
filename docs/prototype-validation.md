@@ -9,7 +9,7 @@ This page records what was **run**, with the real outcome. Anything not run says
 | Item | Version |
 |---|---|
 | OS | macOS 26.6.2 (build 25G83), Apple silicon (arm64) |
-| Node.js / npm | 23.10.0 / 10.9.2. **Every result on this page ran on Node 23.10**, which is end of life and outside the supported range of eslint 10 and vitest 5 (they warn at install; both ran without problems). `engines` is now `>=22.13.0` and `.nvmrc` and CI use Node 22, but **no run on Node 22 has happened** (it is not installed here and CI has never executed). |
+| Node.js / npm | 23.10.0 / 10.9.2. **Every result on this page ran on Node 23.10**, which is end of life and outside the supported range of eslint 10 and vitest 5 (they warn at install; both ran without problems). `engines` is now `>=22.13.0` and `.nvmrc` and CI use Node 22. Node 22 is not installed here, so the results on this page are still the Node 23.10 ones; the only Node 22 evidence is the CI workflow (v22.23.4, row "CI workflow" in section 3). |
 | Docker | Engine 29.8.0, Compose 5.5.1 (Docker Desktop) |
 | PostgreSQL | 17.12 (`postgres:17.12-alpine3.24`, pinned by digest), host port 54330 (54329 is taken on this machine) |
 | Keycloak | 26.8.2 (`start-dev`, realm `tinnox-dev` imported from the generated file; container recreated after the review fixes to import the `tinnox browser` flow) |
@@ -61,7 +61,7 @@ Final results, re-run on 2026-11-14 (12:41 to 12:50 UTC) after every change desc
 | Secrets in logs | search of `tests/.run/api.log` (1,152 lines, the final E2E run at `info` level) | 0 occurrences of `sig=`, `Bearer `, `tinnox_session=`; 0 of 14 generated passwords, TOTP secrets and server secrets |
 | Identity provider | `npm run verify:oidc` | exit 0 after the realm fix. New checks: the ID token carries no name or e-mail claim; a temporary user with a password and no authenticator gets no code and is sent to authenticator set-up (both failed against the previous realm). |
 | Backup and restore | `npm run backup:verify` | passed again after migration 0004 (section 5) |
-| CI workflow | `.github/workflows/ci.yml` | **not run**: it has never executed on GitHub. The pinned action SHAs were checked against the release tags. |
+| CI workflow | `.github/workflows/ci.yml` | Not run when this page was written. It now runs on every push and pull request; on `main` at `cfa9926` (run [43835309136](https://github.com/tinnox-au/tinnox-cms/actions/runs/43835309136), 2026-11-16, Ubuntu 24.04, Node v22.23.4) lint, types, unit tests, build and audit passed, the integration job passed (23 files, 266 tests) and the secret scan passed. **The end-to-end job was skipped** (it runs only when started by hand or with `RUN_E2E`) and has not been run in CI. The pinned action SHAs were checked against the release tags. |
 
 Integration tests by file:
 
@@ -233,12 +233,11 @@ These numbers vary between runs (the reviewers' own run measured 46 s recovery a
 - Rate limits, including the new per-address throttle of failed device credentials, are in memory and per process; a distributed source is not limited. Behind a reverse proxy they depend on `TRUST_PROXY` listing the proxies. The device token is stored in clear in the player's IndexedDB.
 - Unscoped audit events (failed sign-ins, pairing creation, rejected device credentials) cannot be read through the API. Organisations and publications cannot be deleted, and there is no retention purge for audit events or soft-deleted media bytes; only the heartbeat-history period is configurable.
 - The portal has no component or DOM tests (its logic is unit-tested; its screens are covered by E2E). Dark mode, narrow layouts and screen readers were not checked.
-- The CI workflow has never run. All results above are from one macOS machine, on Node 23.10; nothing has run on the declared Node 22 line.
+- All results above are from one macOS machine, on Node 23.10. The declared Node 22 line is exercised only by the CI workflow (section 3), which does not run the end-to-end suite.
 - The backup exercise is local, same-cluster and manual. There are no scheduled, off-site or encrypted backups.
 - `npm audit` lists 7 moderate advisories in development tooling, waiting for an upstream `typescript-eslint` release.
 - The development server (`npm run dev`) uses a looser CSP than the builds, and the player's service worker runs only in a build (`npm run start:built`). Offline reload therefore works only with the build. The new anti-framing headers were verified on the preview servers (E2E 25); on the dev servers they come from the same Vite option but no request was made to check them. No reference reverse-proxy configuration ships.
 - The E2E suite still restarts the shared PostgreSQL container and shares `data/jobs` with the development worker; the E2E API's quarantine sweep would remove files of a development job left pending in that directory (the development API must not run at the same time).
-- `package-lock.json` still records the old root `engines` value (`>=22.12.0`); it was not regenerated because no dependency changed.
 
 ## 10. Review findings and fixes (2026-11-14)
 
@@ -265,14 +264,14 @@ Three independent reviewers (security, reliability, brief conformance) reported 
 | 17 | Player errors never cleared (low) | Code read | Errors resolved by a successful sync cycle are dropped; playback and local errors kept for an hour | E2E 11 (extended); `errors.test.ts`; `sync.test.ts` |
 | 18 | Docs claim a keyed session-id hash; code stores plain SHA-256 (low) | Code read | Docs corrected (no code change: ids are 256-bit random) | n/a |
 | 19 | E2E overwrites `docs/evidence` and fills the development database (low) | Code read | Evidence to `tests/.run/evidence` unless `E2E_EVIDENCE_DIR`; own database `tinnox_e2e_test` and media directory. The PostgreSQL restart remains, documented | Both E2E runs; development database unchanged |
-| 20 | Node minimum wrong; nothing ran on a supported Node (low) | Lockfile engines read | `engines >=22.13.0`; README and handoff. **No Node 22 run** (not installed; CI never ran) | n/a |
+| 20 | Node minimum wrong; nothing ran on a supported Node (low) | Lockfile engines read | `engines >=22.13.0`; README and handoff. **No Node 22 run** at the time (not installed; CI had not run). CI has since run on Node v22.23.4 (section 3) | n/a |
 | 21 | "Configurable" retention overstated (low) | Docs and code read | Reworded; heartbeat retention became a setting | n/a |
 | 22 | Player build lacks the inline-script check (low) | Code read | Check added to the player build | `build-checks.test.ts` |
 | 23 | Validation row 9 cites download errors for runtime playback errors (low) | Tests read | Row corrected (section 6) | n/a |
 | 24 | Build-time inventory incomplete; `ffmpeg` floats within 8.1.x (low) | Dockerfile read | ghcr.io, Alpine repository, Playwright download listed; `ffmpeg=8.1.3-r0` pinned, image rebuilt | Worker integration tests on the rebuilt image |
 | 25 | Setup's free-port probe ignores IPv6 (low) | `[::1]:54330` busy here | Probe checks both loopback addresses; README says to use `127.0.0.1` for database clients | Probe run by hand: 54330 reported busy on `::1` |
 
-Remaining known defects after this step: items 8, 12 and the storage half of 16; no Node 22 run; dev-server headers not checked by request; IndexedDB fixes unit-tested only; and every limitation in section 9.
+Remaining known defects after this step: items 8, 12 and the storage half of 16; no local Node 22 run (CI has since run on Node 22, without the end-to-end suite); dev-server headers not checked by request; IndexedDB fixes unit-tested only; and every limitation in section 9.
 
 ## 11. Portal v2 end-to-end run (2026-11-16)
 

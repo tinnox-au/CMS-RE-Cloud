@@ -269,8 +269,8 @@ export class LocalObjectStorage implements ObjectStorage {
   }
 
   /**
-   * Removes leftovers of interrupted writes. Call once at start-up; `olderThanMs`
-   * protects writes that are in progress in another process.
+   * Removes leftovers of interrupted writes; `olderThanMs` protects writes that are
+   * in progress.
    */
   async removeStaleTempFiles(olderThanMs: number): Promise<number> {
     const cutoff = Date.now() - olderThanMs;

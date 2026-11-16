@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFile, mkdir, symlink, unlink, utimes, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, stat, symlink, unlink, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { MediaJobResult } from '@tinnox/contracts';
 import { withOrg } from '@tinnox/db';
@@ -235,6 +235,22 @@ describe('upload limits and validation results', () => {
     });
     const preview = await operator.fetch(`/api/media/${media.id}/preview`);
     expect(Buffer.from(await preview.arrayBuffer())).toEqual(bytes);
+  });
+
+  it('hands a job to the worker in files it can read, whatever the process umask is', async () => {
+    const previous = process.umask(0o077);
+    let id: string;
+    try {
+      id = (await uploadPng()).media.id;
+    } finally {
+      process.umask(previous);
+    }
+    for (const name of [id, `${id}.json`]) {
+      expect((await stat(join(t.jobsDir, 'inbox', name))).mode & 0o777, name).toBe(0o644);
+    }
+    await actAsWorker(t, accepted(id));
+    await t.ctx.media.tick();
+    expect(await get(id)).toMatchObject({ status: 'ready' });
   });
 
   it('serves an image thumbnail as JPEG, ignores a bad one and deletes both objects', async () => {

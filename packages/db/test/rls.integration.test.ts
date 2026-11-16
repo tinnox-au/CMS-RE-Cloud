@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { withOrg, withoutOrg, type Pool } from '../src/index.ts';
+import { withOrg, withoutOrg, withResolvedOrg, type Pool } from '../src/index.ts';
 import { appPool, createOrg, migratorClient, PG, pgCode, type TestOrg } from './support.ts';
 
 const TENANT_TABLES = [
@@ -590,6 +590,59 @@ describe('transaction-scoped context on pooled connections', () => {
     }
   });
 
+  it('replaces a connection that was lost in the middle of a transaction', async () => {
+    const single = appPool(1);
+    try {
+      let lost: number | undefined;
+      await expect(
+        withOrg(single, a.orgId, async (tx) => {
+          lost = (await tx.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]?.pid;
+          // The server closes this connection, so the ROLLBACK that follows cannot succeed.
+          await tx.query('SELECT pg_terminate_backend(pg_backend_pid())');
+        }),
+      ).rejects.toThrow();
+      const after = await single.query<{ pid: number; setting: string | null; n: string }>(
+        "SELECT pg_backend_pid() AS pid, current_setting('app.org_id', true) AS setting, (SELECT count(*) FROM media) AS n",
+      );
+      expect(lost).toBeTypeOf('number');
+      expect(after.rows[0]?.pid).not.toBe(lost);
+      expect(after.rows[0]?.setting ?? '').toBe('');
+      expect(Number(after.rows[0]?.n)).toBe(0);
+    } finally {
+      await single.end();
+    }
+  });
+
+  it('enters an organisation part-way through a transaction, and only for that transaction', async () => {
+    const single = appPool(1);
+    try {
+      await withResolvedOrg(single, async (tx, enterOrg) => {
+        expect(await count(tx as never, 'media')).toBe(0);
+        await enterOrg(a.orgId);
+        const ids = await tx.query<{ id: string }>('SELECT id FROM media');
+        expect(ids.rows).toEqual([{ id: a.mediaId }]);
+      });
+      expect(await count(single, 'media')).toBe(0);
+      // A failure after entering rolls back what was written before and after it.
+      const name = `resolved-${randomUUID()}`;
+      await expect(
+        withResolvedOrg(single, async (tx, enterOrg) => {
+          await enterOrg(a.orgId);
+          await tx.query('INSERT INTO playlist (org_id, name) VALUES ($1, $2)', [a.orgId, name]);
+          throw new Error('boom');
+        }),
+      ).rejects.toThrow('boom');
+      await withOrg(single, a.orgId, async (tx) => {
+        expect((await tx.query('SELECT 1 FROM playlist WHERE name = $1', [name])).rowCount).toBe(0);
+      });
+      await expect(
+        withResolvedOrg(single, (_tx, enterOrg) => enterOrg("x' OR '1'='1")),
+      ).rejects.toThrow(/UUID/);
+    } finally {
+      await single.end();
+    }
+  });
+
   it('keeps concurrent organisations apart under load', async () => {
     const results = await Promise.all(
       Array.from({ length: 40 }, (_, i) => {
@@ -800,5 +853,48 @@ describe('immutable publications and append-only audit', () => {
     expect(
       await pgCode(insert(second, { ...good, publicationId: second }, 'key-aaaaaaaaaaaaaaaa')),
     ).toBe(PG.unique);
+  });
+
+  it('rejects a manifest that lacks a required field, and ready media without a size (0008)', async () => {
+    const id = randomUUID();
+    const good: Record<string, unknown> = {
+      schemaVersion: 1,
+      publicationId: id,
+      displayId: a.displayId,
+      assets: [{ assetId: a.mediaId }],
+    };
+    const insert = (manifest: Record<string, unknown>) =>
+      withOrg(pool, a.orgId, (tx) =>
+        tx.query(
+          'INSERT INTO publication (id, org_id, display_id, playlist_id, manifest, idempotency_key, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+          [
+            id,
+            a.orgId,
+            a.displayId,
+            a.playlistId,
+            JSON.stringify(manifest),
+            `key-${randomUUID()}`,
+            a.membershipId,
+          ],
+        ),
+      );
+    expect(await pgCode(insert({})), 'empty manifest').toBe(PG.check);
+    for (const field of Object.keys(good)) {
+      const { [field]: _omitted, ...rest } = good;
+      expect(await pgCode(insert(rest)), `without ${field}`).toBe(PG.check);
+      expect(await pgCode(insert({ ...good, [field]: null })), `${field}: null`).toBe(PG.check);
+    }
+
+    const ready = await withOrg(pool, a.orgId, (tx) =>
+      tx.query<{ status: string }>('SELECT status FROM media WHERE id = $1', [a.mediaId]),
+    );
+    expect(ready.rows[0]?.status).toBe('ready');
+    expect(
+      await pgCode(
+        withOrg(pool, a.orgId, (tx) =>
+          tx.query('UPDATE media SET bytes = NULL WHERE id = $1', [a.mediaId]),
+        ),
+      ),
+    ).toBe(PG.check);
   });
 });

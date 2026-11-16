@@ -44,4 +44,9 @@ export interface ObjectStorage {
   delete(key: string): Promise<boolean>;
   /** Verifies the store is usable (for readiness checks). */
   check(): Promise<void>;
+  /**
+   * Removes leftovers of interrupted writes older than `olderThanMs` and returns how many.
+   * Housekeeping calls it; a store that leaves nothing behind returns 0.
+   */
+  removeStaleTempFiles(olderThanMs: number): Promise<number>;
 }

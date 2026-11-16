@@ -22,7 +22,7 @@ import {
   sessionCreate,
   sessionRevoke,
   sha256,
-  withOrg,
+  withResolvedOrg,
 } from '@tinnox/db';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { IdentityProviderError, mfaSatisfied } from '../auth/oidc.ts';
@@ -177,51 +177,55 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
       }
 
       // Session rotation: whatever session the browser had is ended; a new id is issued.
+      // One transaction: the rotation, the new session and the audit event commit together.
       const previous = request.cookies[ctx.config.sessionCookieName];
-      if (typeof previous === 'string' && previous.length <= 100) {
-        await sessionRevoke(unscoped, sha256(previous));
-      }
-
       const sessionId = randomToken();
       const csrfToken = randomToken();
       const idToken =
         identity.idToken !== null && identity.idToken.length <= 8192 ? identity.idToken : null;
-      const created = await sessionCreate(unscoped, {
-        idHash: sha256(sessionId),
-        oidcSub: identity.sub,
-        csrfToken,
-        ttlSeconds: ctx.config.sessionTtlSeconds,
-        idToken,
-      });
-      if (created === null) {
-        clearSessionCookie(ctx, reply);
-        await auditUnscoped(unscoped, {
-          actorType: 'anonymous',
-          actorId: null,
-          action: 'auth.login',
-          objectType: null,
-          objectId: null,
-          result: 'denied',
-          detail: { reason: 'no_membership' },
+      const created = await withResolvedOrg(ctx.pool, async (tx, enterOrg) => {
+        if (typeof previous === 'string' && previous.length <= 100) {
+          await sessionRevoke(tx, sha256(previous));
+        }
+        const session = await sessionCreate(tx, {
+          idHash: sha256(sessionId),
+          oidcSub: identity.sub,
+          csrfToken,
+          ttlSeconds: ctx.config.sessionTtlSeconds,
+          idToken,
         });
-        return failureRedirect(ctx, reply, 'no_membership');
-      }
-
-      await withOrg(ctx.pool, created.orgId, (tx) =>
-        auditScoped(tx, {
+        if (session === null) {
+          await auditUnscoped(tx, {
+            actorType: 'anonymous',
+            actorId: null,
+            action: 'auth.login',
+            objectType: null,
+            objectId: null,
+            result: 'denied',
+            detail: { reason: 'no_membership' },
+          });
+          return null;
+        }
+        await enterOrg(session.orgId);
+        await auditScoped(tx, {
           actorType: 'operator',
-          actorId: created.membershipId,
+          actorId: session.membershipId,
           action: 'auth.login',
           objectType: 'membership',
-          objectId: created.membershipId,
+          objectId: session.membershipId,
           result: 'success',
           detail: {
             acr: identity.acr,
             amr: identity.amr,
             mfaVerifiedFromClaims: mfa.checked,
           },
-        }),
-      );
+        });
+        return session;
+      });
+      if (created === null) {
+        clearSessionCookie(ctx, reply);
+        return failureRedirect(ctx, reply, 'no_membership');
+      }
 
       void reply.setCookie(
         ctx.config.sessionCookieName,
@@ -252,22 +256,36 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     { config: authRateLimit, preHandler: requireOperator(ctx) },
     async (request, reply): Promise<LogoutResponse> => {
       const session = operatorOf(request);
-      const revoked = await sessionRevoke(unscoped, session.idHash);
+      // The browser forgets the session whatever happens next.
       clearSessionCookie(ctx, reply);
+      // One transaction: the revocation and its audit event commit together.
+      let revoked;
+      try {
+        revoked = await withResolvedOrg(ctx.pool, async (tx, enterOrg) => {
+          const ended = await sessionRevoke(tx, session.idHash);
+          if (ended === null) return null;
+          await enterOrg(ended.orgId);
+          await auditScoped(tx, {
+            actorType: 'operator',
+            actorId: ended.membershipId,
+            action: 'auth.logout',
+            objectType: 'membership',
+            objectId: ended.membershipId,
+            result: 'success',
+            detail: null,
+          });
+          return ended;
+        });
+      } catch (error) {
+        // Ending a session is the safe direction, so a sign-out that cannot be audited still
+        // ends it. Sign-in and pairing do the opposite: no audit event, no credential.
+        await sessionRevoke(unscoped, session.idHash).catch(() => undefined);
+        request.log.error({ err: error }, 'sign-out was not audited; the session was ended anyway');
+        throw error;
+      }
       if (revoked === null) {
         throw new HttpError(401, 'unauthenticated', 'Sign in to continue.');
       }
-      await withOrg(ctx.pool, revoked.orgId, (tx) =>
-        auditScoped(tx, {
-          actorType: 'operator',
-          actorId: revoked.membershipId,
-          action: 'auth.logout',
-          objectType: 'membership',
-          objectId: revoked.membershipId,
-          result: 'success',
-          detail: null,
-        }),
-      );
       // The portal should navigate to this URL so the identity provider's own session ends too.
       return { redirectTo: await ctx.idp.endSessionUrl(revoked.idToken) };
     },
