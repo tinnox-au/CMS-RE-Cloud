@@ -1,8 +1,7 @@
-import type { PushPlanResponse } from '@tinnox/contracts';
 import { Link } from 'react-router-dom';
-import { formatCount, pushOverview } from '../../lib/dashboard.ts';
+import { formatCount, pushOverview, type PushOverview } from '../../lib/dashboard.ts';
 import { Button, Card, CardHeader, cx, ErrorNotice, Icon } from '../../ui/index.ts';
-import { CircleCheck, CircleDashed, Lock, Send } from '../../ui/icons.ts';
+import { ChevronRight, CircleCheck, CircleDashed, Lock } from '../../ui/icons.ts';
 import { usePush } from '../push/PushContext.tsx';
 import { PushStatePill } from '../shared/index.ts';
 import { CardSkeleton } from './parts.tsx';
@@ -14,6 +13,7 @@ import { CardSkeleton } from './parts.tsx';
  */
 export function PushCard() {
   const { plan, planError, refresh, openDialog } = usePush();
+  const summary = plan === null ? null : pushOverview(plan);
 
   return (
     <Card
@@ -22,7 +22,27 @@ export function PushCard() {
       className="tx-dashboard-card tx-dashboard-card--push"
       data-testid="dashboard-push"
     >
-      <CardHeader id="dashboard-push-title" title="Changes waiting" size="title" />
+      <CardHeader
+        id="dashboard-push-title"
+        title="Changes waiting"
+        size="title"
+        description={summary?.text}
+        actions={
+          summary !== null && (summary.pending > 0 || summary.blocked > 0) ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              trailingIcon={ChevronRight}
+              onClick={() => {
+                openDialog();
+              }}
+              data-testid="dashboard-push-review"
+            >
+              {summary.pending > 0 ? 'Review and push' : 'Review screens'}
+            </Button>
+          ) : undefined
+        }
+      />
       {plan === null && planError === null && <CardSkeleton label="Loading changes waiting" />}
       {plan === null && planError !== null && (
         <ErrorNotice
@@ -31,34 +51,26 @@ export function PushCard() {
           onRetry={refresh}
         />
       )}
-      {plan !== null && <PushSummary plan={plan} onReview={openDialog} />}
+      {summary !== null && <PushSummary summary={summary} />}
     </Card>
   );
 }
 
-interface PushSummaryProps {
-  readonly plan: PushPlanResponse;
-  readonly onReview: () => void;
-}
-
-function PushSummary({ plan, onReview }: PushSummaryProps) {
-  const summary = pushOverview(plan);
+function PushSummary({ summary }: { readonly summary: PushOverview }) {
   const icon =
-    summary.state === 'changes'
-      ? Send
-      : summary.state === 'up_to_date'
-        ? CircleCheck
-        : summary.state === 'blocked_only'
-          ? Lock
-          : CircleDashed;
+    summary.state === 'up_to_date'
+      ? CircleCheck
+      : summary.state === 'blocked_only'
+        ? Lock
+        : CircleDashed;
   return (
     <div className="tx-dashboard-push" data-state={summary.state}>
       {summary.state === 'changes' ? (
         <p className="tx-dashboard-push__headline">
           <span className="tx-dashboard-push__count tx-num" data-testid="dashboard-push-count">
             {formatCount(summary.pending)}
-          </span>
-          <span className="tx-dashboard-push__words">{summary.headline}</span>
+          </span>{' '}
+          {summary.headline}
         </p>
       ) : (
         <p
@@ -69,59 +81,52 @@ function PushSummary({ plan, onReview }: PushSummaryProps) {
           data-testid="dashboard-push-count"
           data-count={0}
         >
-          <Icon icon={icon} size={20} />
+          <Icon icon={icon} size={18} />
           {summary.headline}
         </p>
       )}
-      <p className="tx-dashboard-push__text">{summary.text}</p>
 
       {summary.waiting.length > 0 && (
-        <ul className="tx-dashboard-push__list" aria-label="Screens with changes waiting">
+        <ul className="tx-dashboard-list" aria-label="Screens with changes waiting">
           {summary.waiting.map((row) => (
             <li
               key={row.display.id}
-              className="tx-dashboard-push__row"
+              className="tx-dashboard-row"
               data-testid={`dashboard-push-row-${row.display.id}`}
             >
-              <span className="tx-dashboard-push__names">
-                <Link to={`/screens/${row.display.id}`} className="tx-truncate">
+              <span className="tx-dashboard-row__text">
+                <Link
+                  to={`/screens/${row.display.id}`}
+                  className="tx-dashboard-row__title tx-row-title tx-truncate"
+                >
                   {row.display.name}
                 </Link>
                 {row.playlist !== null && (
-                  <span className="tx-dashboard-push__playlist tx-truncate">
+                  <span className="tx-dashboard-row__caption tx-small tx-truncate">
                     {row.playlist.name}
                   </span>
                 )}
               </span>
-              <PushStatePill state={row.state} testId="dashboard-push-state" />
+              <PushStatePill
+                state={row.state}
+                testId="dashboard-push-state"
+                className="tx-dashboard-row__end"
+              />
             </li>
           ))}
           {summary.moreWaiting > 0 && (
-            <li className="tx-dashboard-push__more">and {formatCount(summary.moreWaiting)} more</li>
+            <li className="tx-dashboard-row tx-dashboard-row--more tx-small">
+              and {formatCount(summary.moreWaiting)} more
+            </li>
           )}
         </ul>
       )}
 
       {summary.blockedText !== null && (
-        <p className="tx-dashboard-push__blocked" data-testid="dashboard-push-blocked">
+        <p className="tx-dashboard-push__blocked tx-small" data-testid="dashboard-push-blocked">
           <Icon icon={Lock} size={16} />
           {summary.blockedText}
         </p>
-      )}
-
-      {(summary.pending > 0 || summary.blocked > 0) && (
-        <div className="tx-dashboard-push__action">
-          <Button
-            variant="secondary"
-            icon={Send}
-            onClick={() => {
-              onReview();
-            }}
-            data-testid="dashboard-push-review"
-          >
-            {summary.pending > 0 ? 'Review and push' : 'Review screens'}
-          </Button>
-        </div>
       )}
     </div>
   );

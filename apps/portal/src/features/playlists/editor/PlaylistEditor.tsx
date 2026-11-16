@@ -24,7 +24,7 @@ import {
 } from '../../../lib/playlistEditor.ts';
 import { useSession } from '../../../session/SessionContext.tsx';
 import { EditorPage } from '../../../shell/EditorPage.tsx';
-import { CircleCheck, CircleDashed, Save } from '../../../ui/icons.ts';
+import { CircleCheck, Save } from '../../../ui/icons.ts';
 import { Button, ConfirmDialog, ErrorNotice, Icon, useToast } from '../../../ui/index.ts';
 import { useLeaveGuard } from '../../shared/useLeaveGuard.tsx';
 import { usePush } from '../../push/PushContext.tsx';
@@ -206,7 +206,12 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
               `[data-item-key="${CSS.escape(target.key)}"] [role="spinbutton"]`,
             );
     if (element === null) return;
-    element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    element.scrollIntoView({
+      block: 'center',
+      inline: 'center',
+      behavior: reduce ? 'auto' : 'smooth',
+    });
     element.focus({ preventScroll: true });
   };
 
@@ -222,8 +227,14 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
           data-state={dirty ? 'unsaved' : 'saved'}
           data-testid="playlist-editor-save-state"
         >
-          <Icon icon={dirty ? CircleDashed : CircleCheck} size={16} />
-          <span role="status">{dirty ? 'Unsaved changes' : 'Saved'}</span>
+          {dirty ? (
+            <span className="tx-playlist-editor-state__dot" aria-hidden="true" />
+          ) : (
+            <Icon icon={CircleCheck} size={16} />
+          )}
+          <span role="status" className="tx-playlist-editor-state__text">
+            {dirty ? 'Unsaved changes' : 'Saved'}
+          </span>
         </span>
       }
       actions={
@@ -234,6 +245,7 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
             onClick={() => {
               if (dirty && !saving) setConfirmDiscard(true);
             }}
+            className="tx-playlist-editor__discard"
             data-testid="playlist-editor-discard"
           >
             Discard changes
@@ -246,6 +258,7 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
             onClick={() => {
               if (dirty) save();
             }}
+            className="tx-playlist-editor__save"
             data-testid="playlist-editor-save"
           >
             Save draft
@@ -281,31 +294,35 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
           />
         )}
 
-        <div className="tx-playlist-editor__top">
-          <DetailsCard
+        {/* The sequence is the work of the page: it takes the wide column, with the details
+            and the screens beside it (restyle mockup Playlist.dc.html). Below 1100 px the
+            three stack in this order. */}
+        <div className="tx-playlist-editor__layout">
+          <SequenceCard
             draft={draft}
-            saved={saved}
             errors={errors}
-            nameRef={nameRef}
-            descriptionRef={descriptionRef}
-            onChange={change}
+            limits={limits}
+            mediaById={mediaById}
+            dragSource={dragSource}
+            onAdd={add}
+            onMove={move}
+            onMoveToSlot={moveToSlot}
+            onRemove={remove}
+            onChangeItem={changeItem}
+            onAnnounce={announce}
           />
-          <PushCard playlist={saved} dirty={dirty} />
+          <div className="tx-playlist-editor__side">
+            <DetailsCard
+              draft={draft}
+              saved={saved}
+              errors={errors}
+              nameRef={nameRef}
+              descriptionRef={descriptionRef}
+              onChange={change}
+            />
+            <PushCard playlist={saved} dirty={dirty} />
+          </div>
         </div>
-
-        <SequenceCard
-          draft={draft}
-          errors={errors}
-          limits={limits}
-          mediaById={mediaById}
-          dragSource={dragSource}
-          onAdd={add}
-          onMove={move}
-          onMoveToSlot={moveToSlot}
-          onRemove={remove}
-          onChangeItem={changeItem}
-          onAnnounce={announce}
-        />
 
         <LibraryCard
           media={media}

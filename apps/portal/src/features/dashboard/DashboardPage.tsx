@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { anythingPushed, setupProgress } from '../../lib/dashboard.ts';
+import { anythingPushed, pluralCount, setupProgress } from '../../lib/dashboard.ts';
 import { formatAge } from '../../lib/format.ts';
 import { Page } from '../../shell/Page.tsx';
 import { ErrorNotice, IconButton } from '../../ui/index.ts';
@@ -11,7 +11,7 @@ import './dashboard.css';
 import { LibraryCard } from './LibraryCard.tsx';
 import { StaleNotice } from './parts.tsx';
 import { PushCard } from './PushCard.tsx';
-import { ScreensCard } from './ScreensCard.tsx';
+import { AttentionCard, ScreensCard } from './ScreensCard.tsx';
 import { SetupCard } from './SetupCard.tsx';
 import { useActivityNames } from './useActivityNames.ts';
 import { useDashboardData } from './useDashboardData.ts';
@@ -62,9 +62,17 @@ export function DashboardPage() {
       .map((state) => (state.status === 'ready' ? state.refreshError : null))
       .find((error) => error !== null && error !== undefined) ?? (plan !== null ? planError : null);
 
+  const total = overview.status === 'ready' ? overview.data.displays.total : null;
+  const subtitle =
+    total === null || total === 0
+      ? 'What each player last reported.'
+      : `${pluralCount(total, 'screen')}, as each player last reported.`;
+
   return (
-    <Page title="Dashboard">
-      <div className="tx-stack tx-stack--loose tx-dashboard">
+    <Page
+      title="Dashboard"
+      subtitle={subtitle}
+      actions={
         <div className="tx-dashboard-toolbar">
           <p className="tx-dashboard-toolbar__updated" data-testid="dashboard-updated">
             {overview.status === 'loading'
@@ -81,7 +89,9 @@ export function DashboardPage() {
             data-testid="dashboard-refresh"
           />
         </div>
-
+      }
+    >
+      <div className="tx-stack tx-stack--loose tx-dashboard">
         {overview.status === 'error' && (
           <ErrorNotice
             error={overview.error}
@@ -96,15 +106,14 @@ export function DashboardPage() {
 
         {setup !== null && !setup.complete && <SetupCard progress={setup} />}
 
+        <ScreensCard overview={overview} />
+
         <div className="tx-dashboard-grid">
-          <ScreensCard
-            overview={overview}
-            displays={displays}
-            statuses={statuses}
-            onRetryScreens={data.reloadScreens}
-          />
           <PushCard />
           <LibraryCard overview={overview} />
+          {total !== null && total > 0 && (
+            <AttentionCard displays={displays} statuses={statuses} onRetry={data.reloadScreens} />
+          )}
           <ActivityCard activity={activity} names={names} onRetry={data.reloadActivity} />
         </div>
       </div>

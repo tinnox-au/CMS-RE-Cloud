@@ -8,8 +8,7 @@ import {
 } from 'react-router-dom';
 import { PushProvider } from '../features/push/PushContext.tsx';
 import { useSessionState } from '../session/SessionContext.tsx';
-import { Icon, IconButton, ToastProvider, cx } from '../ui/index.ts';
-import { Info, X } from '../ui/icons.ts';
+import { ToastProvider, cx } from '../ui/index.ts';
 import { normalisePath } from './nav.ts';
 import { ShellContext, type ShellContextValue } from './ShellContext.ts';
 import { Sidebar } from './Sidebar.tsx';
@@ -19,9 +18,9 @@ import { useMediaQuery } from './useMediaQuery.ts';
 const DRAWER_QUERY = '(max-width: 899px)';
 
 /**
- * The signed-in application frame: skip link, sidebar, and beside it the environment strip
- * and the routed page (`Outlet`). Each page renders its own header and `main` landmark
- * through `Page` or `EditorPage`.
+ * The signed-in application frame: skip link, sidebar, and beside it the routed page
+ * (`Outlet`). Each page renders its own header and `main` landmark through `Page` or
+ * `EditorPage`. The prototype notice is the "Prototype" capsule beside the wordmark.
  *
  * The shell also owns what must outlive a page: the toast stack, the push controls
  * (`PushProvider`), sign-out, the sidebar's collapsed and drawer state, and the hidden live
@@ -35,7 +34,6 @@ export function AppShell() {
 
   const [collapsed, setCollapsed] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
-  const [stripDismissed, setStripDismissed] = useState(false);
   const [announcement, setAnnouncement] = useState('');
 
   // The drawer never stays open across a change of page or when the window grows.
@@ -160,23 +158,6 @@ export function AppShell() {
               onNavigate={handleNavigate}
             />
             <div className="tx-shell__column">
-              {!stripDismissed && (
-                <div className="tx-env-strip" role="note">
-                  <Icon icon={Info} size={16} className="tx-env-strip__icon" />
-                  <p className="tx-env-strip__text">
-                    Internal engineering prototype. Synthetic data only.
-                  </p>
-                  <IconButton
-                    icon={X}
-                    size="sm"
-                    label="Dismiss prototype notice"
-                    tooltip={false}
-                    onClick={() => {
-                      setStripDismissed(true);
-                    }}
-                  />
-                </div>
-              )}
               <Outlet />
             </div>
           </div>

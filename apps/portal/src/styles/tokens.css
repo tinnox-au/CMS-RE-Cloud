@@ -1,82 +1,120 @@
 /*
  * TINNOX CMS design tokens (docs/portal-v2/design-system.md, section 3).
  *
+ * The look is Apple-like and neutral: a grey page, white cards without borders or shadows,
+ * one blue accent and the system typeface (DEC-34, 2026-11-16; it replaces the teal scheme).
+ * The approved mockups are in docs/portal-v2/restyle-mockups/.
+ *
  * Components reference colour only through these custom properties. The first block is the
  * light theme; the block under `prefers-color-scheme: dark` overrides the values that change.
  * `src/styles/tokens.test.ts` reads this file and fails when a text or boundary pair drops
  * below WCAG 2.2 AA, so keep the two-block shape and plain colour values.
  *
- * Four values differ from the specification table, three of them for contrast:
- * - `--focus` (light) is a deeper Signal Sky. #72afc2 reaches only 2.4:1 on white; a focus
- *   ring needs 3:1 against the surfaces around it.
- * - `--line-control` is new: the boundary of text inputs, checkboxes and switch tracks, which
- *   must reach 3:1. `--line` and `--line-strong` stay for hairlines, which are decoration.
- * - Placeholder text uses `--ink-2`, not `--ink-3`; `--ink-3` is kept for disabled text only.
- * - `--font-head` and `--font-body` name a metric-matched fallback face (styles/fonts.css)
- *   right after the web font, so text does not move when the web font arrives.
+ * The blue is split by job:
+ * - `--accent`, `--accent-hover`, `--on-accent`: filled controls (primary button, checked box,
+ *   switch that is on, badges, progress and meter fills) and the text on them.
+ * - `--link`, `--link-hover`: links, text buttons and icons that mark something as active.
+ * - `--focus`, `--focus-halo`: the focus ring and the soft ring around a focused field.
+ *
+ * Values that differ from the restyle specification, all for contrast:
+ * - `--ink-2` is #67676c in light (specified #6e6e73) and #a3a3a8 in dark (specified #a1a1a6):
+ *   secondary text and placeholders must reach 4.5:1 on the control fill (`--surface-3`) and
+ *   on a capsule (`--fill`) over the page, which the specified values miss (4.1:1 and 4.4:1).
+ * - `--line-control` is #86868b, darker than the mockups' #d2d2d7: the boundary of a text
+ *   input, checkbox or switch track must reach 3:1 against the surface.
+ * - `--danger` in dark is #ff5d53 (specified #ff453a), which reaches 4.5:1 on a hovered row.
+ * - `--focus` in dark is #2997ff: #0071e3 reaches only 3:1 on the dark fills.
+ * - `--accent-hover` is darker than `--accent` so white text keeps 4.5:1 on it.
+ * - `--neutral-bg` in dark is #242426, darker than `--surface-2`, so an accent meter fill on
+ *   its track keeps 3:1.
+ * - `--on-danger` in dark is black: white reaches only 3.4:1 on the dark red.
+ * - `--nav-icon` (the sidebar's section icons) is the accent blue in light, as designed, and
+ *   the lighter link blue in dark, where #0071e3 is under 3:1 on the black page.
+ *
+ * Hover colours are plain values, not `color-mix()`, so the contrast test can read them:
+ * `--danger-text-hover` (the destructive text button on its tint), `--danger-solid-hover`
+ * (the filled confirm button), `--chip-pressed-hover` (a pressed chip), `--ok-hover` (a switch
+ * that is on). Each is the old mix, rounded.
  */
 
 :root {
   color-scheme: light dark;
 
   /* Surfaces */
-  --bg: #f6f8f8;
+  --bg: #f5f5f7;
   --surface: #ffffff;
-  --surface-2: #eff5f7;
-  --surface-3: #dce9ed;
-  --glass: rgb(255 255 255 / 0.72);
-  --scrim: rgb(18 33 42 / 0.36);
+  --surface-2: #f5f5f7;
+  --surface-3: #e8e8ed;
+  /* A chosen table row that is also hovered: one small step from --surface-2, kept light
+     enough that status and link text stay at 4.5:1. */
+  --row-selected-hover: #efeff2;
+  --glass: rgb(245 245 247 / 0.8);
+  --scrim: rgb(0 0 0 / 0.32);
+
+  /* Translucent fills: secondary buttons, capsules, the selected sidebar row */
+  --fill: rgb(0 0 0 / 0.06);
+  --fill-hover: rgb(0 0 0 / 0.1);
+  --fill-disabled: rgb(0 0 0 / 0.04);
 
   /* Lines */
-  --line: #dce7ea;
-  --line-strong: #b7d3dc;
-  --line-control: #7b8f98;
+  --line: rgb(0 0 0 / 0.08);
+  --line-strong: rgb(0 0 0 / 0.16);
+  --line-control: #86868b;
 
   /* Text */
-  --ink: #12212a;
-  --ink-2: #5d6b73;
-  --ink-3: #93a1a7;
+  --ink: #1d1d1f;
+  --ink-2: #67676c;
+  --ink-3: #86868b;
 
-  /* Brand */
-  --brand: #0f4761;
-  --brand-hover: #0d384d;
-  --on-brand: #ffffff;
-  --focus: #3a8aa3;
+  /* Accent, links and focus */
+  --accent: #0071e3;
+  --accent-hover: #0068d6;
+  --on-accent: #ffffff;
+  --link: #0066cc;
+  --link-hover: #004f9e;
+  --nav-icon: #0071e3;
+  --focus: #0071e3;
+  --focus-halo: rgb(0 113 227 / 0.18);
 
   /* Status */
-  --ok: #1b6e45;
-  --ok-bg: #e6f4ec;
-  --warn: #8a5a00;
-  --warn-bg: #fbf1dc;
-  --danger: #a4262c;
-  --danger-bg: #fbe9ea;
-  --neutral-bg: #eaf0f1;
+  --ok: #1d7a36;
+  --ok-bg: #e8f2eb;
+  --ok-hover: #1d6f33;
+  --warn: #b25000;
+  --warn-bg: #f7eee6;
+  --danger: #d70015;
+  --danger-bg: #fcebec;
+  --danger-text-hover: #ae0617;
+  --danger-solid-hover: #bd0416;
+  --on-danger: #ffffff;
+  --neutral-bg: #ebebf0;
+  /* A pressed (chosen) chip is ink with surface text; hovered it lightens a step. */
+  --chip-pressed-hover: #3d3d3e;
 
   /* Tag colours (the dot on a tag chip). The names match the API's tag colour set. */
-  --tag-teal: #177f8f;
-  --tag-sky: #2c7fb8;
-  --tag-slate: #5d6b73;
-  --tag-green: #2a8552;
-  --tag-amber: #a86a00;
-  --tag-red: #c2363c;
-  --tag-violet: #7257c9;
-  --tag-pink: #c4457f;
+  --tag-teal: #00829b;
+  --tag-sky: #0071e3;
+  --tag-slate: #6e6e73;
+  --tag-green: #248a3d;
+  --tag-amber: #b25000;
+  --tag-red: #d70015;
+  --tag-violet: #5e5ce6;
+  --tag-pink: #d12f6a;
 
-  /* Type */
-  --font-head:
-    'Manrope Variable', 'Manrope', 'Manrope Fallback', -apple-system, BlinkMacSystemFont,
-    'Segoe UI', sans-serif;
+  /* Type: one family, the system face first, then self-hosted Inter (styles/fonts.css) and
+     its metric-matched fallback, so text does not move when Inter arrives. */
   --font-body:
-    'Inter Variable', 'Inter', 'Inter Fallback', -apple-system, BlinkMacSystemFont, 'Segoe UI',
-    Roboto, sans-serif;
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter Variable', 'Inter Fallback',
+    'Helvetica Neue', Arial, sans-serif;
+  --font-head: var(--font-body);
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   /* Shape */
   --r-xs: 6px;
   --r-sm: 10px;
-  --r-md: 14px;
+  --r-md: 12px;
   --r-lg: 20px;
-  --r-pill: 999px;
+  --r-pill: 980px;
 
   /* Space */
   --s-1: 4px;
@@ -91,13 +129,14 @@
 
   /* Control heights */
   --h-sm: 32px;
-  --h-md: 36px;
+  --h-md: 40px;
   --h-lg: 44px;
 
-  /* Depth */
-  --shadow-1: 0 1px 2px rgb(18 33 42 / 0.05);
-  --shadow-2: 0 4px 16px rgb(18 33 42 / 0.08), 0 1px 2px rgb(18 33 42 / 0.04);
-  --shadow-3: 0 24px 64px rgb(18 33 42 / 0.18);
+  /* Depth: cards have none. --shadow-1 lifts a thumb (segmented control, switch); --shadow-2
+     is for menus, popovers and toasts; --shadow-3 for dialogs and drawers. */
+  --shadow-1: 0 1px 3px rgb(0 0 0 / 0.12);
+  --shadow-2: 0 8px 28px rgb(0 0 0 / 0.12), 0 1px 3px rgb(0 0 0 / 0.06);
+  --shadow-3: 0 24px 64px rgb(0 0 0 / 0.2);
   --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus);
 
   /* Motion */
@@ -122,47 +161,62 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0c161c;
-    --surface: #12212a;
-    --surface-2: #182c38;
-    --surface-3: #21404f;
-    --glass: rgb(18 33 42 / 0.72);
-    --scrim: rgb(0 0 0 / 0.56);
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --surface-2: #2c2c2e;
+    --surface-3: #3a3a3c;
+    --row-selected-hover: #272729;
+    --glass: rgb(0 0 0 / 0.72);
+    --scrim: rgb(0 0 0 / 0.6);
 
-    --line: #24404d;
-    --line-strong: #35606f;
-    --line-control: #577d8c;
+    --fill: rgb(255 255 255 / 0.1);
+    --fill-hover: rgb(255 255 255 / 0.16);
+    --fill-disabled: rgb(255 255 255 / 0.06);
 
-    --ink: #f1f6f7;
-    --ink-2: #a9bcc4;
-    --ink-3: #7a8f98;
+    --line: rgb(255 255 255 / 0.12);
+    --line-strong: rgb(255 255 255 / 0.2);
+    --line-control: #8e8e93;
 
-    --brand: #72afc2;
-    --brand-hover: #8fc2d2;
-    --on-brand: #0c161c;
-    --focus: #b7d3dc;
+    --ink: #f5f5f7;
+    --ink-2: #a3a3a8;
+    --ink-3: #6e6e73;
 
-    --ok: #6fd3a0;
-    --ok-bg: #143526;
-    --warn: #f0c267;
-    --warn-bg: #3a2c0d;
-    --danger: #ff8f95;
-    --danger-bg: #42181b;
-    --neutral-bg: #21343e;
+    /* The filled accent and the text on it are the same in both themes. */
+    --accent: #0071e3;
+    --accent-hover: #0068d6;
+    --on-accent: #ffffff;
+    --link: #2997ff;
+    --link-hover: #5eb0ff;
+    --nav-icon: #2997ff;
+    --focus: #2997ff;
+    --focus-halo: rgb(41 151 255 / 0.3);
 
-    --tag-teal: #5cc0cc;
-    --tag-sky: #74b6e6;
-    --tag-slate: #a9bcc4;
-    --tag-green: #6fd3a0;
-    --tag-amber: #f0c267;
-    --tag-red: #ff8f95;
-    --tag-violet: #b3a1f2;
-    --tag-pink: #f08fb9;
+    --ok: #30d158;
+    --ok-bg: #1e3225;
+    --ok-hover: #48d56b;
+    --warn: #ff9f0a;
+    --warn-bg: #372c1c;
+    --danger: #ff5d53;
+    --danger-bg: #372424;
+    --danger-text-hover: #fd7e77;
+    --danger-solid-hover: #fe726a;
+    --on-danger: #000000;
+    --neutral-bg: #242426;
+    --chip-pressed-hover: #d7d7d9;
 
-    /* The light shadows vanish on a dark page; these are deeper and neutral. */
-    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3);
-    --shadow-2: 0 6px 20px rgb(0 0 0 / 0.42), 0 1px 2px rgb(0 0 0 / 0.3);
-    --shadow-3: 0 24px 64px rgb(0 0 0 / 0.6);
+    --tag-teal: #40c8e0;
+    --tag-sky: #2997ff;
+    --tag-slate: #98989d;
+    --tag-green: #30d158;
+    --tag-amber: #ff9f0a;
+    --tag-red: #ff5d53;
+    --tag-violet: #7d7aff;
+    --tag-pink: #ff6482;
+
+    /* Shadows vanish on a black page; these are deeper. */
+    --shadow-1: 0 1px 3px rgb(0 0 0 / 0.5);
+    --shadow-2: 0 8px 28px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.08);
+    --shadow-3: 0 24px 64px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.08);
   }
 }
 

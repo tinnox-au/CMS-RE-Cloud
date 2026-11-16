@@ -47,14 +47,16 @@ body {
     padding-inline-start: 1.25em;
   }
 
+  /* Page title */
   &:where(h1) {
-    font: 700 26px/32px var(--font-head);
-    letter-spacing: -0.02em;
+    font: 700 34px/40px var(--font-head);
+    letter-spacing: -0.022em;
     text-wrap: balance;
   }
 
+  /* Card title */
   &:where(h2) {
-    font: 700 18px/24px var(--font-head);
+    font: 600 21px/28px var(--font-head);
     letter-spacing: -0.01em;
     text-wrap: balance;
   }
@@ -69,8 +71,10 @@ body {
     letter-spacing: -0.005em;
   }
 
+  /* Links keep a soft underline: the link blue alone is under 3:1 against body ink, so colour
+     cannot be the only cue (WCAG 1.4.1). */
   &:where(a) {
-    color: var(--brand);
+    color: var(--link);
     text-decoration-line: underline;
     text-decoration-thickness: 1px;
     text-decoration-color: color-mix(in srgb, currentColor 36%, transparent);
@@ -81,7 +85,7 @@ body {
   }
 
   &:where(a:hover) {
-    color: var(--brand-hover);
+    color: var(--link-hover);
     text-decoration-color: currentColor;
   }
 
@@ -143,8 +147,9 @@ body {
   }
 
   /*
-   * One focus ring everywhere: a gap in the surface colour, then the ring. The transparent
-   * outline keeps a visible indicator in forced-colours mode, where shadows are dropped.
+   * One focus ring everywhere: a gap in the surface colour, then a 2px ring in --focus (the
+   * accent blue). The transparent outline keeps a visible indicator in forced-colours mode,
+   * where shadows are dropped. Fields draw their own: a 1px --focus border and --focus-halo.
    */
   &:focus-visible {
     outline: 2px solid transparent;
@@ -153,7 +158,7 @@ body {
   }
 
   &::selection {
-    background: color-mix(in srgb, var(--brand) 24%, transparent);
+    background: var(--focus-halo);
   }
 }
 
@@ -169,25 +174,41 @@ body {
 
 /* ---------- Type styles (design-system.md, section 3) ---------- */
 
+/* Sign-in and empty states: the page title size. */
 .tx-display {
-  font: 700 32px/38px var(--font-head);
-  letter-spacing: -0.02em;
+  font: 700 34px/40px var(--font-head);
+  letter-spacing: -0.022em;
   text-wrap: balance;
 }
 
+/* Page title */
 .tx-h1 {
-  font: 700 26px/32px var(--font-head);
-  letter-spacing: -0.02em;
+  font: 700 34px/40px var(--font-head);
+  letter-spacing: -0.022em;
 }
 
+/* Card title */
 .tx-h2 {
-  font: 700 18px/24px var(--font-head);
+  font: 600 21px/28px var(--font-head);
   letter-spacing: -0.01em;
 }
 
 .tx-h3 {
   font: 600 15px/20px var(--font-body);
   letter-spacing: -0.01em;
+}
+
+/* The title of a row in a list or table. */
+.tx-row-title {
+  font: 500 15px/20px var(--font-body);
+  letter-spacing: -0.01em;
+}
+
+/* Big numerals: dashboard counts. */
+.tx-numeral {
+  font: 600 44px/48px var(--font-head);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
 }
 
 .tx-body {
@@ -199,14 +220,16 @@ body {
   font-weight: 600;
 }
 
+/* Caption: 13 px secondary text under a row title, notes and meta. */
 .tx-small {
   font: 400 13px/18px var(--font-body);
   letter-spacing: 0;
 }
 
+/* A group label or table header: 12 px semibold secondary text, sentence case. */
 .tx-caption {
   font: 600 12px/16px var(--font-body);
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   color: var(--ink-2);
 }
 
@@ -239,18 +262,26 @@ body {
   white-space: nowrap;
 }
 
-/* An API error code or another literal value shown inside a sentence. */
+/*
+ * An API error code or another literal value shown inside a sentence: a small capsule on the
+ * translucent fill, no border, so it shows on a card, an inset and a tinted banner alike. It
+ * stays whole (`unsupported_codec` never breaks mid-word): it wraps to the next line as a unit
+ * and is cut with an ellipsis only when it is wider than the line itself.
+ */
 .tx-code {
   display: inline-block;
+  max-inline-size: 100%;
+  overflow: hidden;
   padding: 0 6px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-xs);
-  background: var(--surface);
+  background: var(--fill);
   color: var(--ink);
   font: 500 12px/18px var(--font-mono);
   letter-spacing: 0;
-  overflow-wrap: anywhere;
-  vertical-align: baseline;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 /* ---------- Helpers ---------- */
@@ -278,8 +309,8 @@ body {
   block-size: var(--h-md);
   padding: 0 var(--s-4);
   border-radius: var(--r-pill);
-  background: var(--brand);
-  color: var(--on-brand);
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 600;
   text-decoration: none;
   transform: translateY(calc(-100% - var(--s-4)));
@@ -287,14 +318,14 @@ body {
 }
 
 .tx-skip-link:hover {
-  color: var(--on-brand);
+  color: var(--on-accent);
 }
 
 .tx-skip-link:focus {
   transform: none;
 }
 
-/* Translucent "glass" for the sidebar and the sticky header. */
+/* Translucent "glass" for the sticky page header (the sidebar sits flat on the page). */
 .tx-glass {
   background: var(--glass);
   -webkit-backdrop-filter: saturate(180%) blur(20px);

@@ -54,7 +54,7 @@ src/shell       the application frame: sidebar, page header, Page and EditorPage
                 menu, push button, navigation data (nav.ts), sign-in and error screens
 src/ui          the component kit; API reference in src/ui/README.md
 src/styles      tokens.css, base.css and one file per component group, imported by index.css;
-                light and dark via prefers-color-scheme; self-hosted Inter and Manrope
+                light and dark via prefers-color-scheme; one system-first typeface with self-hosted Inter
 src/features    one folder per area, each with its routed page(s), parts and one CSS file:
                 dashboard, media (library/, detail/), playlists (list/, editor/),
                 displays (list/, wizard/, detail/: the operator's "Screens" under /screens),

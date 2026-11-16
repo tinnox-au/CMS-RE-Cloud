@@ -3,31 +3,34 @@
  * `tx-settings`.
  */
 
-/* ---------- Settings: groups of rows ---------- */
+/* ---------- Settings: one card per group ---------- */
 
 .tx-settings {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--s-7);
+  gap: var(--s-6);
   max-inline-size: 920px;
 }
 
+/* A white card: the 21/600 card title, an optional note, then the rows. */
 .tx-settings-group {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--s-3);
+  gap: var(--s-2);
+  padding: var(--s-6) var(--s-6) var(--s-3);
+  border-radius: var(--r-lg);
+  background: var(--surface);
 }
 
 .tx-settings-group__heading {
   display: grid;
   gap: 2px;
-  padding-inline: var(--s-1);
 }
 
 .tx-settings-group__title {
-  color: var(--ink-2);
-  font: 600 12px/16px var(--font-body);
-  letter-spacing: 0.02em;
+  color: var(--ink);
+  font: 600 21px/28px var(--font-head);
+  letter-spacing: -0.01em;
 }
 
 .tx-settings-group__note {
@@ -36,17 +39,25 @@
   line-height: 18px;
 }
 
+/* The rows reach 12 px past the text on each side, so a hover fill has room around it. */
 .tx-settings-list {
-  margin: 0;
+  margin: 0 calc(var(--s-3) * -1);
   padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--surface);
   list-style: none;
 }
 
-.tx-settings-list__item + .tx-settings-list__item {
+.tx-settings-list__item {
+  position: relative;
+}
+
+/* Hairlines between rows only, aligned with the text. */
+.tx-settings-list__item + .tx-settings-list__item::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: var(--s-3);
   border-block-start: 1px solid var(--line);
+  pointer-events: none;
 }
 
 .tx-settings-row {
@@ -56,20 +67,10 @@
   align-items: center;
   gap: var(--s-1) var(--s-4);
   min-block-size: 72px;
-  padding: var(--s-4) var(--s-5);
+  padding: var(--s-3);
+  border-radius: var(--r-md);
   color: var(--ink);
   text-decoration: none;
-}
-
-/* The corners of the first and last row follow the list, so a hover fill and the focus ring fit. */
-.tx-settings-list__item:first-child > .tx-settings-row {
-  border-start-start-radius: calc(var(--r-lg) - 1px);
-  border-start-end-radius: calc(var(--r-lg) - 1px);
-}
-
-.tx-settings-list__item:last-child > .tx-settings-row {
-  border-end-start-radius: calc(var(--r-lg) - 1px);
-  border-end-end-radius: calc(var(--r-lg) - 1px);
 }
 
 .tx-settings-row--link {
@@ -82,6 +83,12 @@
   text-decoration: none;
 }
 
+/* A filled row hides the hairlines on either side of it. */
+.tx-settings-list__item:has(> .tx-settings-row--link:hover)::before,
+.tx-settings-list__item:has(> .tx-settings-row--link:hover) + .tx-settings-list__item::before {
+  opacity: 0;
+}
+
 .tx-settings-row--link:active {
   background: var(--surface-3);
 }
@@ -92,6 +99,13 @@
   box-shadow: inset 0 0 0 2px var(--focus);
 }
 
+/* The row title reads as a link on hover and focus only. */
+.tx-settings-row--link:is(:hover, :focus-visible) .tx-settings-row__title {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
 .tx-settings-row__icon {
   grid-area: icon;
   display: grid;
@@ -100,7 +114,7 @@
   block-size: 40px;
   border-radius: var(--r-sm);
   background: var(--surface-2);
-  color: var(--brand);
+  color: var(--link);
   transition: background-color var(--t-fast) var(--ease);
 }
 
@@ -121,8 +135,8 @@
 }
 
 .tx-settings-row__title {
-  font: 600 14px/20px var(--font-body);
-  letter-spacing: -0.005em;
+  font: 500 15px/20px var(--font-body);
+  letter-spacing: -0.01em;
 }
 
 .tx-settings-row__description {
@@ -149,7 +163,7 @@
 .tx-settings-row__strong {
   overflow-wrap: anywhere;
   color: var(--ink);
-  font-weight: 600;
+  font-weight: 500;
   font-size: 14px;
   line-height: 20px;
 }
@@ -176,13 +190,25 @@
 
 /* Narrow: the value goes under the description, in line with the text. */
 @media (max-width: 639px) {
+  .tx-settings-group {
+    padding: var(--s-5) var(--s-4) var(--s-2);
+  }
+
+  .tx-settings-list {
+    margin-inline: calc(var(--s-2) * -1);
+  }
+
+  .tx-settings-list__item + .tx-settings-list__item::before {
+    inset-inline: var(--s-2);
+  }
+
   .tx-settings-row {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
       'icon text chevron'
       '. value chevron';
     align-items: start;
-    padding: var(--s-4);
+    padding: var(--s-3) var(--s-2);
     column-gap: var(--s-3);
   }
 
@@ -415,13 +441,15 @@
 
 /* ---------- Folders, read-only ---------- */
 
+/* Rows inside the card, separated by hairlines that line up with the text. */
 .tx-settings-folders {
   margin: 0;
-  padding: 0;
+  padding: 0 0 var(--s-3);
   list-style: none;
 }
 
 .tx-settings-folders__item {
+  position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -430,7 +458,11 @@
   padding: var(--s-2) var(--s-6);
 }
 
-.tx-settings-folders__item + .tx-settings-folders__item {
+.tx-settings-folders__item + .tx-settings-folders__item::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: var(--s-6);
   border-block-start: 1px solid var(--line);
 }
 
@@ -440,13 +472,22 @@
   color: var(--ink-2);
 }
 
+/* The row title: ink, 15/500; it shows it is a link on hover and focus. */
 .tx-settings-folders__name {
   overflow: hidden;
   min-inline-size: 0;
   color: var(--ink);
-  font-weight: 600;
+  font: 500 15px/20px var(--font-body);
+  letter-spacing: -0.01em;
+  text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tx-settings-folders__name:is(:hover, :focus-visible) {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: currentColor;
 }
 
 .tx-settings-folders__count {
@@ -458,46 +499,42 @@
 }
 
 .tx-settings-folders__state {
-  padding: var(--s-4) var(--s-6) var(--s-5);
+  padding: var(--s-2) var(--s-6) var(--s-5);
 }
 
 .tx-settings-folders__skeleton {
   display: grid;
   gap: var(--s-4);
-  padding: var(--s-5) var(--s-6);
+  padding: var(--s-3) var(--s-6) var(--s-6);
 }
 
 .tx-settings-folders__more {
   padding: var(--s-3) var(--s-6);
-  border-block-start: 1px solid var(--line);
   color: var(--ink-2);
   font-size: 13px;
   line-height: 18px;
 }
 
-@media (max-width: 639px) {
-  .tx-settings-folders__item,
-  .tx-settings-folders__more {
-    padding-inline: var(--s-4);
-  }
-}
-
-.tx-settings-folders__name:hover {
-  color: var(--brand);
-}
-
 .tx-settings-folders__header {
-  padding: var(--s-5) var(--s-6) var(--s-3);
+  padding: var(--s-6) var(--s-5) var(--s-2) var(--s-6);
 }
 
-.tx-settings-folders__header + .tx-settings-folders,
-.tx-settings-folders__header + .tx-settings-folders__state {
-  border-block-start: 1px solid var(--line);
+.tx-settings-folders__header .tx-card__header {
+  margin-block-end: 0;
 }
 
 @media (max-width: 639px) {
   .tx-settings-folders__header {
+    padding: var(--s-5) var(--s-4) var(--s-2);
+  }
+
+  .tx-settings-folders__item,
+  .tx-settings-folders__more {
     padding-inline: var(--s-4);
+  }
+
+  .tx-settings-folders__item + .tx-settings-folders__item::before {
+    inset-inline: var(--s-4);
   }
 }
 

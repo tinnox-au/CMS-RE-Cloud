@@ -2,11 +2,11 @@ import { isRouteErrorResponse, useRouteError } from 'react-router-dom';
 import { Banner, ButtonLink, ErrorNotice, Skeleton, SkeletonGroup, Spinner } from '../ui/index.ts';
 import { HOME_PATH } from './nav.ts';
 import { useDocumentTitle } from './useDocumentTitle.ts';
-import { Wordmark } from './Wordmark.tsx';
+import { PROTOTYPE_NOTE, Wordmark } from './Wordmark.tsx';
 
 /**
  * The screens shown without the application shell: sign-in, the session check and its
- * failure, and the route error page. They need no router except `RouteError`, which the
+ * failure, and the route error page. Each is one centred white card on the page grey. They need no router except `RouteError`, which the
  * router itself renders.
  */
 
@@ -23,7 +23,7 @@ export function SignInScreen({ reason, loginHref }: SignInScreenProps) {
     <main className="tx-screen">
       <div className="tx-screen__card">
         <Wordmark size="lg" />
-        <h1 className="tx-display">Operator sign-in</h1>
+        <h1 className="tx-screen__title">Operator sign-in</h1>
         {reason === 'ended' && (
           <Banner tone="warn" live="polite">
             <p>Your session has ended. Sign in again to continue.</p>
@@ -47,7 +47,7 @@ export function SignInScreen({ reason, loginHref }: SignInScreenProps) {
         >
           Sign in
         </ButtonLink>
-        <p className="tx-screen__note">Internal engineering prototype. Synthetic data only.</p>
+        <p className="tx-screen__note">{PROTOTYPE_NOTE}</p>
       </div>
     </main>
   );
@@ -95,7 +95,7 @@ export function RouteError() {
     <main className="tx-screen">
       <div className="tx-screen__card">
         <Wordmark size="lg" />
-        <h1 className="tx-display">{title}</h1>
+        <h1 className="tx-screen__title">{title}</h1>
         <p className="tx-screen__text">
           {notFound
             ? 'There is no page at this address.'

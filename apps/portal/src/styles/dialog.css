@@ -1,4 +1,10 @@
-/* Dialog and ConfirmDialog, on the native <dialog> element opened with showModal(). */
+/*
+ * Dialog and ConfirmDialog, on the native <dialog> element opened with showModal().
+ * Restyle 2026-11: a borderless surface card with a 24 px radius and the large soft shadow
+ * (in dark the shadow carries a faint white ring, so the card shows on the black page), the
+ * card-title type, no rule above the footer, pill buttons from button.css. Under 560 px it
+ * is a sheet attached to the bottom edge.
+ */
 
 .tx-dialog {
   --_w: 480px;
@@ -11,8 +17,8 @@
   max-block-size: min(calc(100dvh - 48px), 860px);
   margin: auto;
   padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+  border: 0;
+  border-radius: calc(var(--r-lg) + 4px);
   overflow: hidden;
   background: var(--surface);
   box-shadow: var(--shadow-3);
@@ -50,7 +56,7 @@ html:has(.tx-dialog[open]) {
   display: flex;
   align-items: flex-start;
   gap: var(--s-3);
-  padding: var(--s-5) var(--s-4) var(--s-2) var(--s-6);
+  padding: var(--s-5) var(--s-4) var(--s-2) 28px;
 }
 
 .tx-dialog__heading {
@@ -60,7 +66,7 @@ html:has(.tx-dialog[open]) {
 }
 
 .tx-dialog__title {
-  font: 700 18px/24px var(--font-head);
+  font: 600 21px/28px var(--font-head);
   letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
@@ -68,13 +74,15 @@ html:has(.tx-dialog[open]) {
 .tx-dialog__description {
   margin-block-start: var(--s-1);
   color: var(--ink-2);
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .tx-dialog__body {
   position: relative;
   flex: 1 1 auto;
   min-block-size: 0;
-  padding: var(--s-2) var(--s-6) var(--s-6);
+  padding: var(--s-3) 28px var(--s-6);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -94,7 +102,41 @@ html:has(.tx-dialog[open]) {
   align-items: center;
   justify-content: flex-end;
   gap: var(--s-2);
-  padding: var(--s-4) var(--s-6);
+  padding: var(--s-2) 28px var(--s-6);
+}
+
+/*
+ * No rule above the footer while the body fits. When the body scrolls, a hairline appears so
+ * the cut-off content does not run into the buttons: the body's scroll timeline is active
+ * only while it overflows. Browsers without scroll timelines simply show no line.
+ */
+@supports (animation-timeline: scroll()) {
+  .tx-dialog {
+    timeline-scope: --tx-dialog-body;
+  }
+
+  .tx-dialog__body {
+    scroll-timeline: --tx-dialog-body block;
+  }
+
+  .tx-dialog__footer {
+    border-block-start: 1px solid transparent;
+    animation: tx-dialog-footer-rule linear both;
+    animation-timeline: --tx-dialog-body;
+  }
+
+  @keyframes tx-dialog-footer-rule {
+    from,
+    to {
+      padding-block-start: var(--s-4);
+      border-block-start-color: var(--line);
+    }
+  }
+}
+
+/* A flush body (a list or table that runs edge to edge) still needs a line above the footer. */
+.tx-dialog__body--flush + .tx-dialog__footer {
+  padding-block-start: var(--s-4);
   border-block-start: 1px solid var(--line);
 }
 
@@ -102,6 +144,9 @@ html:has(.tx-dialog[open]) {
 .tx-dialog__footer-start {
   margin-inline-end: auto;
   color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -155,22 +200,24 @@ html:has(.tx-dialog[open]) {
     inline-size: auto;
     max-block-size: calc(100dvh - 24px);
     margin: auto 0 0;
-    border-inline-width: 0;
-    border-block-end-width: 0;
     border-end-start-radius: 0;
     border-end-end-radius: 0;
   }
 
   .tx-dialog__header {
-    padding-inline-start: var(--s-4);
+    padding-inline-start: var(--s-5);
   }
 
   .tx-dialog__body {
-    padding-inline: var(--s-4);
+    padding-inline: var(--s-5);
   }
 
   .tx-dialog__footer {
-    padding: var(--s-3) var(--s-4) max(var(--s-3), env(safe-area-inset-bottom));
+    padding: var(--s-2) var(--s-5) max(var(--s-5), env(safe-area-inset-bottom));
+  }
+
+  .tx-dialog__body--flush + .tx-dialog__footer {
+    padding-block-start: var(--s-3);
   }
 
   .tx-dialog__footer > .tx-button {

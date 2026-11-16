@@ -92,6 +92,7 @@ export function FoldersOverview() {
         <CardHeader
           id={titleId}
           title="Folders"
+          size="title"
           description={
             <>
               Managed in the media library.{' '}

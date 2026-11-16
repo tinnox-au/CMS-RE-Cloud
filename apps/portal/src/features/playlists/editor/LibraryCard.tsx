@@ -23,7 +23,7 @@ import {
   type LibraryFilters,
 } from '../../../lib/playlistEditor.ts';
 import { pruneSelection } from '../../../lib/selection.ts';
-import { Images, Plus, RefreshCw, SearchX } from '../../../ui/icons.ts';
+import { Check, Images, Plus, RefreshCw, SearchX } from '../../../ui/icons.ts';
 import {
   Banner,
   Button,
@@ -318,6 +318,7 @@ export function LibraryCard({ media, draft, limits, dragSource, onAdd }: Library
                           </span>
                           {used !== null && (
                             <span className="tx-playlist-editor-media__used">
+                              <Icon icon={Check} size={14} />
                               <span className="tx-visually-hidden">, </span>
                               {used}
                             </span>

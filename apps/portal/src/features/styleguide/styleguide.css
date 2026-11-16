@@ -125,9 +125,19 @@
   gap: var(--s-3) var(--s-4);
   min-inline-size: 0;
   padding: var(--s-5);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-lg);
   background: var(--surface);
+}
+
+/* The stage is a white surface, so chips on it take the on-card fill (styles/chips.css). */
+.tx-sg-demo__stage:not(.tx-sg-demo__stage--page) {
+  --tx-chip-bg: var(--surface-2);
+}
+
+/* Statuses carry no pill of their own, so a row of them needs a wider gap. */
+.tx-sg-status-row {
+  column-gap: var(--s-5);
 }
 
 .tx-sg-demo__stage--stack {
@@ -171,7 +181,7 @@
   align-items: center;
   gap: var(--s-3);
   padding: 10px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-md);
   background: var(--surface);
 }
@@ -194,7 +204,7 @@
   place-items: center;
   min-inline-size: 56px;
   padding: 4px 10px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-xs);
   background: var(--tx-sg-back);
   color: var(--tx-sg-fore);
@@ -239,15 +249,15 @@
   line-height: 18px;
 }
 
-/* A dark stage for pieces meant to sit on a brand fill. */
-.tx-sg-on-brand {
+/* A stage for pieces meant to sit on an accent fill. */
+.tx-sg-on-accent {
   display: inline-flex;
   align-items: center;
   gap: var(--s-2);
   padding: var(--s-2) var(--s-3);
   border-radius: var(--r-pill);
-  background: var(--brand);
-  color: var(--on-brand);
+  background: var(--accent);
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -331,7 +341,7 @@
 .tx-sg-glass-stage {
   position: relative;
   block-size: 168px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-lg);
   overflow: hidden;
   background: var(--bg);
@@ -341,7 +351,7 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 18% 30%, var(--brand) 0 13%, transparent 13.5%),
+    radial-gradient(circle at 18% 30%, var(--accent) 0 13%, transparent 13.5%),
     radial-gradient(circle at 52% 12%, var(--tag-amber) 0 9%, transparent 9.5%),
     radial-gradient(circle at 78% 42%, var(--tag-pink) 0 11%, transparent 11.5%),
     radial-gradient(circle at 36% 78%, var(--tag-sky) 0 12%, transparent 12.5%);

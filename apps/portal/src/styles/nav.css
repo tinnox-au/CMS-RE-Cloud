@@ -1,25 +1,25 @@
-/* BackLink and Breadcrumb. */
+/*
+ * BackLink and Breadcrumb. Restyle 2026-11: both are plain links in --link, as in the
+ * mockups ("‹ Playlists"); the breadcrumb's current page is ink at weight 500.
+ */
 
 .tx-backlink {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  block-size: 28px;
-  margin-inline-start: -8px;
-  padding: 0 10px 0 4px;
+  block-size: 32px;
+  margin-inline-start: -6px;
+  padding: 0 8px 0 2px;
   border-radius: var(--r-pill);
-  color: var(--ink-2);
-  font: 500 13px/18px var(--font-body);
+  color: var(--link);
+  font: 400 14px/20px var(--font-body);
   letter-spacing: 0;
   text-decoration: none;
-  transition:
-    background-color var(--t-fast) var(--ease),
-    color var(--t-fast) var(--ease);
+  transition: color var(--t-fast) var(--ease);
 }
 
 .tx-backlink:hover {
-  background: var(--surface-2);
-  color: var(--ink);
+  color: var(--link-hover);
 }
 
 .tx-breadcrumb__list {
@@ -31,8 +31,8 @@
   padding: 0;
   list-style: none;
   color: var(--ink-2);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .tx-breadcrumb__item {
@@ -48,20 +48,20 @@
 }
 
 .tx-breadcrumb__link {
-  padding: 3px 6px;
-  border-radius: 6px;
-  color: var(--ink-2);
+  padding: 2px 4px;
+  border-radius: var(--r-xs);
+  color: var(--link);
   text-decoration: none;
+  transition: color var(--t-fast) var(--ease);
 }
 
 .tx-breadcrumb__link:hover {
-  background: var(--surface-2);
-  color: var(--ink);
+  color: var(--link-hover);
 }
 
 .tx-breadcrumb__current {
   max-inline-size: 40ch;
-  padding: 3px 6px;
+  padding: 2px 4px;
   overflow: hidden;
   color: var(--ink);
   font-weight: 500;

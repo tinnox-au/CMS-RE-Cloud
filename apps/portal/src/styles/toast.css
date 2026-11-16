@@ -1,4 +1,7 @@
-/* Toast: bottom centre, pill-shaped. The stack is raised into the top layer when it has content. */
+/*
+ * Toast: bottom centre, a borderless surface capsule with the soft floating shadow (a faint
+ * white ring in dark). The stack is raised into the top layer when it has content.
+ */
 
 .tx-toasts {
   position: fixed;
@@ -40,11 +43,11 @@ body:has(.tx-selection-bar) .tx-toasts {
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  min-block-size: 44px;
+  min-block-size: 48px;
   max-inline-size: 100%;
-  padding: 4px 6px 4px 14px;
-  border: 1px solid var(--line);
-  border-radius: 22px;
+  padding: 4px 6px 4px var(--s-4);
+  border: 0;
+  border-radius: 24px;
   background: var(--surface);
   box-shadow: var(--shadow-2);
   color: var(--ink);
@@ -74,13 +77,16 @@ body:has(.tx-selection-bar) .tx-toasts {
   padding-block: 6px;
   padding-inline-end: var(--s-1);
   font-weight: 500;
+  line-height: 20px;
   overflow-wrap: anywhere;
 }
 
 .tx-toast__detail {
   display: block;
   color: var(--ink-2);
+  font-size: 13px;
   font-weight: 400;
+  line-height: 18px;
 }
 
 @media (prefers-reduced-motion: no-preference) {

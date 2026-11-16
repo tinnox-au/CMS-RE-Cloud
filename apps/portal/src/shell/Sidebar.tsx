@@ -54,7 +54,7 @@ function NavLinkRow({
           context.onNavigate(item.to);
         }}
       >
-        <Icon icon={item.icon} size={sub ? 18 : 20} className="tx-nav__icon" />
+        <Icon icon={item.icon} size={sub ? 16 : 18} className="tx-nav__icon" />
         <span className="tx-nav__label">{item.label}</span>
         {item.planned === true && (
           <span className="tx-nav__planned">
@@ -91,7 +91,7 @@ function NavGroup({
         aria-controls={listId}
         onClick={onToggle}
       >
-        <Icon icon={item.icon} className="tx-nav__icon" />
+        <Icon icon={item.icon} size={18} className="tx-nav__icon" />
         <span className="tx-nav__label">{item.label}</span>
         <Icon icon={ChevronDown} size={16} className="tx-nav__chevron" />
       </button>
@@ -126,7 +126,7 @@ function NavGroupMenu({
               type="button"
               className={cx('tx-nav__item', holdsCurrent && 'tx-nav__item--holds-current')}
             >
-              <Icon icon={item.icon} className="tx-nav__icon" />
+              <Icon icon={item.icon} size={18} className="tx-nav__icon" />
               <span className="tx-nav__label">{item.label}</span>
             </button>
           </Tooltip>
@@ -222,8 +222,9 @@ function NavDrawer({
 }
 
 /**
- * The navigation sidebar (design-system.md, section 4): the wordmark, the sections from
- * `nav.ts` with the Media disclosure group, Settings at the bottom and a collapse button.
+ * The navigation sidebar (design-system.md, section 4): the wordmark with its "Prototype"
+ * capsule, the sections from `nav.ts` with the Media disclosure group, Settings at the
+ * bottom and a collapse button. It sits flat on the page grey with a hairline on its right.
  *
  * - The Media group opens on every navigation to a media route; it can be closed by hand.
  * - Collapsed, it shows icons with tooltips and Media opens as a menu. The choice is held
@@ -269,6 +270,7 @@ export function Sidebar({
         <Wordmark
           to={HOME_PATH}
           compact={compact}
+          tag
           onClick={() => {
             onNavigate(HOME_PATH);
           }}
@@ -319,7 +321,11 @@ export function Sidebar({
             disabled={!collapsed}
           >
             <button type="button" className="tx-nav__item" onClick={onToggleCollapsed}>
-              <Icon icon={collapsed ? PanelLeftOpen : PanelLeftClose} className="tx-nav__icon" />
+              <Icon
+                icon={collapsed ? PanelLeftOpen : PanelLeftClose}
+                size={18}
+                className="tx-nav__icon"
+              />
               <span className="tx-nav__label">
                 {collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               </span>
@@ -337,7 +343,5 @@ export function Sidebar({
       </NavDrawer>
     );
   }
-  return (
-    <div className={cx('tx-sidebar', 'tx-glass', collapsed && 'tx-sidebar--collapsed')}>{body}</div>
-  );
+  return <div className={cx('tx-sidebar', collapsed && 'tx-sidebar--collapsed')}>{body}</div>;
 }

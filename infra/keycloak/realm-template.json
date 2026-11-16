@@ -2,6 +2,7 @@
   "_comment": "Template for the local development realm. scripts/setup-dev.mjs fills every null marked FILLED and writes infra/.generated/tinnox-dev-realm.json (gitignored). This committed file contains no secret. Development only: NODE_ENV=production start-up must refuse this realm. authenticationFlows and authenticatorConfig are the Keycloak 26.8.2 defaults (exported from a fresh import, ids removed) plus the two \"tinnox browser\" flows, bound as browserFlow, in which the one-time code is REQUIRED. The client has no profile scope, so ID tokens carry no names.",
   "realm": "tinnox-dev",
   "displayName": "TINNOX CMS (local development)",
+  "loginTheme": "tinnox",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,

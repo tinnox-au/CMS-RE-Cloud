@@ -17,7 +17,6 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-inline-size: 0;
-  border: 1px solid var(--line);
   border-radius: var(--r-lg);
   background: var(--surface);
 }
@@ -55,7 +54,7 @@
 
 .tx-screen-wizard__step[data-current]::before,
 .tx-screen-wizard__step[data-complete]::before {
-  background: var(--brand);
+  background: var(--accent);
 }
 
 .tx-screen-wizard__step-body {
@@ -94,23 +93,23 @@
   place-items: center;
   inline-size: 28px;
   block-size: 28px;
-  border: 1px solid var(--line-strong);
+  border: 0;
   border-radius: var(--r-pill);
-  background: var(--surface);
+  background: var(--fill);
   color: var(--ink-2);
   font: 600 13px/1 var(--font-body);
   font-variant-numeric: tabular-nums;
 }
 
+/* Steps to come are a grey disc; the current one is filled with the accent; a done one
+   keeps the grey disc with an accent tick (the words say "completed" as well). */
 .tx-screen-wizard__step[data-current] .tx-screen-wizard__step-marker {
-  border-color: var(--brand);
-  background: var(--brand);
-  color: var(--on-brand);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .tx-screen-wizard__step[data-complete]:not([data-current]) .tx-screen-wizard__step-marker {
-  border-color: var(--brand);
-  color: var(--brand);
+  color: var(--link);
 }
 
 .tx-screen-wizard__step-text {
@@ -172,7 +171,8 @@
 
 .tx-screen-wizard__title {
   margin: 0;
-  scroll-margin-block-start: calc(var(--header-h) + var(--s-4));
+  /* The editor header measures 97 px, 9 px more than --header-h (88 px). */
+  scroll-margin-block-start: calc(var(--header-h) + 9px + var(--s-4));
 }
 
 .tx-screen-wizard__title:focus {
@@ -287,7 +287,8 @@
 
   .tx-screen-wizard__canvas-aside {
     position: sticky;
-    inset-block-start: calc(var(--header-h) + var(--s-5));
+    /* The editor header measures 97 px, 9 px more than --header-h (88 px). */
+    inset-block-start: calc(var(--header-h) + 9px + var(--s-5));
   }
 }
 
@@ -305,9 +306,9 @@
   min-inline-size: 0;
   min-block-size: 56px;
   padding: var(--s-2) var(--s-3);
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: var(--r-md);
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--ink);
   font: inherit;
   text-align: start;
@@ -318,8 +319,7 @@
 }
 
 .tx-screen-wizard__preset:hover {
-  border-color: var(--line-strong);
-  background: var(--surface-2);
+  background: var(--surface-3);
 }
 
 .tx-screen-wizard__preset:focus-visible {
@@ -328,14 +328,13 @@
 }
 
 .tx-screen-wizard__preset[aria-pressed='true'] {
-  border-color: var(--brand);
-  background: var(--surface-2);
-  box-shadow: inset 0 0 0 1px var(--brand);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .tx-screen-wizard__preset[aria-pressed='true']:focus-visible {
   box-shadow:
-    inset 0 0 0 1px var(--brand),
+    inset 0 0 0 1px var(--accent),
     var(--focus-ring);
 }
 
@@ -354,8 +353,8 @@
 }
 
 .tx-screen-wizard__preset[aria-pressed='true'] .tx-screen-wizard__preset-glyph rect {
-  fill: var(--brand);
-  stroke: var(--brand);
+  fill: var(--accent);
+  stroke: var(--accent);
 }
 
 .tx-screen-wizard__preset-text {
@@ -377,7 +376,7 @@
   position: absolute;
   inset-block-start: 6px;
   inset-inline-end: 6px;
-  color: var(--brand);
+  color: var(--link);
   opacity: 0;
   transition: opacity var(--t-fast) var(--ease);
 }
@@ -519,7 +518,7 @@
   display: grid;
   gap: var(--s-4);
   padding: var(--s-5);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-md);
   background: var(--surface-2);
 }
 
@@ -562,8 +561,8 @@
   justify-content: space-between;
   gap: var(--s-3);
   padding: var(--s-4);
-  border: 1px solid var(--line);
   border-radius: var(--r-md);
+  background: var(--surface-2);
 }
 
 .tx-screen-wizard__player-text {
@@ -596,10 +595,24 @@
 .tx-screen-wizard__picklist {
   max-block-size: 424px;
   padding: var(--s-1);
-  border: 1px solid var(--line);
   border-radius: var(--r-md);
+  background: var(--surface-2);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* The list sits on the inset fill, so its rows step up one fill on hover and to the card
+   colour when chosen. */
+.tx-screen-wizard__picklist .tx-shared-pickrow:hover {
+  background: var(--surface-3);
+}
+
+.tx-screen-wizard__picklist .tx-shared-pickrow:has(input:checked) {
+  background: var(--surface);
+}
+
+.tx-screen-wizard__picklist .tx-shared-pickrow--disabled:hover {
+  background: transparent;
 }
 
 .tx-screen-wizard__picklist:focus-visible {

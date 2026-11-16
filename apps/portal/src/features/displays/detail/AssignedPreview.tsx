@@ -56,7 +56,7 @@ export function AssignedPreview({ display, assigned }: AssignedPreviewProps) {
   return (
     <figure className="tx-screen-detail-summary__part tx-screen-detail-preview">
       <div className="tx-screen-detail-summary__caption">
-        <h2 className="tx-screen-detail-caption" id="screen-detail-preview-title">
+        <h2 className="tx-h2" id="screen-detail-preview-title">
           Assigned content preview
         </h2>
         <p className="tx-screen-detail-note">{PREVIEW_DISCLAIMER}</p>

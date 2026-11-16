@@ -2,20 +2,86 @@
  * The screens list (features/displays/list). Tokens only; class prefix tx-screens-.
  */
 
-/* ---------- Status filter chips: the count after the label ---------- */
+/*
+ * ---------- "Add screen" in the header: the icon only where the header is tight ----------
+ * Between 900 and 1100 px the sidebar takes room and the title would be cut; under 480 px
+ * the header controls share one line. The name stays for assistive technology.
+ */
+
+@media (max-width: 1099px) {
+  .tx-screens-add {
+    position: relative;
+    justify-content: center;
+    inline-size: var(--h-md);
+    padding-inline: 0;
+  }
+
+  .tx-screens-add__label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* ---------- Status filter: chips in one grey track, the chosen one lifted ---------- */
+
+/*
+ * The status chips read as one control (the approved mockup): a --surface-3 track with the
+ * chosen chips lifted to --surface, like a segmented control. They stay toggle buttons, so
+ * more than one status can be chosen; a chosen chip also keeps the kit's tick.
+ */
+.tx-screens-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  max-inline-size: 100%;
+  padding: 3px;
+  border-radius: var(--r-md);
+  background: var(--surface-3);
+}
 
 .tx-screens-chip {
   display: inline-flex;
 }
 
+.tx-screens-status button.tx-chip {
+  block-size: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+}
+
+.tx-screens-status button.tx-chip[aria-pressed='true'],
+.tx-screens-status button.tx-chip[aria-pressed='true']:hover {
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* As the kit's segmented control: in dark the card colour is darker than the track. */
+@media (prefers-color-scheme: dark) {
+  .tx-screens-status button.tx-chip[aria-pressed='true'],
+  .tx-screens-status button.tx-chip[aria-pressed='true']:hover {
+    background: linear-gradient(var(--fill-hover), var(--fill-hover)) var(--surface-3);
+  }
+}
+
+.tx-screens-status button.tx-chip:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
 .tx-screens-chip__count {
-  margin-inline-start: var(--s-2);
+  margin-inline-start: 6px;
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
   font-weight: 400;
 }
 
-/* --ink-2 on the fill of a selected chip is under 4.5:1 in the light theme. */
+/* The chosen chip writes its count in ink, as the mockup does. */
 .tx-screens-chip [aria-pressed='true'] .tx-screens-chip__count {
   color: inherit;
 }
@@ -41,7 +107,7 @@
 }
 
 .tx-screens-content__link:hover {
-  color: var(--brand);
+  color: var(--link);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
@@ -89,14 +155,16 @@
   background: color-mix(in srgb, var(--tx-canvas-mark) 26%, transparent);
 }
 
+/* The small frame before a row's name: 44 by 32 px, as in the approved mockup. */
 .tx-screens-frame--lead {
   flex: none;
-  aspect-ratio: 1;
+  aspect-ratio: 44 / 32;
   inline-size: 44px;
+  border-radius: var(--r-sm);
 }
 
 .tx-screens-frame--lead .tx-screens-frame__area {
-  inset: 7px;
+  inset: 6px 8px;
 }
 
 .tx-screens-frame--lead .tx-screens-frame__canvas {

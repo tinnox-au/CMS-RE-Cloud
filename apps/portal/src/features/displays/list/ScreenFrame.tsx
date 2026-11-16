@@ -6,7 +6,7 @@ import './screensList.css';
 
 export interface ScreenFrameProps {
   readonly display: Pick<DisplayDto, 'canvas' | 'contentRect'>;
-  /** `tile`: the 16:9 picture of a grid tile. `lead`: the 44 px square before a row's name. */
+  /** `tile`: the 16:9 picture of a grid tile. `lead`: the 44 by 32 px frame before a row's name. */
   readonly size?: 'tile' | 'lead';
 }
 
@@ -23,7 +23,8 @@ export function ScreenFrame({ display, size = 'tile' }: ScreenFrameProps) {
   const shape = frameShape(
     display.canvas.width,
     display.canvas.height,
-    size === 'lead' ? 1 : 16 / 9,
+    // The lead's drawing area is 28 by 20 px (screensList.css).
+    size === 'lead' ? 28 / 20 : 16 / 9,
   );
   // A tile draws the content area (the whole canvas without a rectangle), as the screen page
   // and the wizard do; the small lead frame has no room for it.

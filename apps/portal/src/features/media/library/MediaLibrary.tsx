@@ -5,6 +5,7 @@ import { api } from '../../../api/index.ts';
 import { useLoad, type LoadState } from '../../../hooks/useLoad.ts';
 import { formatBytes, formatTimestamp } from '../../../lib/format.ts';
 import { applyListView } from '../../../lib/listView.ts';
+import { meterFraction, meterTone } from '../../../lib/meter.ts';
 import {
   folderCounts,
   LIBRARY_COLUMN_PRIORITY,
@@ -33,7 +34,12 @@ import {
   backgroundUploads,
   summariseUploads,
 } from '../../../lib/mediaLibraryUploads.ts';
-import { mediaDetailsLabel, mediaDisplayName, mediaSizeLabel } from '../../../lib/mediaName.ts';
+import {
+  mediaDetailsLabel,
+  mediaDisplayName,
+  mediaKindLabel,
+  mediaSizeLabel,
+} from '../../../lib/mediaName.ts';
 import type { RowDeleteMode } from '../../../lib/rowFocus.ts';
 import { pruneSelection, selectedRows, setMany } from '../../../lib/selection.ts';
 import { useSession } from '../../../session/SessionContext.tsx';
@@ -53,6 +59,7 @@ import {
   TriangleExclamationPoint,
 } from '../../../ui/icons.ts';
 import {
+  Banner,
   Button,
   Chip,
   ConfirmDialog,
@@ -62,7 +69,6 @@ import {
   ErrorNotice,
   Icon,
   IconButton,
-  Meter,
   NameCell,
   Pagination,
   SearchField,
@@ -274,6 +280,12 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
     />
   );
 
+  /** Under a tile's name: "Image · 640 × 360 px" (the thumbnail's badge shows the kind too). */
+  const tileCaption = (media: MediaDto) =>
+    [mediaKindLabel(media.kind), mediaDetailsLabel(media)]
+      .filter((part) => part !== null)
+      .join(' · ');
+
   const summaryLine = (media: MediaDto) =>
     [mediaDetailsLabel(media), mediaSizeLabel(media)].filter((part) => part !== null).join(' · ');
 
@@ -451,6 +463,26 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
 
   const title = LIBRARY_TITLES[kind];
 
+  // The header's line: the count (announced when a filter changes it) and the storage used.
+  const storage = ready ? state.data.storage : null;
+  const storageTone =
+    storage === null ? 'ok' : meterTone(meterFraction(storage.usedBytes, storage.limitBytes));
+  const subtitle = (
+    <>
+      <span aria-live="polite" data-testid="media-library-count">
+        {loading
+          ? 'Loading media'
+          : libraryCountLabel(list.matched.length, kindItems.length, filtering, kind)}
+      </span>
+      {storage !== null && (
+        <span data-testid="media-library-storage">
+          {' · '}
+          {formatBytes(storage.usedBytes)} of {formatBytes(storage.limitBytes)} used
+        </span>
+      )}
+    </>
+  );
+
   if (state.status === 'error') {
     return (
       <Page title={title}>
@@ -460,7 +492,7 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
   }
 
   return (
-    <Page title={title}>
+    <Page title={title} subtitle={subtitle}>
       <div className="tx-stack tx-media-library" data-testid="media-library">
         <div className="tx-filter-row">
           <div className="tx-filter-row__filters">
@@ -502,79 +534,23 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
           <div className="tx-filter-row__end">{addButton('md')}</div>
         </div>
 
-        <FolderChips
-          folders={folders}
-          value={query.folder}
-          counts={counts}
-          onChange={(folder) => {
-            change({ folder });
-          }}
-          onCreate={() => {
-            setFolderName({ mode: 'create' });
-          }}
-          onRename={(folder) => {
-            setFolderName({ mode: 'rename', folder });
-          }}
-          onDelete={setFolderToDelete}
-        />
-
-        {ready && state.refreshError !== null && (
-          <ErrorNotice
-            error={state.refreshError}
-            title="The list could not be refreshed"
-            onRetry={refresh}
+        <div className="tx-media-library__browse">
+          <FolderChips
+            folders={folders}
+            value={query.folder}
+            counts={counts}
+            onChange={(folder) => {
+              change({ folder });
+            }}
+            onCreate={() => {
+              setFolderName({ mode: 'create' });
+            }}
+            onRename={(folder) => {
+              setFolderName({ mode: 'rename', folder });
+            }}
+            onDelete={setFolderToDelete}
           />
-        )}
-
-        <div className="tx-toolbar">
-          <div className="tx-media-library__count">
-            <span
-              className="tx-toolbar__count"
-              aria-live="polite"
-              data-testid="media-library-count"
-            >
-              {loading
-                ? 'Loading media'
-                : libraryCountLabel(list.matched.length, kindItems.length, filtering, kind)}
-            </span>
-            {processing && (
-              <span
-                className="tx-media-library__checking-note"
-                role="status"
-                data-testid="media-library-processing-note"
-              >
-                <Spinner />
-                Files are being checked. This list refreshes automatically.
-              </span>
-            )}
-          </div>
-          <div className="tx-toolbar__end">
-            {background !== null && (
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={background.tone === 'busy' ? CloudUpload : TriangleExclamationPoint}
-                className={
-                  background.tone === 'warn' ? 'tx-media-library__uploads-warn' : undefined
-                }
-                onClick={() => {
-                  openAdd();
-                }}
-                data-testid="media-library-uploads-status"
-              >
-                {background.label}
-              </Button>
-            )}
-            {ready && (
-              <Meter
-                variant="inline"
-                label="Storage"
-                value={state.data.storage.usedBytes}
-                max={state.data.storage.limitBytes}
-                valueText={`${formatBytes(state.data.storage.usedBytes)} of ${formatBytes(state.data.storage.limitBytes)} used`}
-                className="tx-media-library__meter"
-              />
-            )}
+          <div className="tx-media-library__view">
             {/*
               Grid view has no column headers, so it always offers the Sort select. List view
               shows it only once the table has dropped a column (Size leaves first), so that
@@ -625,6 +601,56 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
           </div>
         </div>
 
+        {storageTone !== 'ok' && (
+          <Banner
+            tone={storageTone === 'danger' ? 'danger' : 'warn'}
+            title={storageTone === 'danger' ? 'Storage is nearly full' : 'Storage is filling up'}
+          >
+            {storageTone === 'danger'
+              ? 'Delete media you no longer use to make room for uploads.'
+              : 'Delete media you no longer use before it runs out.'}
+          </Banner>
+        )}
+
+        {(processing || background !== null) && (
+          <div className="tx-media-library__notes">
+            {processing && (
+              <span
+                className="tx-media-library__checking-note"
+                role="status"
+                data-testid="media-library-processing-note"
+              >
+                <Spinner />
+                Files are being checked. This list refreshes automatically.
+              </span>
+            )}
+            {background !== null && (
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={background.tone === 'busy' ? CloudUpload : TriangleExclamationPoint}
+                className={
+                  background.tone === 'warn' ? 'tx-media-library__uploads-warn' : undefined
+                }
+                onClick={() => {
+                  openAdd();
+                }}
+                data-testid="media-library-uploads-status"
+              >
+                {background.label}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {ready && state.refreshError !== null && (
+          <ErrorNotice
+            error={state.refreshError}
+            title="The list could not be refreshed"
+            onRetry={refresh}
+          />
+        )}
+
         {query.view === 'list' ? (
           <DataTable
             caption={title}
@@ -668,12 +694,9 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
                   meta={
                     <span className="tx-media-library__tile-meta">
                       <span className="tx-media-library__tile-line">
-                        <MediaKindLabel media={media} />
-                        {mediaDetailsLabel(media) !== null && (
-                          <span className="tx-num">{mediaDetailsLabel(media)}</span>
-                        )}
+                        <span className="tx-media-library__tile-caption">{tileCaption(media)}</span>
+                        {media.status !== 'ready' && <MediaStatusPill media={media} />}
                       </span>
-                      {media.status !== 'ready' && <MediaStatusPill media={media} />}
                       <MediaFailureNote media={media} compact />
                     </span>
                   }

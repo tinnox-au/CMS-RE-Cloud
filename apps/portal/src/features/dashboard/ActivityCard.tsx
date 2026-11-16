@@ -4,7 +4,6 @@ import type { LoadState } from '../../hooks/useLoad.ts';
 import {
   activityTimeLabel,
   presentActivity,
-  type ActivityIcon,
   type ActivityItem,
   type ActivityNames,
   type ActivityObject,
@@ -17,40 +16,13 @@ import {
   cx,
   EmptyState,
   ErrorNotice,
-  Icon,
   Skeleton,
   SkeletonGroup,
   StatusPill,
 } from '../../ui/index.ts';
-import {
-  ArrowRight,
-  Folder,
-  Image,
-  ListVideo,
-  Monitor,
-  MonitorCheck,
-  ScrollText,
-  Send,
-  ShieldCheck,
-  Tag,
-  UserRound,
-  type IconComponent,
-} from '../../ui/icons.ts';
+import { ChevronRight, ScrollText } from '../../ui/icons.ts';
 import { ACTIVITY_LIMIT } from './useDashboardData.ts';
 import { useWallClock } from './parts.tsx';
-
-const ICONS: { readonly [K in ActivityIcon]: IconComponent } = {
-  screen: Monitor,
-  player: MonitorCheck,
-  media: Image,
-  playlist: ListVideo,
-  push: Send,
-  tag: Tag,
-  folder: Folder,
-  account: UserRound,
-  security: ShieldCheck,
-  other: ScrollText,
-};
 
 const RELATED_LABELS: { readonly [K in ActivityObject['kind']]: string } = {
   display: 'Screen',
@@ -89,7 +61,7 @@ export function ActivityCard({ activity, names, onRetry }: ActivityCardProps) {
             to="/audit"
             variant="ghost"
             size="sm"
-            trailingIcon={ArrowRight}
+            trailingIcon={ChevronRight}
             data-testid="dashboard-activity-audit"
           >
             Audit log
@@ -100,11 +72,11 @@ export function ActivityCard({ activity, names, onRetry }: ActivityCardProps) {
         <SkeletonGroup label="Loading recent activity" className="tx-dashboard-activity">
           {[0, 1, 2, 3, 4].map((index) => (
             <div key={index} className="tx-dashboard-activity__item">
-              <Skeleton variant="circle" width="32px" height="32px" />
               <div className="tx-stack tx-stack--tight">
                 <Skeleton width={index % 2 === 0 ? '70%' : '52%'} />
                 <Skeleton width="28%" />
               </div>
+              <Skeleton width="72px" />
             </div>
           ))}
         </SkeletonGroup>
@@ -156,9 +128,6 @@ function ActivityRow({ item, now }: { readonly item: ActivityItem; readonly now:
       data-action={item.action}
       data-result={item.result}
     >
-      <span className="tx-dashboard-activity__icon" aria-hidden="true">
-        <Icon icon={ICONS[item.icon]} size={16} />
-      </span>
       <div className="tx-dashboard-activity__body">
         <p className="tx-dashboard-activity__sentence">
           {item.text}
@@ -172,7 +141,7 @@ function ActivityRow({ item, now }: { readonly item: ActivityItem; readonly now:
             <span className="tx-dashboard-activity__gone"> (since deleted)</span>
           )}
         </p>
-        <p className="tx-dashboard-activity__meta">
+        <p className="tx-dashboard-activity__meta tx-small">
           <span>{item.actor}</span>
           {item.related !== null && (
             <span>

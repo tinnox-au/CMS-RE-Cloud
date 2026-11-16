@@ -50,10 +50,8 @@ import {
   Tooltip,
 } from '../../ui/index.ts';
 import {
-  Check,
   CircleCheck,
   CircleDashed,
-  CircleX,
   CircleExclamationPoint,
   ListVideo,
   Monitor,
@@ -65,14 +63,6 @@ import {
 } from '../../ui/icons.ts';
 import { PushStatePill } from '../shared/PushStatePill.tsx';
 import './push.css';
-
-/** Icons of the answer pills; the state pills come from the shared `PushStatePill`. */
-const OUTCOME_ICON: { readonly [K in PushResult['outcome']]: IconComponent } = {
-  published: CircleCheck,
-  unchanged: Check,
-  rejected: CircleX,
-  skipped: CircleDashed,
-};
 
 export interface PushDialogProps {
   readonly open: boolean;
@@ -253,7 +243,7 @@ export function PushDialog({
       footer={
         <>
           {!done && (
-            <Button variant="ghost" onClick={onClose} disabled={busy} data-testid="push-cancel">
+            <Button variant="secondary" onClick={onClose} disabled={busy} data-testid="push-cancel">
               {attempt === null ? 'Cancel' : 'Close'}
             </Button>
           )}
@@ -636,9 +626,7 @@ function PushRow({
           {result === undefined ? (
             <PushStatePill state={row.state} testId="push-row-state" />
           ) : (
-            <StatusPill tone={view.pill.tone} icon={OUTCOME_ICON[result.outcome]}>
-              {view.pill.label}
-            </StatusPill>
+            <StatusPill tone={view.pill.tone}>{view.pill.label}</StatusPill>
           )}
         </span>
         {row.playlist !== null && view.issues.length > 0 && (

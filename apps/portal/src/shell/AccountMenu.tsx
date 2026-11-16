@@ -1,6 +1,6 @@
 import { useSession } from '../session/SessionContext.tsx';
-import { Avatar, Icon, Menu, MenuHeader, MenuItem, MenuSeparator } from '../ui/index.ts';
-import { ChevronDown, LogOut } from '../ui/icons.ts';
+import { Avatar, Menu, MenuHeader, MenuItem, MenuSeparator } from '../ui/index.ts';
+import { LogOut } from '../ui/icons.ts';
 import { ACCOUNT_NAV } from './nav.ts';
 import { useShell } from './ShellContext.ts';
 
@@ -16,7 +16,7 @@ export interface AccountMenuProps {
 }
 
 /**
- * The avatar button in the page header and its menu: who is signed in, then Settings, Users,
+ * The round initials button in the page header and its menu: who is signed in, then Settings, Users,
  * Audit log and Sign out.
  *
  * Signing out is started here and runs in `AppShell`, which outlives the menu: the button
@@ -40,11 +40,10 @@ export function AccountMenu({ showOrganisation = false }: AccountMenuProps) {
           aria-label={`Account menu, ${name}`}
           aria-busy={signOut.busy || undefined}
         >
-          <Avatar name={name} />
           {signOut.busy ? (
             <span className="tx-spinner" aria-hidden="true" />
           ) : (
-            <Icon icon={ChevronDown} size={14} className="tx-account-button__chevron" />
+            <Avatar name={name} />
           )}
         </button>
       )}

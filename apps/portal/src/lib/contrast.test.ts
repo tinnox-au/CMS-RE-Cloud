@@ -14,7 +14,7 @@ const BLACK = { r: 0, g: 0, b: 0 };
 describe('parseColour', () => {
   it('reads the hex forms', () => {
     expect(parseColour('#fff')).toEqual({ r: 255, g: 255, b: 255, a: 1 });
-    expect(parseColour('#0F4761')).toEqual({ r: 15, g: 71, b: 97, a: 1 });
+    expect(parseColour('#0071E3')).toEqual({ r: 0, g: 113, b: 227, a: 1 });
     expect(parseColour('#00000080')?.a).toBeCloseTo(0.502, 2);
     expect(parseColour('#f008')).toEqual({ r: 255, g: 0, b: 0, a: 136 / 255 });
   });

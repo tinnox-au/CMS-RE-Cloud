@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TINNOX CMS foundations</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+a{color:#0066cc}a:hover{color:#004f9e}
+</style>
+</helmet>
+<div style="width: 1440px; height: 1000px; box-sizing: border-box; padding: 56px 64px; background: #f5f5f7; color: #1d1d1f; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px">
+<section style="background: #ffffff; border-radius: 20px; padding: 28px 30px; display: flex; flex-direction: column; gap: 18px">
+<h2 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.01em">Colour</h2>
+<div style="font-size: 13px; font-weight: 500; color: #6e6e73">Light</div>
+<div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px">
+<div><div style="height: 56px; border-radius: 12px; background: #f5f5f7; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08)"></div><div style="margin-top: 6px; font-size: 12px; font-weight: 600">Page</div><div style="font-size: 12px; color: #6e6e73">#f5f5f7</div></div>
+<div><div style="height: 56px; border-radius: 12px; background: #ffffff; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08)"></div><div style="margin-top: 6px; font-size: 12px; font-weight: 600">Surface</div><div style="font-size: 12px; color: #6e6e73">#ffffff</div></div>
+<div><div style="height: 56px; border-radius: 12px; background: #e8e8ed"></div><div style="margin-top: 6px; font-size: 12px; font-weight: 600">Fill</div><div style="font-size: 12px; color: #6e6e73">#e8e8ed</div></div>
+<div><div style="height: 56px; border-radius: 12px; background: #1d1d1f"></div><div style="margin-top: 6px; font-size: 12px; font-weight: 600">Ink</div><div style="font-size: 12px; color: #6e6e73">#1d1d1f</div></div>
+<div><div style="height: 56px; border-radius: 12px; background: #6e6e73"></div><div style="margin-top: 6px; font-size: 12px; font-weight: 600">Secondary</div><div style="font-size: 12px; color: #6e6e73">#6e6e73</div></div>
+<div><div style="height: 56px; border-radius: 12px; background: #0071e3"></div><div style="margin-top: 6px; font-size: 12px; font-weight: 600">Accent</div><div style="font-size: 12px; color: #6e6e73">#0071e3</div></div>
+</div>
+<div style="font-size: 13px; font-weight: 500; color: #6e6e73">Dark</div>
+<div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px">
+<div><div style="height: 56px; border-radius: 12px; background: #000000"></div><div style="margin-top: 6px; font-size: 12px; font-weight: 600">Page</div><div style="font-size: 12px; color: #6e6e73">#000000</div></div>
+<div><div style="height: 56px; border-radius: 12px; background: #1c1c1e"></div><div style="margin-top: 6px; font-size: 12px; font-weight: 600">Surface</div><div style="font-size: 12px; color: #6e6e73">#1c1c1e</div></div>
+<div><div style="height: 56px; border-radius: 12px; background: #2c2c2e"></div><div style="margin-top: 6px; font-size: 12px; font-weight: 600">Fill</div><div style="font-size: 12px; color: #6e6e73">#2c2c2e</div></div>
+<div><div style="height: 56px; border-radius: 12px; background: #f5f5f7; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08)"></div><div style="margin-top: 6px; font-size: 12px; font-weight: 600">Ink</div><div style="font-size: 12px; color: #6e6e73">#f5f5f7</div></div>
+<div><div style="height: 56px; border-radius: 12px; background: #a1a1a6"></div><div style="margin-top: 6px; font-size: 12px; font-weight: 600">Secondary</div><div style="font-size: 12px; color: #6e6e73">#a1a1a6</div></div>
+<div><div style="height: 56px; border-radius: 12px; background: #2997ff"></div><div style="margin-top: 6px; font-size: 12px; font-weight: 600">Link</div><div style="font-size: 12px; color: #6e6e73">#2997ff</div></div>
+</div>
+<div style="font-size: 13px; font-weight: 500; color: #6e6e73">Status, used as a dot with text and never as a filled block</div>
+<div style="display: flex; flex-wrap: wrap; gap: 20px">
+<span style="display: flex; align-items: center; gap: 7px; color: #1d7a36; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1d7a36"></span>In sync</span>
+<span style="display: flex; align-items: center; gap: 7px; color: #0066cc; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #0071e3"></span>Updating</span>
+<span style="display: flex; align-items: center; gap: 7px; color: #b25000; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #b25000"></span>Changes waiting</span>
+<span style="display: flex; align-items: center; gap: 7px; color: #b25000; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #b25000"></span>Not reporting</span>
+<span style="display: flex; align-items: center; gap: 7px; color: #d70015; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #d70015"></span>Error</span>
+<span style="display: flex; align-items: center; gap: 7px; color: #6e6e73; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #86868b"></span>Not paired</span>
+</div>
+<div style="font-size: 13px; font-weight: 500; color: #6e6e73">Tags and prototype labels</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+<span style="font-size: 12px; font-weight: 600; color: #6e6e73; background: rgba(0,0,0,0.06); border-radius: 980px; padding: 3px 10px">Prototype</span>
+<span style="font-size: 12px; font-weight: 600; color: #6e6e73; background: rgba(0,0,0,0.06); border-radius: 980px; padding: 3px 10px">Planned</span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 13px; background: #f5f5f7; border-radius: 980px; padding: 4px 12px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #0071e3"></span>Reception</span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 13px; background: #f5f5f7; border-radius: 980px; padding: 4px 12px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1d7a36"></span>Spring</span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 13px; background: #f5f5f7; border-radius: 980px; padding: 4px 12px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #5e5ce6"></span>Showroom</span>
+</div>
+</section>
+<section style="background: #ffffff; border-radius: 20px; padding: 28px 30px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.01em">Type</h2>
+<div style="display: flex; align-items: baseline; gap: 20px"><span style="width: 120px; font-size: 12px; color: #6e6e73">Numeral 44 / 600</span><span style="font-size: 44px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1">128</span></div>
+<div style="display: flex; align-items: baseline; gap: 20px"><span style="width: 120px; font-size: 12px; color: #6e6e73">Page title 34 / 700</span><span style="font-size: 34px; font-weight: 700; letter-spacing: -0.022em; line-height: 1.15">Screens</span></div>
+<div style="display: flex; align-items: baseline; gap: 20px"><span style="width: 120px; font-size: 12px; color: #6e6e73">Card title 21 / 600</span><span style="font-size: 21px; font-weight: 600; letter-spacing: -0.01em">Changes waiting</span></div>
+<div style="display: flex; align-items: baseline; gap: 20px"><span style="width: 120px; font-size: 12px; color: #6e6e73">Row title 15 / 500</span><span style="font-size: 15px; font-weight: 500">Reception PC monitor</span></div>
+<div style="display: flex; align-items: baseline; gap: 20px"><span style="width: 120px; font-size: 12px; color: #6e6e73">Body 14 / 400</span><span>Nothing changes on a screen until you push.</span></div>
+<div style="display: flex; align-items: baseline; gap: 20px"><span style="width: 120px; font-size: 12px; color: #6e6e73">Caption 13 / 400</span><span style="font-size: 13px; color: #6e6e73">Last report 2 minutes ago</span></div>
+<p style="margin: 6px 0 0; font-size: 13px; color: #6e6e73">The system typeface: San Francisco on Apple devices, Inter everywhere else. One family, no separate heading face.</p>
+</section>
+<section style="background: #ffffff; border-radius: 20px; padding: 28px 30px; display: flex; flex-direction: column; gap: 18px">
+<h2 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.01em">Buttons</h2>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px">
+<button type="button" style="height: 40px; padding: 0 20px; border: 0; border-radius: 980px; background: #0071e3; color: #ffffff; font: inherit; font-weight: 600">Push to screens</button>
+<button type="button" style="height: 40px; padding: 0 20px; border: 0; border-radius: 980px; background: rgba(0,0,0,0.06); color: #1d1d1f; font: inherit; font-weight: 500">Add screen</button>
+<button type="button" style="height: 40px; padding: 0 12px; border: 0; border-radius: 980px; background: transparent; color: #0066cc; font: inherit; font-weight: 500">Discard changes</button>
+<button type="button" style="height: 40px; padding: 0 20px; border: 0; border-radius: 980px; background: rgba(215,0,21,0.08); color: #d70015; font: inherit; font-weight: 500">Delete</button>
+<button type="button" disabled style="height: 40px; padding: 0 20px; border: 0; border-radius: 980px; background: rgba(0,0,0,0.04); color: #86868b; font: inherit; font-weight: 500">Save</button>
+</div>
+<div style="font-size: 13px; font-weight: 500; color: #6e6e73">Segmented control and switch</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 24px">
+<div role="group" aria-label="Kind" style="display: flex; padding: 3px; border-radius: 12px; background: #e8e8ed">
+<button type="button" style="height: 34px; padding: 0 16px; border: 0; border-radius: 9px; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.12); color: #1d1d1f; font: inherit; font-weight: 600">All</button>
+<button type="button" style="height: 34px; padding: 0 16px; border: 0; border-radius: 9px; background: transparent; color: #1d1d1f; font: inherit">Images</button>
+<button type="button" style="height: 34px; padding: 0 16px; border: 0; border-radius: 9px; background: transparent; color: #1d1d1f; font: inherit">Videos</button>
+</div>
+<span aria-hidden="true" style="display: inline-flex; width: 51px; height: 31px; border-radius: 980px; background: #1d7a36; padding: 2px; box-sizing: border-box; justify-content: flex-end"><span style="width: 27px; height: 27px; border-radius: 50%; background: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.2)"></span></span>
+<span aria-hidden="true" style="display: inline-flex; width: 51px; height: 31px; border-radius: 980px; background: #d2d2d7; padding: 2px; box-sizing: border-box"><span style="width: 27px; height: 27px; border-radius: 50%; background: #ffffff; box-shadow: 0 2px 4px rgba(0,0,0,0.2)"></span></span>
+</div>
+</section>
+<section style="background: #ffffff; border-radius: 20px; padding: 28px 30px; display: flex; flex-direction: column; gap: 16px">
+<h2 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.01em">Fields and rows</h2>
+<label style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 12px; background: #f5f5f7; color: #6e6e73"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6e6e73" stroke-width="2" stroke-linecap="round"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4"></path></svg><span style="position: absolute; width: 1px; height: 1px; overflow: hidden">Search</span><input type="search" placeholder="Search screens" style="flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; color: #1d1d1f; outline: none"></label>
+<label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 500">Screen name<input type="text" value="Reception PC monitor" style="height: 44px; padding: 0 14px; border: 1px solid #d2d2d7; border-radius: 12px; font: inherit; font-weight: 400; color: #1d1d1f; background: #ffffff"></label>
+<label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 500">Focused field<input type="text" value="Showroom wall" style="height: 44px; padding: 0 14px; border: 1px solid #0071e3; border-radius: 12px; box-shadow: 0 0 0 4px rgba(0,113,227,0.18); font: inherit; font-weight: 400; color: #1d1d1f; background: #ffffff"></label>
+<div style="border-top: 1px solid rgba(0,0,0,0.08); padding-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px">
+<div><div style="font-size: 15px; font-weight: 500">Showroom wall</div><div style="font-size: 13px; color: #6e6e73">1920 × 1080 px · Melbourne Workshop</div></div>
+<span style="display: flex; align-items: center; gap: 7px; color: #1d7a36; font-size: 13px; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #1d7a36"></span>In sync</span>
+</div>
+<p style="margin: 0; font-size: 13px; color: #6e6e73">Cards are white on the grey page with a 20 px radius, no border and no shadow. Lists separate rows with a hairline.</p>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

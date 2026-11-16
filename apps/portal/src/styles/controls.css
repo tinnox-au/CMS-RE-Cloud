@@ -2,22 +2,26 @@
 
 /* ---------- Switch ---------- */
 
+/*
+ * An iOS switch scaled to the kit: a 44 by 27 px track (the 51 by 31 proportion) with a
+ * 23 px white thumb. On is the status green; off is the control-boundary grey, which keeps
+ * 3:1 against the card where the mockups' paler grey would not.
+ */
 .tx-switch {
   display: inline-flex;
   align-items: flex-start;
   gap: 10px;
-  min-block-size: 24px;
+  min-block-size: 27px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* The track is 36 by 22 px; the control around it is the 24 px tall target. */
 .tx-switch__control {
   position: relative;
   flex: none;
   display: block;
-  inline-size: 36px;
-  block-size: 24px;
+  inline-size: 44px;
+  block-size: 27px;
 }
 
 .tx-switch__input {
@@ -26,60 +30,64 @@
   block-size: 100%;
   margin: 0;
   border: 0;
-  border-block: 1px solid transparent;
   border-radius: var(--r-pill);
   background: var(--line-control);
-  background-clip: padding-box;
   appearance: none;
   cursor: pointer;
   transition: background-color var(--t) var(--ease);
 }
 
+/* The thumb is white in both themes, as on iOS; --on-accent is white in both. */
 .tx-switch__thumb {
   position: absolute;
-  inset-block-start: 3px;
+  inset-block-start: 2px;
   inset-inline-start: 2px;
-  inline-size: 18px;
-  block-size: 18px;
+  inline-size: 23px;
+  block-size: 23px;
   border-radius: 50%;
-  background: var(--surface);
+  background: var(--on-accent);
   box-shadow: var(--shadow-1);
   pointer-events: none;
-  transition:
-    translate var(--t) var(--ease),
-    background-color var(--t) var(--ease);
+  transition: translate var(--t) var(--ease);
 }
 
 .tx-switch__input:checked {
-  background: var(--brand);
+  background: var(--ok);
 }
 
 .tx-switch__input:checked + .tx-switch__thumb {
-  translate: 14px 0;
-  background: var(--on-brand);
+  translate: 17px 0;
 }
 
-.tx-switch__input:hover:not(:disabled) {
+.tx-switch__input:hover:not(:disabled, :checked) {
   background: var(--ink-2);
 }
 
 .tx-switch__input:checked:hover:not(:disabled) {
-  background: var(--brand-hover);
+  background: var(--ok-hover);
 }
 
 .tx-switch__input:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
+}
+
+.tx-switch__input:disabled + .tx-switch__thumb {
+  box-shadow: none;
 }
 
 .tx-switch:has(.tx-switch__input:disabled) {
   cursor: not-allowed;
 }
 
+.tx-switch:has(.tx-switch__input:disabled) .tx-switch__label {
+  color: var(--ink-3);
+}
+
 .tx-switch__text {
   display: grid;
   gap: 2px;
-  padding-block-start: 2px;
+  padding-block-start: 3px;
 }
 
 .tx-switch__label {
@@ -120,8 +128,8 @@
   inline-size: 18px;
   block-size: 18px;
   margin: 0;
-  border: 1.5px solid var(--line-control);
-  border-radius: var(--r-xs);
+  border: 1px solid var(--line-control);
+  border-radius: 5px;
   background: var(--surface);
   appearance: none;
   cursor: pointer;
@@ -136,20 +144,20 @@
 
 .tx-check__input:checked,
 .tx-check__input:indeterminate {
-  border-color: var(--brand);
-  background: var(--brand);
+  border-color: var(--accent);
+  background: var(--accent);
 }
 
 .tx-check__input:checked:hover:not(:disabled),
 .tx-check__input:indeterminate:hover:not(:disabled) {
-  border-color: var(--brand-hover);
-  background: var(--brand-hover);
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
 }
 
 .tx-check__mark,
 .tx-check__dash {
   position: absolute;
-  color: var(--on-brand);
+  color: var(--on-accent);
   opacity: 0;
   pointer-events: none;
 }
@@ -160,12 +168,22 @@
 }
 
 .tx-check__input:disabled {
-  opacity: 0.45;
+  border-color: var(--line-strong);
+  background: var(--fill-disabled);
   cursor: not-allowed;
+}
+
+.tx-check__input:disabled:is(:checked, :indeterminate) {
+  border-color: transparent;
+  background: var(--ink-3);
 }
 
 .tx-check:has(.tx-check__input:disabled) {
   cursor: not-allowed;
+}
+
+.tx-check:has(.tx-check__input:disabled) .tx-check__label {
+  color: var(--ink-3);
 }
 
 .tx-check__text {
@@ -186,13 +204,14 @@
 
 /* ---------- Stepper ---------- */
 
+/* A white field like TextInput (44 px, 12 px radius) with round minus and plus buttons. */
 .tx-stepper {
   display: inline-flex;
   align-items: center;
-  block-size: var(--h-md);
-  padding: 0 2px;
+  block-size: var(--h-lg);
+  padding: 0 5px;
   border: 1px solid var(--line-control);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-md);
   background: var(--surface);
   transition:
     border-color var(--t-fast) var(--ease),
@@ -204,8 +223,10 @@
 }
 
 .tx-stepper:has(.tx-stepper__input:focus-visible) {
-  border-color: var(--brand);
-  box-shadow: var(--focus-ring);
+  border-color: var(--focus);
+  box-shadow:
+    inset 0 0 0 1px var(--focus),
+    0 0 0 4px var(--focus-halo);
 }
 
 .tx-stepper:has(.tx-stepper__input[aria-invalid='true']) {
@@ -221,20 +242,20 @@
 
 .tx-stepper:has(.tx-stepper__input:disabled) {
   border-color: var(--line);
-  background: var(--neutral-bg);
+  background: var(--fill-disabled);
 }
 
 .tx-stepper__button {
   flex: none;
   display: grid;
   place-items: center;
-  inline-size: 30px;
-  block-size: 30px;
+  inline-size: 32px;
+  block-size: 32px;
   padding: 0;
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: var(--ink-2);
+  color: var(--ink);
   cursor: pointer;
   transition:
     background-color var(--t-fast) var(--ease),
@@ -242,12 +263,11 @@
 }
 
 .tx-stepper__button:hover {
-  background: var(--surface-2);
-  color: var(--ink);
+  background: var(--fill);
 }
 
 .tx-stepper__button:active {
-  background: var(--surface-3);
+  background: var(--fill-hover);
 }
 
 .tx-stepper__button:disabled,
@@ -262,7 +282,7 @@
   align-items: baseline;
   justify-content: center;
   gap: 3px;
-  padding-inline: 2px;
+  padding-inline: 4px;
 }
 
 .tx-stepper__input,
@@ -297,6 +317,10 @@
 
 /* ---------- Segmented ---------- */
 
+/*
+ * The iOS segmented control: a grey track (12 px radius, 3 px padding) and a white segment
+ * that slides under the chosen option, with a soft shadow; the chosen label is weight 600.
+ */
 .tx-segmented {
   position: relative;
   isolation: isolate;
@@ -305,29 +329,43 @@
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
   block-size: var(--h-md);
-  padding: 2px;
-  border-radius: var(--r-pill);
-  background: var(--surface-2);
+  padding: 3px;
+  border-radius: var(--r-md);
+  background: var(--surface-3);
 }
 
 .tx-segmented--sm {
   block-size: var(--h-sm);
+  padding: 2px;
+  border-radius: var(--r-sm);
 }
 
-/* The sliding thumb. Its boundary reaches 3:1 against the track and against itself. */
+/* The sliding segment. In dark it is lifted with a white tint, as the card colour is darker than the track. */
 .tx-segmented::before {
   content: '';
   position: absolute;
-  inset-block: 2px;
-  inset-inline-start: 2px;
+  inset-block: 3px;
+  inset-inline-start: 3px;
   z-index: -1;
-  inline-size: calc((100% - 4px) / var(--tx-seg-count, 1));
-  border: 1px solid var(--line-control);
-  border-radius: var(--r-pill);
+  inline-size: calc((100% - 6px) / var(--tx-seg-count, 1));
+  border-radius: 9px;
   background: var(--surface);
   box-shadow: var(--shadow-1);
   translate: calc(var(--tx-seg-index, 0) * 100%) 0;
   transition: translate var(--t) var(--ease);
+}
+
+.tx-segmented--sm::before {
+  inset-block: 2px;
+  inset-inline-start: 2px;
+  inline-size: calc((100% - 4px) / var(--tx-seg-count, 1));
+  border-radius: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tx-segmented::before {
+    background: linear-gradient(var(--fill-hover), var(--fill-hover)) var(--surface-3);
+  }
 }
 
 .tx-segmented[data-empty]::before {
@@ -341,28 +379,36 @@
   justify-content: center;
   gap: 6px;
   min-inline-size: 40px;
-  padding: 0 14px;
-  border-radius: var(--r-pill);
-  color: var(--ink-2);
-  font: 600 13px/18px var(--font-body);
-  letter-spacing: 0;
+  padding: 0 16px;
+  border-radius: 9px;
+  color: var(--ink);
+  font: 400 14px/20px var(--font-body);
+  letter-spacing: -0.005em;
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
-  transition: color var(--t-fast) var(--ease);
   -webkit-tap-highlight-color: transparent;
+}
+
+.tx-segmented--sm .tx-segmented__option {
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .tx-segmented--icons .tx-segmented__option {
   padding: 0 10px;
-}
-
-.tx-segmented__option:hover {
-  color: var(--ink);
+  color: var(--ink-2);
 }
 
 .tx-segmented__option:has(:checked) {
   color: var(--ink);
+  font-weight: 600;
+}
+
+.tx-segmented__option:hover:not(:has(:checked, :disabled)) {
+  background: var(--fill);
 }
 
 .tx-segmented__option:has(:focus-visible) {
@@ -372,6 +418,57 @@
 .tx-segmented__option:has(:disabled) {
   color: var(--ink-3);
   cursor: not-allowed;
+}
+
+/*
+ * A phone under 400 px: equal columns no longer fit four labels ("All results" ran into
+ * "Succeeded" at 320). Each option takes the width of its label instead, the row wraps inside
+ * the track when even that is too wide, and the chosen option paints its own white segment
+ * (the sliding one assumes equal columns). The page never scrolls sideways.
+ */
+@media (max-width: 399px) {
+  .tx-segmented {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    max-inline-size: 100%;
+    block-size: auto;
+    min-block-size: var(--h-md);
+  }
+
+  .tx-segmented--sm {
+    min-block-size: var(--h-sm);
+  }
+
+  .tx-segmented::before {
+    display: none;
+  }
+
+  .tx-segmented__option {
+    flex: 1 1 auto;
+    min-block-size: calc(var(--h-md) - 6px);
+    padding: 0 10px;
+  }
+
+  .tx-segmented--sm .tx-segmented__option {
+    min-block-size: calc(var(--h-sm) - 4px);
+    padding: 0 6px;
+  }
+
+  .tx-segmented__option:has(:checked) {
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
+  }
+
+  .tx-segmented__option:has(:checked):has(:focus-visible) {
+    box-shadow: var(--focus-ring);
+  }
+}
+
+@media (max-width: 399px) and (prefers-color-scheme: dark) {
+  .tx-segmented__option:has(:checked) {
+    background: linear-gradient(var(--fill-hover), var(--fill-hover)) var(--surface-3);
+  }
 }
 
 .tx-segmented__input,
@@ -432,7 +529,7 @@
   inset-block-end: 0;
   block-size: 2px;
   border-radius: 2px 2px 0 0;
-  background: var(--brand);
+  background: var(--ink);
   opacity: 0;
   scale: 0.6 1;
   transition:
@@ -445,7 +542,7 @@
 }
 
 .tx-tab[aria-selected='true'] {
-  color: var(--brand);
+  color: var(--ink);
 }
 
 .tx-tab[aria-selected='true']::after {

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TINNOX CMS playlist editor</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+a{color:#0066cc}a:hover{color:#004f9e}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1000px; background: #f5f5f7; color: #1d1d1f; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased">
+<nav aria-label="Sections" style="flex: 1 1 220px; box-sizing: border-box; padding: 22px 14px; border-right: 1px solid rgba(0,0,0,0.08); display: flex; flex-direction: column; gap: 2px">
+<div style="display: flex; align-items: center; gap: 8px; padding: 4px 10px 18px">
+<span style="font-size: 17px; font-weight: 700; letter-spacing: 0.14em">TINNOX</span>
+<span style="font-size: 11px; font-weight: 600; color: #6e6e73; background: rgba(0,0,0,0.06); border-radius: 980px; padding: 2px 8px">Prototype</span>
+</div>
+<a href="Main.dc.html" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #1d1d1f; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"></path></svg>Dashboard</a>
+<a href="Media.dc.html" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #1d1d1f; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>Media</a>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #1d1d1f; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM17 14v6M14 17h6"></path></svg><span style="flex: 1">Apps</span><span style="font-size: 11px; font-weight: 600; color: #6e6e73; background: rgba(0,0,0,0.06); border-radius: 980px; padding: 2px 8px">Planned</span></a>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; background: rgba(0,0,0,0.06); color: #1d1d1f; text-decoration: none; font-weight: 600"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 12h11M4 18h7M17 13l5 3-5 3z"></path></svg>Playlists</a>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #1d1d1f; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18v16H3zM3 10h18M10 10v10"></path></svg><span style="flex: 1">Layouts</span><span style="font-size: 11px; font-weight: 600; color: #6e6e73; background: rgba(0,0,0,0.06); border-radius: 980px; padding: 2px 8px">Planned</span></a>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #1d1d1f; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v15H4zM4 10h16M8 3v4M16 3v4"></path></svg><span style="flex: 1">Schedules</span><span style="font-size: 11px; font-weight: 600; color: #6e6e73; background: rgba(0,0,0,0.06); border-radius: 980px; padding: 2px 8px">Planned</span></a>
+<a href="Screens.dc.html" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #1d1d1f; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18v12H3zM8 20h8M12 16v4"></path></svg>Screens</a>
+<div style="flex: 1; min-height: 24px"></div>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #1d1d1f; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6e6e73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4"></path></svg>Settings</a>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #1d1d1f; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6e6e73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h0M4 12h0M4 18h0"></path></svg>Audit log</a>
+</nav>
+<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 22px 36px 48px; display: flex; flex-direction: column; gap: 20px">
+<header style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px">
+<div>
+<a href="#" style="font-size: 14px; text-decoration: none">‹ Playlists</a>
+<h1 style="margin: 2px 0 0; font-size: 34px; font-weight: 700; letter-spacing: -0.022em; line-height: 1.15">Spring range</h1>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+<span style="display: flex; align-items: center; gap: 7px; color: #b25000; font-size: 13px; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #b25000"></span>Unsaved changes</span>
+<button type="button" style="height: 40px; padding: 0 12px; border: 0; border-radius: 980px; background: transparent; color: #0066cc; font: inherit; font-weight: 500">Discard changes</button>
+<button type="button" style="height: 40px; padding: 0 22px; border: 0; border-radius: 980px; background: {{accent}}; color: #ffffff; font: inherit; font-weight: 600">Save</button>
+</div>
+</header>
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+<section style="flex: 3 1 560px; min-width: 0; box-sizing: border-box; background: #ffffff; border-radius: 20px; padding: 24px 26px">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px">
+<h2 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.01em">Sequence</h2>
+<span style="color: #6e6e73; font-size: 13px">5 items · loop length 1:14</span>
+</div>
+<p style="margin: 4px 0 16px; color: #6e6e73">Drag to reorder. Images stay on screen for the time you set; videos play for their own length.</p>
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px">
+<sc-for list="{{items}}" as="item" hint-placeholder-count="5">
+<div style="background: #f5f5f7; border-radius: 16px; padding: 8px 8px 12px; display: flex; flex-direction: column; gap: 10px">
+<div style="aspect-ratio: 16 / 9; border-radius: 10px; background: {{item.tint}}; display: flex; align-items: flex-start; justify-content: space-between; padding: 8px; box-sizing: border-box"><span style="min-width: 22px; height: 22px; border-radius: 980px; background: #ffffff; color: #1d1d1f; font-size: 12px; font-weight: 600; line-height: 22px; text-align: center">{{item.n}}</span><span style="font-size: 11px; font-weight: 600; color: #ffffff; background: rgba(0,0,0,0.55); border-radius: 980px; padding: 2px 8px">{{item.kind}}</span></div>
+<div style="padding: 0 6px; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{item.name}}</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px"><span style="font-size: 13px; color: #6e6e73">{{item.label}}</span><span style="height: 30px; padding: 0 12px; border-radius: 980px; background: #ffffff; font-size: 13px; font-weight: 500; line-height: 30px">{{item.time}}</span></div>
+</div>
+</sc-for>
+<button type="button" style="min-height: 180px; border: 1.5px dashed #c7c7cc; border-radius: 16px; background: transparent; color: #0066cc; font: inherit; font-weight: 500">Add from media</button>
+</div>
+</section>
+<div style="flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<section style="background: #ffffff; border-radius: 20px; padding: 24px 26px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.01em">Details</h2>
+<label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 500">Name<input type="text" value="Spring range" style="height: 44px; padding: 0 14px; border: 1px solid #d2d2d7; border-radius: 12px; font: inherit; font-weight: 400; color: #1d1d1f; background: #ffffff"></label>
+<label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 500">Description<textarea rows="3" style="padding: 10px 14px; border: 1px solid #d2d2d7; border-radius: 12px; font: inherit; font-weight: 400; color: #1d1d1f; background: #ffffff; resize: vertical">Showroom and reception, March to May.</textarea></label>
+</section>
+<section style="background: #ffffff; border-radius: 20px; padding: 24px 26px">
+<h2 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.01em">Screens</h2>
+<p style="margin: 4px 0 8px; color: #6e6e73">2 screens have this playlist assigned.</p>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid rgba(0,0,0,0.08)"><div><div style="font-size: 15px; font-weight: 500">Showroom wall</div><div style="font-size: 13px; color: #6e6e73">Never pushed</div></div><span style="display: flex; align-items: center; gap: 6px; color: #b25000; font-size: 13px; font-weight: 500; white-space: nowrap"><span style="width: 7px; height: 7px; border-radius: 50%; background: #b25000"></span>Changes waiting</span></div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid rgba(0,0,0,0.08)"><div><div style="font-size: 15px; font-weight: 500">Lobby portrait</div><div style="font-size: 13px; color: #6e6e73">Pushed today, 9:12 am</div></div><span style="display: flex; align-items: center; gap: 6px; color: #6e6e73; font-size: 13px; font-weight: 500; white-space: nowrap"><span style="width: 7px; height: 7px; border-radius: 50%; background: #86868b"></span>Up to date</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px">
+<button type="button" style="height: 40px; padding: 0 20px; border: 0; border-radius: 980px; background: rgba(0,0,0,0.06); color: #1d1d1f; font: inherit; font-weight: 500">Assign to screens</button>
+<button type="button" style="height: 40px; padding: 0 20px; border: 0; border-radius: 980px; background: rgba(0,0,0,0.06); color: #1d1d1f; font: inherit; font-weight: 500">Push now</button>
+</div>
+</section>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#0071e3","options":["#0071e3","#1d1d1f","#5e5ce6","#0f4761"]},"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+renderVals() {
+const items = [
+{ n: 1, name: 'spring-poster.png', kind: 'Image', label: 'On screen', time: '10 s', tint: '#c9d6e8' },
+{ n: 2, name: 'showroom-loop.mp4', kind: 'Video', label: 'Plays for', time: '0:42', tint: '#2c2c2e' },
+{ n: 3, name: 'welcome-reception.jpg', kind: 'Image', label: 'On screen', time: '8 s', tint: '#e6d9c6' },
+{ n: 4, name: 'opening-hours.png', kind: 'Image', label: 'On screen', time: '6 s', tint: '#dcd6ea' },
+{ n: 5, name: 'workshop-map.png', kind: 'Image', label: 'On screen', time: '8 s', tint: '#cfe3e6' }
+];
+return { accent: this.props.accent ?? '#0071e3', items };
+}
+}
+</script>
+</body>
+</html>

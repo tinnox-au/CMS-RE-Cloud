@@ -10,7 +10,7 @@ import {
   canPushAfterAssign,
   failureText,
 } from '../../../lib/playlistsListActions.ts';
-import { CircleCheck, CircleX, Monitor, Send } from '../../../ui/icons.ts';
+import { CircleCheck, Monitor, Send } from '../../../ui/icons.ts';
 import {
   Banner,
   Button,
@@ -228,9 +228,7 @@ export function AssignToScreens({ playlist, onClose, onAssigned }: AssignToScree
                     </span>
                   </span>
                   <span className="tx-playlists-list__result-end">
-                    <StatusPill tone="danger" icon={CircleX}>
-                      Not assigned
-                    </StatusPill>
+                    <StatusPill tone="danger">Not assigned</StatusPill>
                   </span>
                 </li>
               );

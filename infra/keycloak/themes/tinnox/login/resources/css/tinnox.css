@@ -1,0 +1,520 @@
+/*
+ * TINNOX login theme: restyles Keycloak's keycloak.v2 pages (PatternFly 5) to match the
+ * portal. The values are copied from apps/portal/src/styles/tokens.css, because Keycloak
+ * serves this page from its own origin and cannot load the portal's stylesheet. When a
+ * portal token changes, change it here too.
+ *
+ * No remote fonts or assets: the page uses the system typeface, as the portal does.
+ * Dark mode follows the device setting (keycloak.v2 adds .pf-v5-theme-dark to <html> from
+ * the same media query, so the media query alone is enough here).
+ */
+
+:root {
+  --tx-bg: #f5f5f7;
+  --tx-surface: #ffffff;
+  --tx-fill: rgb(0 0 0 / 0.06);
+  --tx-fill-hover: rgb(0 0 0 / 0.1);
+  --tx-line: rgb(0 0 0 / 0.08);
+  --tx-line-control: #86868b;
+  --tx-ink: #1d1d1f;
+  --tx-ink-2: #67676c;
+  --tx-accent: #0071e3;
+  --tx-accent-hover: #0068d6;
+  --tx-on-accent: #ffffff;
+  --tx-link: #0066cc;
+  --tx-link-hover: #004f9e;
+  --tx-focus: #0071e3;
+  --tx-focus-halo: rgb(0 113 227 / 0.18);
+  --tx-ok: #1d7a36;
+  --tx-ok-bg: #e8f2eb;
+  --tx-warn: #b25000;
+  --tx-warn-bg: #f7eee6;
+  --tx-danger: #d70015;
+  --tx-danger-bg: #fcebec;
+  --tx-font:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter Variable', 'Inter', 'Helvetica Neue',
+    'Segoe UI', Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tx-bg: #000000;
+    --tx-surface: #1c1c1e;
+    --tx-fill: rgb(255 255 255 / 0.1);
+    --tx-fill-hover: rgb(255 255 255 / 0.16);
+    --tx-line: rgb(255 255 255 / 0.12);
+    --tx-line-control: #8e8e93;
+    --tx-ink: #f5f5f7;
+    --tx-ink-2: #a3a3a8;
+    --tx-link: #2997ff;
+    --tx-link-hover: #5eb0ff;
+    --tx-focus: #2997ff;
+    --tx-focus-halo: rgb(41 151 255 / 0.3);
+    --tx-ok: #30d158;
+    --tx-ok-bg: #1e3225;
+    --tx-warn: #ff9f0a;
+    --tx-warn-bg: #372c1c;
+    --tx-danger: #ff5d53;
+    --tx-danger-bg: #372424;
+  }
+}
+
+/* PatternFly globals, so pages this file does not style one by one still pick up the palette. */
+:root,
+:root.pf-v5-theme-dark {
+  --pf-v5-global--FontFamily--text: var(--tx-font);
+  --pf-v5-global--FontFamily--heading: var(--tx-font);
+  --pf-v5-global--BackgroundColor--100: var(--tx-surface);
+  --pf-v5-global--BackgroundColor--200: var(--tx-bg);
+  --pf-v5-global--Color--100: var(--tx-ink);
+  --pf-v5-global--Color--200: var(--tx-ink-2);
+  --pf-v5-global--BorderColor--100: var(--tx-line);
+  --pf-v5-global--primary-color--100: var(--tx-accent);
+  --pf-v5-global--primary-color--200: var(--tx-accent-hover);
+  --pf-v5-global--link--Color: var(--tx-link);
+  --pf-v5-global--link--Color--hover: var(--tx-link-hover);
+  --pf-v5-global--danger-color--100: var(--tx-danger);
+}
+
+/* ---- Page ---------------------------------------------------------------------------- */
+
+html.login-pf,
+.login-pf body {
+  background: var(--tx-bg);
+  color: var(--tx-ink);
+  font-family: var(--tx-font);
+  font-size: 14px;
+  line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.pf-v5-c-login {
+  display: grid;
+  grid-template-columns: minmax(0, 440px);
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 24px 16px;
+  background: var(--tx-bg);
+}
+
+/* The card. keycloak.v2 puts the brand above a separate box; here both sit in one card,
+   like the portal's own signed-out screens. */
+.pf-v5-c-login__container {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'header'
+    'main';
+  gap: 16px;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  padding: 40px 40px 32px;
+  border-radius: 24px;
+  background: var(--tx-surface);
+}
+
+.pf-v5-c-login__header {
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+}
+
+#kc-header-wrapper {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--tx-ink) !important;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 24px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Says which identity provider this is, in the same capsule the portal uses for "Prototype". */
+#kc-header-wrapper::after {
+  content: 'Local development';
+  padding: 2px 8px;
+  border-radius: 980px;
+  background: var(--tx-fill);
+  color: var(--tx-ink-2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.pf-v5-c-login__main {
+  margin: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.pf-v5-c-login__main-header {
+  display: block;
+  padding: 0;
+  border-top: 0;
+  text-align: center;
+}
+
+#kc-page-title {
+  margin: 0;
+  color: var(--tx-ink);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 40px;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+
+.pf-v5-c-login__main-body {
+  padding: 24px 0 0;
+}
+
+.pf-v5-c-login__main-footer {
+  margin: 0;
+  padding: 0;
+}
+
+.pf-v5-c-login__main-footer-band {
+  padding: 16px 0 0;
+  border-top: 0;
+  background: transparent;
+  color: var(--tx-ink-2);
+}
+
+a {
+  color: var(--tx-link);
+}
+a:hover {
+  color: var(--tx-link-hover);
+}
+
+/* ---- Fields -------------------------------------------------------------------------- */
+
+.pf-v5-c-form {
+  gap: 16px;
+}
+
+.pf-v5-c-form__label {
+  font-size: 13px;
+  line-height: 18px;
+}
+.pf-v5-c-form__label-text {
+  color: var(--tx-ink);
+  font-weight: 600;
+}
+
+.pf-v5-c-form-control {
+  --pf-v5-c-form-control--BackgroundColor: var(--tx-surface);
+  --pf-v5-c-form-control--Color: var(--tx-ink);
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--tx-line-control);
+  border-radius: 12px;
+  background: var(--tx-surface);
+  color: var(--tx-ink);
+  font-size: 15px;
+  line-height: 20px;
+}
+/* PatternFly draws its own edges with pseudo-elements; the border above replaces them. */
+.pf-v5-c-form-control::before,
+.pf-v5-c-form-control::after {
+  display: none;
+}
+.pf-v5-c-form-control > :is(input, select, textarea) {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 11px;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.pf-v5-c-form-control > textarea {
+  padding-block: 10px;
+}
+.pf-v5-c-form-control:focus-within {
+  border-color: var(--tx-focus);
+  box-shadow: 0 0 0 4px var(--tx-focus-halo);
+}
+.pf-v5-c-form-control.pf-m-error {
+  border-color: var(--tx-danger);
+}
+.pf-v5-c-form-control.pf-m-readonly {
+  border-color: var(--tx-line);
+  background: var(--tx-fill);
+}
+.pf-v5-c-form-control__utilities,
+.pf-v5-c-form-control__icon {
+  color: var(--tx-ink-2);
+}
+.pf-v5-c-form-control__icon.pf-m-status {
+  color: var(--tx-danger);
+}
+
+/* The signed-in name shown above the one-time code, with its "Restart login" button. */
+.pf-v5-c-login__main-body > div.pf-v5-c-form {
+  margin-bottom: 16px !important;
+}
+
+/* A field with a button inside it (show or hide the password): the group is the field. */
+.pf-v5-c-input-group {
+  gap: 0;
+  align-items: center;
+  min-height: 44px;
+  border: 1px solid var(--tx-line-control);
+  border-radius: 12px;
+  background: var(--tx-surface);
+}
+.pf-v5-c-input-group .pf-v5-c-form-control,
+.pf-v5-c-input-group .pf-v5-c-form-control:focus-within {
+  min-height: 42px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.pf-v5-c-input-group__item {
+  border: 0;
+  background: transparent;
+}
+.pf-v5-c-input-group:has(.pf-v5-c-form-control.pf-m-readonly) {
+  border-color: var(--tx-line);
+  background: var(--tx-fill);
+}
+.pf-v5-c-input-group:has(:is(input, select, textarea):not([readonly]):focus) {
+  border-color: var(--tx-focus);
+  box-shadow: 0 0 0 4px var(--tx-focus-halo);
+}
+.pf-v5-c-input-group:has(.pf-v5-c-form-control.pf-m-error) {
+  border-color: var(--tx-danger);
+}
+
+.pf-v5-c-helper-text__item-text {
+  color: var(--tx-ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+.pf-v5-c-helper-text__item-text.pf-m-error,
+.pf-v5-c-helper-text__item.pf-m-error .pf-v5-c-helper-text__item-text {
+  color: var(--tx-danger);
+}
+
+.pf-v5-c-check__input,
+.pf-v5-c-radio__input {
+  accent-color: var(--tx-accent);
+}
+.pf-v5-c-check__label,
+.pf-v5-c-radio__label {
+  color: var(--tx-ink);
+}
+
+/* ---- Buttons ------------------------------------------------------------------------- */
+
+.pf-v5-c-form__actions {
+  margin: 0;
+  padding-top: 8px;
+}
+.pf-v5-c-form__actions > * {
+  margin: 0;
+}
+
+.pf-v5-c-button {
+  min-height: 44px;
+  padding: 0 22px;
+  border-radius: 980px;
+  font-family: var(--tx-font);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+  transition: background-color 120ms ease;
+}
+.pf-v5-c-button::after {
+  border: 0;
+}
+.pf-v5-c-button:focus-visible {
+  outline: 2px solid var(--tx-focus);
+  outline-offset: 2px;
+}
+
+.pf-v5-c-button.pf-m-primary {
+  background: var(--tx-accent);
+  color: var(--tx-on-accent);
+}
+.pf-v5-c-button.pf-m-primary:hover,
+.pf-v5-c-button.pf-m-primary:active {
+  background: var(--tx-accent-hover);
+  color: var(--tx-on-accent);
+}
+
+.pf-v5-c-button:is(.pf-m-secondary, .pf-m-tertiary) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tx-fill);
+  color: var(--tx-ink);
+  text-decoration: none;
+}
+.pf-v5-c-button:is(.pf-m-secondary, .pf-m-tertiary):hover {
+  background: var(--tx-fill-hover);
+  color: var(--tx-ink);
+}
+.pf-v5-c-button.pf-m-block:is(.pf-m-secondary, .pf-m-tertiary) {
+  display: flex;
+}
+
+.pf-v5-c-button.pf-m-link {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--tx-link);
+}
+.pf-v5-c-button.pf-m-link:hover {
+  color: var(--tx-link-hover);
+}
+
+.pf-v5-c-button:disabled,
+.pf-v5-c-button.pf-m-disabled {
+  background: var(--tx-fill);
+  color: var(--tx-ink-2);
+}
+
+/* Small square buttons inside a field: show or hide the password, copy a code. */
+.pf-v5-c-button.pf-m-control {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  min-height: 36px;
+  margin-inline-end: 3px;
+  padding: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--tx-ink-2);
+}
+.pf-v5-c-button.pf-m-control:hover {
+  background: var(--tx-fill);
+  color: var(--tx-ink);
+}
+
+/* keycloak.v2 parks this tooltip far to the right of its button, which makes a phone-width
+   page scroll sideways. Here it opens under the button, inside the card. */
+.kc-login-tooltip .kc-tooltip-text {
+  top: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  min-width: max-content;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--tx-ink);
+  box-shadow: none;
+  color: var(--tx-surface);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+.kc-login-tooltip:is(:hover, :focus-visible) .kc-tooltip-text {
+  visibility: visible;
+  opacity: 1;
+}
+.kc-login-tooltip .kc-tooltip-text::after {
+  display: none;
+}
+
+/* ---- Messages ------------------------------------------------------------------------ */
+
+.pf-v5-c-alert,
+.pf-v5-c-alert.pf-m-inline {
+  --tx-alert: var(--tx-ink);
+  --tx-alert-bg: var(--tx-fill);
+  align-items: start;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--tx-alert-bg);
+  box-shadow: none;
+  text-align: start;
+}
+.pf-v5-c-alert::before {
+  display: none;
+}
+.pf-v5-c-alert.pf-m-danger {
+  --tx-alert: var(--tx-danger);
+  --tx-alert-bg: var(--tx-danger-bg);
+}
+.pf-v5-c-alert.pf-m-warning {
+  --tx-alert: var(--tx-warn);
+  --tx-alert-bg: var(--tx-warn-bg);
+}
+.pf-v5-c-alert.pf-m-success {
+  --tx-alert: var(--tx-ok);
+  --tx-alert-bg: var(--tx-ok-bg);
+}
+.pf-v5-c-alert__icon,
+.pf-v5-c-alert__title {
+  color: var(--tx-alert);
+}
+.pf-v5-c-alert__title {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+/* ---- Other pieces -------------------------------------------------------------------- */
+
+.pf-v5-c-tile {
+  border-radius: 12px;
+  background: var(--tx-fill);
+  color: var(--tx-ink);
+}
+.pf-v5-c-tile::before {
+  border-color: transparent;
+  border-radius: 12px;
+}
+.pf-v5-c-tile.pf-m-selected::before {
+  border-color: var(--tx-accent);
+}
+
+hr,
+.kc-login-divider::before,
+.kc-login-divider::after {
+  border-color: var(--tx-line);
+}
+
+.kc-qr-code img {
+  border: 0;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+#kc-code pre,
+.pf-v5-c-code-block {
+  border: 0;
+  border-radius: 12px;
+  background: var(--tx-fill);
+  color: var(--tx-ink);
+}
+
+@media (max-width: 479px) {
+  .pf-v5-c-login__container {
+    padding: 32px 24px 24px;
+  }
+  #kc-page-title {
+    font-size: 28px;
+    line-height: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-v5-c-button {
+    transition: none;
+  }
+}

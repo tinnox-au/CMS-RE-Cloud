@@ -3,10 +3,12 @@
  * `tx-audit`.
  */
 
+/* The page's lead sentence: the subtitle style, kept in the page so the sticky header stays
+   short on a phone. */
 .tx-audit-intro {
   max-inline-size: 72ch;
   color: var(--ink-2);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
 }
 
@@ -28,8 +30,8 @@
   align-items: center;
   gap: var(--s-1);
   color: var(--ink-2);
-  font: 600 12px/16px var(--font-body);
-  letter-spacing: 0.02em;
+  font: 500 13px/18px var(--font-body);
+  letter-spacing: 0;
   white-space: nowrap;
 }
 
@@ -44,7 +46,7 @@
 
 .tx-audit-time__date {
   color: var(--ink);
-  font-weight: 600;
+  font-weight: 500;
   font-size: 13px;
   line-height: 18px;
 }
@@ -61,9 +63,12 @@
   min-inline-size: 0;
 }
 
+/* The row title: 15/500 ink, as in every list. */
 .tx-audit-action__words {
   overflow-wrap: anywhere;
-  font-weight: 600;
+  color: var(--ink);
+  font: 500 15px/20px var(--font-body);
+  letter-spacing: -0.01em;
 }
 
 /* The raw action as recorded: small, monospace, readable (never --ink-3). */
@@ -87,12 +92,12 @@
 }
 
 a.tx-audit-object__name {
-  color: var(--brand);
-  font-weight: 600;
+  color: var(--link);
+  font-weight: 500;
 }
 
 a.tx-audit-object__name:hover {
-  color: var(--brand-hover);
+  color: var(--link-hover);
 }
 
 .tx-audit-object__name--gone {
@@ -176,7 +181,7 @@ a.tx-audit-object__name:hover {
   max-block-size: 320px;
   margin: 0;
   padding: var(--s-3) var(--s-4);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-md);
   background: var(--surface-2);
   color: var(--ink);
@@ -208,5 +213,25 @@ a.tx-audit-object__name:hover {
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+}
+
+/* A phone: the details dialog puts each label above its value, so long values keep the width. */
+@media (max-width: 479px) {
+  .tx-audit-dialog__facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .tx-audit-dialog__facts > dt {
+    font: 600 12px/16px var(--font-body);
+  }
+
+  .tx-audit-dialog__facts > dd {
+    margin-block-end: var(--s-3);
+  }
+
+  .tx-audit-dialog__facts > dd:last-child {
+    margin-block-end: 0;
   }
 }

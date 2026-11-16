@@ -9,7 +9,7 @@ export interface BadgeProps {
    * badge is hidden from assistive technology, for when nearby text already says the same.
    */
   readonly label?: string;
-  /** `inverse` is for a badge sitting on a brand-filled button. */
+  /** `inverse` is for a badge on an accent-filled button; `neutral` is the quiet grey capsule. */
   readonly variant?: 'brand' | 'inverse' | 'neutral' | 'danger';
   /** By default a count of zero renders nothing. */
   readonly showZero?: boolean;

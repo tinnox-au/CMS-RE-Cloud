@@ -281,7 +281,11 @@ export function FormSectionDemo() {
         </Card>
       </Demo>
 
-      <Demo title="Input states">
+      <Demo
+        title="Input states"
+        layout="stack"
+        note="On focus a field's edge turns blue and thickens to 2 px, inside a soft halo (Tab into a field to see it). The small select keeps the same 3:1 edge as the full one."
+      >
         <div className="tx-sg-columns">
           <Field label="Default">
             {(control) => <TextInput {...control} defaultValue="Reception loop" />}
@@ -304,6 +308,14 @@ export function FormSectionDemo() {
           </Field>
           <Field label="With a prefix">
             {(control) => <TextInput {...control} prefix="x" numeric defaultValue="0" />}
+          </Field>
+          <Field label="Small select">
+            {(control) => (
+              <Select {...control} size="sm" defaultValue="25">
+                <option value="25">25 per page</option>
+                <option value="50">50 per page</option>
+              </Select>
+            )}
           </Field>
         </div>
       </Demo>
@@ -340,7 +352,8 @@ export function ControlSection() {
   const [view, setView] = useState<'list' | 'grid'>('list');
   const [kind, setKind] = useState<Kind>('all');
   const [tab, setTab] = useState<DisplayTab>('overview');
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState('foyer');
+  const [result, setResult] = useState<'all' | 'succeeded' | 'failed' | 'refused'>('all');
   const [filters, setFilters] = useState<ReadonlySet<string>>(new Set(['ready']));
   const [removable, setRemovable] = useState(DEMO_TAGS.slice(0, 4));
   const tagIds = DEMO_TAGS.slice(0, 4).map((tag) => tag.id);
@@ -438,7 +451,10 @@ export function ControlSection() {
         </Field>
       </Demo>
 
-      <Demo title="Segmented">
+      <Demo
+        title="Segmented"
+        note="Under 400 px wide each option takes the width of its label, and the options wrap inside the track when even that is too wide, so the page never scrolls sideways."
+      >
         <Segmented
           label="View"
           iconOnly
@@ -469,6 +485,18 @@ export function ControlSection() {
             { value: 'grid', label: 'Compact' },
           ]}
         />
+        <Segmented
+          label="Result"
+          size="sm"
+          value={result}
+          onChange={setResult}
+          options={[
+            { value: 'all', label: 'All results' },
+            { value: 'succeeded', label: 'Succeeded' },
+            { value: 'failed', label: 'Failed' },
+            { value: 'refused', label: 'Refused' },
+          ]}
+        />
       </Demo>
 
       <Demo
@@ -490,7 +518,10 @@ export function ControlSection() {
         </div>
       </Demo>
 
-      <Demo title="Search field" note="Esc clears the query.">
+      <Demo
+        title="Search field"
+        note="Esc clears the query. The fill has no border by design: the magnifier, the placeholder and the name identify it. On a phone it fills its row."
+      >
         <SearchField value={query} onChange={setQuery} label="Search media" />
         <span className="tx-small tx-muted">
           {query === '' ? 'Nothing typed.' : `Query: ${query}`}
@@ -566,7 +597,7 @@ export function ControlSection() {
         layout="stack"
         note="Screen status reports what the player software last said. The portal has no word for a screen being reachable."
       >
-        <div className="tx-cluster">
+        <div className="tx-cluster tx-sg-status-row">
           <StatusPill tone="ok">In sync</StatusPill>
           <StatusPill tone="warn">Updating</StatusPill>
           <StatusPill tone="warn">Not reporting</StatusPill>
@@ -575,7 +606,7 @@ export function ControlSection() {
           <StatusPill tone="neutral">Nothing pushed</StatusPill>
           <StatusPill tone="neutral">Not paired</StatusPill>
         </div>
-        <div className="tx-cluster">
+        <div className="tx-cluster tx-sg-status-row">
           <StatusPill tone="ok">Ready</StatusPill>
           <StatusPill tone="warn">Processing</StatusPill>
           <StatusPill tone="danger">Failed</StatusPill>
@@ -588,9 +619,10 @@ export function ControlSection() {
         <Badge count={128} label="128 items" />
         <Badge count={7} variant="neutral" label="7 items" />
         <Badge count={2} variant="danger" label="2 errors" />
-        <span className="tx-sg-on-brand">
-          On brand <Badge count={5} variant="inverse" label="5 waiting" />
+        <span className="tx-sg-on-accent">
+          On accent <Badge count={5} variant="inverse" label="5 waiting" />
         </span>
+        <span className="tx-code">unsupported_codec</span>
         <Avatar name="Workshop Operator" size="sm" labelled />
         <Avatar name="Workshop Operator" labelled />
         <Avatar name="Operator" size="lg" labelled />

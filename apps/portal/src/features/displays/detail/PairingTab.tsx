@@ -81,9 +81,7 @@ export function PairingTab({
           Player
         </h3>
         <p className="tx-screen-detail-pairing__state">
-          <StatusPill tone="neutral" icon={paired ? KeyRound : Unlink}>
-            {paired ? 'Paired' : 'Not paired'}
-          </StatusPill>
+          <StatusPill tone="neutral">{paired ? 'Paired' : 'Not paired'}</StatusPill>
         </p>
         <p data-testid="screen-detail-pairing-state">
           {pairingStateText(

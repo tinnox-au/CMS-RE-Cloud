@@ -82,9 +82,7 @@ export function ScreenStatusPill({
     }
     return (
       <span className={layout} data-testid={testId} data-summary="unknown">
-        <StatusPill tone="neutral" icon={CircleQuestionMark}>
-          Status not loaded
-        </StatusPill>
+        <StatusPill tone="neutral">Status not loaded</StatusPill>
       </span>
     );
   }
@@ -98,9 +96,7 @@ export function ScreenStatusPill({
       data-stale={status.stale ? 'true' : 'false'}
       data-kind={status.kind}
     >
-      <StatusPill tone={status.tone} icon={SCREEN_STATUS_ICONS[status.kind]}>
-        {status.label}
-      </StatusPill>
+      <StatusPill tone={status.tone}>{status.label}</StatusPill>
       {detail === 'hidden' ? (
         <VisuallyHidden>{status.detail}</VisuallyHidden>
       ) : (

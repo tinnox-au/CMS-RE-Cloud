@@ -9,6 +9,8 @@ export interface PageProps {
   readonly title: string;
   /** The page part of the document title when it should differ from the `h1`. */
   readonly documentTitle?: string;
+  /** An optional short line under the title, in secondary text. */
+  readonly subtitle?: ReactNode;
   /**
    * Page-level actions in the header, before the global controls. Most list pages leave this
    * empty: their create button sits at the end of the filter row.
@@ -19,20 +21,22 @@ export interface PageProps {
 }
 
 /**
- * The standard page frame (design-system.md, section 4): a sticky glass header with the `h1`
- * on the left, the page's own actions, and the global controls on the right in this order:
- * organisation label, account menu, "Push to screens". The content column scrolls under it.
+ * The standard page frame (design-system.md, section 4): a sticky frosted header with the
+ * large `h1` (and an optional subtitle) on the left, the page's own actions, and the global
+ * controls on the right in this order: organisation capsule, account button, "Push to
+ * screens". The content column scrolls under it.
  *
  * Every list and overview page renders exactly one `Page`. It must be below `AppShell`.
  * The organisation name is written once on the page, here.
  */
-export function Page({ title, documentTitle, actions, children }: PageProps) {
+export function Page({ title, documentTitle, subtitle, actions, children }: PageProps) {
   const session = useSession();
   usePageFrame(documentTitle ?? title);
   return (
     <>
       <PageHeader
         title={title}
+        subtitle={subtitle}
         actions={actions}
         organisation={session.organization.name}
         global={

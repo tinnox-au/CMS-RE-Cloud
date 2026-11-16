@@ -63,21 +63,25 @@
 
 /* ---------- Grid view ---------- */
 
+/* Caption line (items and length), then the screens as a dot status. */
 .tx-playlists-list__tile-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-1);
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.tx-playlists-list__tile-summary {
   font-variant-numeric: tabular-nums;
 }
 
-.tx-playlists-list__grid-empty {
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--surface);
+/* The mosaic of a tile: 12 px corners, inside the 20 px tile. */
+.tx-playlists-list .tx-tile__media > * {
+  border-radius: var(--r-md);
 }
 
-.tx-playlists-list__grid-footer {
-  border: 1px solid var(--line);
+/* "No playlist matches" in the grid view: a plain card, no outline. */
+.tx-playlists-list__grid-empty {
   border-radius: var(--r-lg);
   background: var(--surface);
 }
@@ -90,9 +94,9 @@
   gap: 0;
   max-block-size: 240px;
   margin: 0;
-  padding: 0;
-  border: 1px solid var(--line);
+  padding: 0 var(--s-3);
   border-radius: var(--r-md);
+  background: var(--surface-2);
   overflow-y: auto;
   list-style: none;
 }
@@ -103,7 +107,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 2px var(--s-3);
-  padding: 10px var(--s-3);
+  padding: 10px 0;
 }
 
 .tx-playlists-list__names > li + li {
@@ -130,12 +134,13 @@
 
 /* ---------- Result of "Assign to screens" ---------- */
 
+/* An inset fill with hairlines between the rows; no outline. */
 .tx-playlists-list__results {
   display: grid;
   margin: 0;
-  padding: 0;
-  border: 1px solid var(--line);
+  padding: 0 var(--s-3);
   border-radius: var(--r-md);
+  background: var(--surface-2);
   list-style: none;
 }
 
@@ -145,7 +150,7 @@
   align-items: center;
   gap: var(--s-1) var(--s-3);
   min-block-size: 56px;
-  padding: var(--s-2) var(--s-3);
+  padding: var(--s-2) 0;
 }
 
 .tx-playlists-list__result + .tx-playlists-list__result {
@@ -158,7 +163,7 @@
   inline-size: 36px;
   block-size: 36px;
   border-radius: var(--r-sm);
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--ink-2);
 }
 

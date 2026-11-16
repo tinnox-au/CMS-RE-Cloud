@@ -50,7 +50,7 @@ export function SurfaceSection() {
     <Section
       id="surfaces"
       title="Cards and notices"
-      lead="A card is a surface with a hairline border and no shadow. Banners carry a tone, an icon and at most two actions; an empty state has one sentence and one button."
+      lead="A card is a white surface with a 20 px radius, no border and no shadow. Banners carry a tone, an icon and at most two actions; an empty state has one sentence and one button."
     >
       <Demo title="Cards" layout="page">
         <div className="tx-sg-columns">
@@ -145,6 +145,11 @@ export function SurfaceSection() {
         >
           The server answered <span className="tx-code">service_unavailable</span>. Request{' '}
           <span className="tx-mono">req-7f3a91c2</span>.
+        </Banner>
+        <Banner tone="danger" title="Sample: blocked">
+          Spring range cannot be pushed: one item has a video the players cannot decode{' '}
+          <span className="tx-code">unsupported_codec</span>. A code stays whole: it moves to the
+          next line rather than breaking.
         </Banner>
         {dismissed ? (
           <div>
@@ -378,7 +383,7 @@ export function NavigationSection() {
       <Demo
         title="Glass"
         layout="page"
-        note="The sidebar and the sticky header use this fill over the page background. It falls back to a solid surface where the system asks for reduced transparency."
+        note="The sticky page header uses this fill over the page background; the sidebar sits flat on the page. It falls back to a solid surface where the system asks for reduced transparency."
       >
         <div className="tx-sg-glass-stage">
           <div className="tx-sg-glass-stage__art" aria-hidden="true" />

@@ -51,7 +51,7 @@ export function ButtonSection() {
     <Section
       id="buttons"
       title="Buttons"
-      lead="Pill-shaped. One primary action per view; everything else is secondary or ghost. Danger is text only, and filled only when it confirms a destructive action in a dialog."
+      lead="Pill-shaped. One primary action per view; everything else is secondary or ghost. Danger is a red tint, and filled only when it confirms a destructive action in a dialog."
     >
       <Demo title="Variants">
         <Button variant="primary">Save</Button>
@@ -60,7 +60,7 @@ export function ButtonSection() {
         <Button variant="danger">Delete</Button>
         <Button variant="danger-solid">Delete file</Button>
       </Demo>
-      <Demo title="Sizes: 32, 36 and 44 px">
+      <Demo title="Sizes: 32, 40 and 44 px">
         <Button variant="primary" size="sm">
           Small
         </Button>

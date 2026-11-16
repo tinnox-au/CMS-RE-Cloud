@@ -99,7 +99,7 @@ export function DetailsCard({ display, site, draft, onDraft, onSaved }: DetailsC
       className="tx-screen-detail-card"
       aria-labelledby="screen-detail-details-title"
     >
-      <CardHeader id="screen-detail-details-title" title="Details" />
+      <CardHeader id="screen-detail-details-title" title="Details" size="title" />
       <form
         className="tx-screen-detail-form"
         noValidate
