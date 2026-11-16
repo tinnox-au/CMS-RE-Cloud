@@ -1,8 +1,8 @@
 /**
  * Backend review round 1, CX-01: a credential change and its audit event have one outcome.
- * Each case makes the audit insert fail (a trigger the test owns), checks that the
- * credential change did not survive either, then removes the fault and checks that the
- * same action still works and is audited exactly once.
+ * Each case makes the audit insert fail (a trigger the test owns) and checks the outcome:
+ * pairing and sign-in issue no credential; sign-out still ends the session. It then
+ * removes the fault and checks that the same action works and is audited exactly once.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import pg from 'pg';
@@ -116,16 +116,18 @@ describe('credential changes and their audit events', () => {
     expect(await actions('pairing.complete')).toBe(1);
   });
 
-  it('keeps a session alive when its sign-out audit event cannot be written', async () => {
+  it('ends the session at sign-out even when the audit event cannot be written', async () => {
     const leaving = await signIn(t, org);
     await whileAuditFails('auth.logout', async () => {
+      // The failure is reported, but ending a session is the safe direction.
       expect((await leaving.fetch('/api/auth/logout', { method: 'POST' })).status).toBe(500);
-      expect((await leaving.fetch('/api/displays')).status).toBe(200);
+      expect((await leaving.fetch('/api/displays')).status).toBe(401);
     });
     expect(await actions('auth.logout')).toBe(0);
 
-    expect((await leaving.fetch('/api/auth/logout', { method: 'POST' })).status).toBe(200);
-    expect((await leaving.fetch('/api/displays')).status).toBe(401);
+    const next = await signIn(t, org);
+    expect((await next.fetch('/api/auth/logout', { method: 'POST' })).status).toBe(200);
+    expect((await next.fetch('/api/displays')).status).toBe(401);
     expect(await actions('auth.logout')).toBe(1);
   });
 

@@ -259,21 +259,30 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
       // The browser forgets the session whatever happens next.
       clearSessionCookie(ctx, reply);
       // One transaction: the revocation and its audit event commit together.
-      const revoked = await withResolvedOrg(ctx.pool, async (tx, enterOrg) => {
-        const ended = await sessionRevoke(tx, session.idHash);
-        if (ended === null) return null;
-        await enterOrg(ended.orgId);
-        await auditScoped(tx, {
-          actorType: 'operator',
-          actorId: ended.membershipId,
-          action: 'auth.logout',
-          objectType: 'membership',
-          objectId: ended.membershipId,
-          result: 'success',
-          detail: null,
+      let revoked;
+      try {
+        revoked = await withResolvedOrg(ctx.pool, async (tx, enterOrg) => {
+          const ended = await sessionRevoke(tx, session.idHash);
+          if (ended === null) return null;
+          await enterOrg(ended.orgId);
+          await auditScoped(tx, {
+            actorType: 'operator',
+            actorId: ended.membershipId,
+            action: 'auth.logout',
+            objectType: 'membership',
+            objectId: ended.membershipId,
+            result: 'success',
+            detail: null,
+          });
+          return ended;
         });
-        return ended;
-      });
+      } catch (error) {
+        // Ending a session is the safe direction, so a sign-out that cannot be audited still
+        // ends it. Sign-in and pairing do the opposite: no audit event, no credential.
+        await sessionRevoke(unscoped, session.idHash).catch(() => undefined);
+        request.log.error({ err: error }, 'sign-out was not audited; the session was ended anyway');
+        throw error;
+      }
       if (revoked === null) {
         throw new HttpError(401, 'unauthenticated', 'Sign in to continue.');
       }
