@@ -1,6 +1,15 @@
 import { z } from 'zod';
-import { MediaIdSchema, Sha256HexSchema, UtcTimestampSchema, UuidSchema } from './ids.ts';
+import {
+  FolderIdSchema,
+  MediaIdSchema,
+  Sha256HexSchema,
+  UtcTimestampSchema,
+  UuidSchema,
+} from './ids.ts';
 import { ABSOLUTE } from './limits.ts';
+import { DisplayRefSchema, PlaylistRefSchema } from './refs.ts';
+import { TagIdsInputSchema, TagIdsSchema } from './tag.ts';
+import { clearableLabelSchema, DescriptionInputSchema, DescriptionSchema } from './text.ts';
 
 export const MEDIA_KINDS = ['image', 'video'] as const;
 export const MediaKindSchema = z.enum(MEDIA_KINDS);
@@ -73,8 +82,24 @@ export const MediaDtoSchema = z
     id: MediaIdSchema,
     kind: MediaKindSchema,
     status: MediaStatusSchema,
-    /** Display name supplied at upload. Shown as text only, never used as a path. */
+    /**
+     * The name to show: the name an operator gave the item, or else the file name
+     * supplied at upload. Never empty. Shown as text only.
+     */
+    name: z.string().min(1).max(ABSOLUTE.maxOriginalNameLength),
+    /** File name supplied at upload. Shown as text only, never used as a path. */
     originalName: z.string().max(ABSOLUTE.maxOriginalNameLength),
+    description: DescriptionSchema.nullable(),
+    /**
+     * Images only: time on screen the portal proposes when the item is added to a
+     * playlist. Null means the portal's own default. Always null for video.
+     */
+    defaultDurationMs: z.number().int().positive().max(ABSOLUTE.maxItemDurationMs).nullable(),
+    /** Null when the item is in the root of the library. */
+    folderId: FolderIdSchema.nullable(),
+    tagIds: TagIdsSchema,
+    /** How many playlists contain the item at least once. Deleted playlists do not count. */
+    usageCount: z.number().int().nonnegative(),
     mimeType: MediaMimeTypeSchema.nullable(),
     bytes: z.number().int().nonnegative().nullable(),
     sha256: Sha256HexSchema.nullable(),
@@ -106,6 +131,48 @@ export type MediaListResponse = z.infer<typeof MediaListResponseSchema>;
 
 export const MediaUploadResponseSchema = z.object({ media: MediaDtoSchema }).strict();
 export type MediaUploadResponse = z.infer<typeof MediaUploadResponseSchema>;
+
+/**
+ * `PATCH /api/media/:id` changes any subset of the fields below (at least one)
+ * and answers with the `MediaDto`.
+ * - `name`: null or an empty string goes back to the file name supplied at upload.
+ * - `defaultDurationMs`: images only, and within the configured image duration
+ *   limits; the API answers 400 `validation_failed` otherwise.
+ * - `folderId`: null moves the item to the root. An unknown folder answers 404.
+ * - `tagIds`: the complete new set of media tags. An unknown tag, or a tag of
+ *   the display scope, answers 404.
+ */
+export const MediaPatchSchema = z
+  .object({
+    name: clearableLabelSchema(ABSOLUTE.maxNameLength, 'name').optional(),
+    description: DescriptionInputSchema.optional(),
+    defaultDurationMs: z
+      .number()
+      .int()
+      .positive()
+      .max(ABSOLUTE.maxItemDurationMs)
+      .nullable()
+      .optional(),
+    folderId: FolderIdSchema.nullable().optional(),
+    tagIds: TagIdsInputSchema.optional(),
+  })
+  .strict()
+  .refine((patch) => Object.keys(patch).length > 0, { message: 'at least one field is required' });
+export type MediaPatch = z.infer<typeof MediaPatchSchema>;
+
+/**
+ * `GET /api/media/:id/usage`: where a media item is used.
+ * - `playlists`: the playlists that contain it, each once, ordered by name.
+ *   Deleted playlists are left out.
+ * - `displays`: the displays whose current publication contains it, ordered by name.
+ */
+export const MediaUsageResponseSchema = z
+  .object({
+    playlists: z.array(PlaylistRefSchema).max(ABSOLUTE.maxListItems),
+    displays: z.array(DisplayRefSchema).max(ABSOLUTE.maxListItems),
+  })
+  .strict();
+export type MediaUsageResponse = z.infer<typeof MediaUsageResponseSchema>;
 
 /** Multipart field name that carries the file in `POST /api/media`. */
 export const MEDIA_UPLOAD_FIELD = 'file';

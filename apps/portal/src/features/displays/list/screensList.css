@@ -1,0 +1,134 @@
+/*
+ * The screens list (features/displays/list). Tokens only; class prefix tx-screens-.
+ */
+
+/* ---------- Status filter chips: the count after the label ---------- */
+
+.tx-screens-chip {
+  display: inline-flex;
+}
+
+.tx-screens-chip__count {
+  margin-inline-start: var(--s-2);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+/* --ink-2 on the fill of a selected chip is under 4.5:1 in the light theme. */
+.tx-screens-chip [aria-pressed='true'] .tx-screens-chip__count {
+  color: inherit;
+}
+
+/* ---------- Content: the assigned playlist and its push marker ---------- */
+
+.tx-screens-content {
+  display: inline-grid;
+  justify-items: start;
+  gap: var(--s-1);
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.tx-screens-content__link {
+  overflow: hidden;
+  max-inline-size: 100%;
+  border-radius: 4px;
+  color: var(--ink);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-screens-content__link:hover {
+  color: var(--brand);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+/* ---------- ScreenFrame: the canvas drawn to scale inside a fixed stage ---------- */
+
+.tx-screens-frame {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  inline-size: 100%;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+/* The same share off every side keeps the area at the stage's own shape. */
+.tx-screens-frame__area {
+  position: absolute;
+  inset: 12%;
+}
+
+/* The panel and content-area colours are shared with every canvas drawing: ../canvasDiagram.css. */
+.tx-screens-frame__canvas {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: var(--tx-screens-frame-w, 100%);
+  block-size: var(--tx-screens-frame-h, 100%);
+  border: 1px solid var(--tx-canvas-edge);
+  border-radius: 4px;
+  background: var(--tx-canvas-fill);
+  overflow: hidden;
+  transform: translate(-50%, -50%);
+}
+
+.tx-screens-frame__content {
+  position: absolute;
+  inset-block-start: var(--tx-screens-inset-y, 0%);
+  inset-inline-start: var(--tx-screens-inset-x, 0%);
+  inline-size: var(--tx-screens-inset-w, 100%);
+  block-size: var(--tx-screens-inset-h, 100%);
+  outline: 1px dashed var(--tx-canvas-mark);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--tx-canvas-mark) 26%, transparent);
+}
+
+.tx-screens-frame--lead {
+  flex: none;
+  aspect-ratio: 1;
+  inline-size: 44px;
+}
+
+.tx-screens-frame--lead .tx-screens-frame__area {
+  inset: 7px;
+}
+
+.tx-screens-frame--lead .tx-screens-frame__canvas {
+  border-radius: 3px;
+}
+
+/* ---------- Grid tiles ---------- */
+
+.tx-screens-tile-meta {
+  display: grid;
+  justify-items: start;
+  gap: var(--s-2);
+  min-inline-size: 0;
+  inline-size: 100%;
+  padding-block-start: 2px;
+}
+
+/* ---------- Notices ---------- */
+
+.tx-screens-failures {
+  display: grid;
+  gap: var(--s-1);
+  margin: var(--s-2) 0 0;
+  padding-inline-start: var(--s-5);
+}
+
+.tx-screens-note {
+  margin: 0;
+  max-inline-size: 72ch;
+}
+
+/* Tiles in one row share a height; keep each tile's parts at the top instead of spreading them. */
+.tx-screens-grid > .tx-tile {
+  align-content: start;
+}

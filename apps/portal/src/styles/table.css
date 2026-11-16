@@ -1,0 +1,394 @@
+/* DataTable, NameCell, Pagination, SelectionBar. */
+
+/*
+ * One surface holds the whole list: rows are separated by hairlines, not drawn as cards.
+ * The surface is a size container, so the cells can tighten when it is as narrow as a phone.
+ */
+.tx-table-card {
+  container: tx-table / inline-size;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+/*
+ * `position: relative` makes the scroller the containing block of the visually hidden text
+ * inside it (a caption, a hidden header). Without it that text is placed against the page, is
+ * not clipped here, and a table wider than its card makes the whole page scroll sideways.
+ */
+.tx-table-scroll {
+  position: relative;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.tx-table-scroll:focus-visible {
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+
+.tx-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.tx-table th,
+.tx-table td {
+  padding: 0 12px;
+  border-block-end: 1px solid var(--line);
+  text-align: start;
+  vertical-align: middle;
+}
+
+.tx-table th:first-child,
+.tx-table td:first-child {
+  padding-inline-start: var(--s-5);
+}
+
+.tx-table th:last-child,
+.tx-table td:last-child {
+  padding-inline-end: var(--s-4);
+}
+
+.tx-table thead th {
+  block-size: 44px;
+  color: var(--ink-2);
+  font: 600 12px/16px var(--font-body);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.tx-table tbody td {
+  block-size: 64px;
+  padding-block: var(--s-2);
+  transition: background-color var(--t-fast) var(--ease);
+}
+
+.tx-table--compact tbody td {
+  block-size: 48px;
+  padding-block: 6px;
+}
+
+.tx-table tbody tr:last-child td {
+  border-block-end: 0;
+}
+
+.tx-table tbody tr[data-row]:hover td,
+.tx-table tbody tr[data-selected] td {
+  background: var(--surface-2);
+}
+
+.tx-table__cell--end {
+  text-align: end !important;
+}
+
+.tx-table__cell--center {
+  text-align: center !important;
+}
+
+.tx-table__cell--numeric {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tx-table__cell--nowrap {
+  white-space: nowrap;
+}
+
+/*
+ * The column that takes the spare width and shortens its text instead of widening the table.
+ * Its least width keeps a name readable (about 24 characters beside a thumbnail): columns
+ * of a lower priority leave before the name is squeezed further.
+ */
+.tx-table__cell--grow {
+  inline-size: 100%;
+  min-inline-size: 240px;
+  max-inline-size: 0;
+}
+
+.tx-table__cell--select {
+  inline-size: 52px;
+  padding-inline-end: 0 !important;
+}
+
+.tx-table__cell--select .tx-check {
+  display: flex;
+}
+
+.tx-table__cell--actions {
+  inline-size: 56px;
+  min-inline-size: 52px;
+  padding-inline-start: 0 !important;
+  text-align: end !important;
+  white-space: nowrap;
+}
+
+/*
+ * On a phone there is room for the checkbox, the name, one short column and the row menu.
+ * The cells tighten and the name gives up its thumbnail before the table scrolls sideways.
+ */
+@container tx-table (max-width: 479px) {
+  .tx-table__cell--grow {
+    min-inline-size: 112px;
+  }
+
+  .tx-namecell > :not(.tx-namecell__text) {
+    display: none;
+  }
+
+  .tx-table th,
+  .tx-table td {
+    padding-inline: var(--s-2);
+  }
+
+  .tx-table th:first-child,
+  .tx-table td:first-child {
+    padding-inline-start: var(--s-3);
+  }
+
+  .tx-table th:last-child,
+  .tx-table td:last-child {
+    padding-inline-end: var(--s-3);
+  }
+
+  .tx-table__cell--select {
+    inline-size: 40px;
+  }
+}
+
+/*
+ * Skeleton rows: a loading column is about as wide as a filled one usually is, so the same
+ * columns fit before and after the rows arrive and the header does not reshuffle.
+ */
+.tx-table
+  tbody
+  tr[aria-hidden='true']
+  td:not(.tx-table__cell--grow, .tx-table__cell--select, .tx-table__cell--actions) {
+  min-inline-size: 144px;
+}
+
+/* Sortable header: a button that keeps the header's look. */
+.tx-table__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  block-size: 28px;
+  margin-inline: -8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  transition:
+    background-color var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+
+.tx-table__sort:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.tx-table__sort-icon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.tx-table th[aria-sort='ascending'] .tx-table__sort,
+.tx-table th[aria-sort='descending'] .tx-table__sort {
+  color: var(--ink);
+}
+
+.tx-table th[aria-sort='ascending'] .tx-table__sort-icon,
+.tx-table th[aria-sort='descending'] .tx-table__sort-icon {
+  color: var(--brand);
+}
+
+.tx-table__cell--end .tx-table__sort {
+  flex-direction: row-reverse;
+}
+
+.tx-table__empty {
+  padding: 0 !important;
+}
+
+.tx-table__footer {
+  border-block-start: 1px solid var(--line);
+}
+
+/*
+ * Columns leave by priority when the table would otherwise scroll sideways: 4 first, then 3,
+ * then 2. Priority 1 (the default) always stays. `data-drop` is set by ui/DataTable.tsx, which
+ * measures what fits; without it every column shows and the table scrolls.
+ */
+.tx-table[data-drop] [data-priority='4'],
+.tx-table:is([data-drop='2'], [data-drop='3']) [data-priority='3'],
+.tx-table[data-drop='3'] [data-priority='2'] {
+  display: none;
+}
+
+/* ---------- NameCell: thumbnail, the row's link, an optional second line ---------- */
+
+.tx-namecell {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-inline-size: 0;
+}
+
+.tx-namecell__text {
+  display: grid;
+  min-inline-size: 0;
+}
+
+.tx-namecell__name {
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.tx-namecell__name {
+  border-radius: 4px;
+}
+
+a.tx-namecell__name:hover {
+  color: var(--brand);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.tx-namecell__meta {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Pagination ---------- */
+
+.tx-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-2) var(--s-4);
+  padding: 10px var(--s-3) 10px var(--s-5);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-pagination__size {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.tx-pagination__range {
+  min-inline-size: 96px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.tx-pagination__buttons {
+  display: inline-flex;
+  gap: 2px;
+}
+
+/* ---------- SelectionBar ---------- */
+
+.tx-selection-bar {
+  position: fixed;
+  inset: auto 0 var(--s-6);
+  z-index: var(--z-float);
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  inline-size: fit-content;
+  max-inline-size: calc(100vw - 32px);
+  min-block-size: 52px;
+  margin-inline: auto;
+  padding: 7px 8px 7px var(--s-5);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  overflow-x: auto;
+  background: var(--surface);
+  box-shadow: var(--shadow-2), var(--shadow-3);
+  scrollbar-width: none;
+}
+
+.tx-selection-bar__count {
+  flex: none;
+  padding-inline-end: var(--s-3);
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tx-selection-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-inline: var(--s-2);
+  border-inline: 1px solid var(--line);
+}
+
+.tx-selection-bar__actions:empty {
+  display: none;
+}
+
+/*
+ * On a phone the count, the actions and Clear do not fit on one line. The pill becomes a
+ * rounded bar across the screen and its buttons wrap, so every action stays in view.
+ */
+@media (max-width: 559px) {
+  .tx-selection-bar {
+    inset-inline: var(--s-3);
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px var(--s-1);
+    inline-size: auto;
+    max-inline-size: none;
+    padding: var(--s-2) var(--s-3);
+    border-radius: var(--r-lg);
+    overflow: visible;
+  }
+
+  .tx-selection-bar__count {
+    padding-inline: var(--s-2);
+  }
+
+  /* The buttons join the bar's own line, so they wrap one by one. */
+  .tx-selection-bar__actions {
+    display: contents;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tx-selection-bar {
+    transition:
+      opacity var(--t) var(--ease),
+      translate var(--t) var(--ease);
+  }
+
+  @starting-style {
+    .tx-selection-bar {
+      opacity: 0;
+      translate: 0 16px;
+    }
+  }
+}

@@ -49,7 +49,8 @@ export async function signIn(page: Page, name: DevUserName = 'operator'): Promis
   await otp.fill(await freshTotp(name));
   await page.locator('#kc-login').click();
   await page.waitForURL(`${PORTAL_URL}/**`);
-  await expect(page.getByRole('heading', { level: 1, name: 'Displays' })).toBeVisible();
+  // Sign-in lands on the dashboard (docs/portal-v2/stage-a.md, section 1).
+  await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
 }
 
 export interface MediaItem {
@@ -124,6 +125,13 @@ export class OperatorApi {
     return this.#context.request.post(`${PORTAL_URL}${path}`, {
       headers: await this.#headers(extra),
       ...(data === undefined ? {} : { data }),
+    });
+  }
+
+  async patch(path: string, data: unknown): Promise<APIResponse> {
+    return this.#context.request.patch(`${PORTAL_URL}${path}`, {
+      headers: await this.#headers(),
+      data,
     });
   }
 

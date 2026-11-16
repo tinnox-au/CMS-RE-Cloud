@@ -29,31 +29,58 @@ describe('organisation isolation through the API', () => {
   let orgB: TestOrg;
   let alice: Operator;
   let bob: Operator;
-  let a: {
+  interface World {
     displayId: string;
     mediaId: string;
     playlistId: string;
     publicationId: string;
+    folderId: string;
+    mediaTagId: string;
+    displayTagId: string;
     player: PairedPlayer;
-  };
-  let b: {
-    displayId: string;
-    mediaId: string;
-    playlistId: string;
-    publicationId: string;
-    player: PairedPlayer;
-  };
+  }
+  let a: World;
+  let b: World;
 
-  async function world(operator: Operator, org: TestOrg): Promise<typeof a> {
+  async function created(response: Response): Promise<string> {
+    if (response.status !== 201) throw new Error(`arranging failed: ${response.status}`);
+    return ((await response.json()) as { id: string }).id;
+  }
+
+  /**
+   * One of everything an organisation can own: a display with a paired player, ready
+   * media in a folder, a playlist published and so assigned to the display, and a tag
+   * of each scope put on the media item and on the display.
+   */
+  async function world(operator: Operator, org: TestOrg): Promise<World> {
     const display = await createDisplay(operator, org, 'Isolation display');
     const media = await readyImage(t, operator);
     const published = await publishImages(operator, display.id, [media.id]);
     const player = await pairPlayer(t, operator, display.id);
+    const folderId = await created(
+      await operator.fetch('/api/folders', { method: 'POST', json: { name: 'Isolation folder' } }),
+    );
+    const tag = (scope: string): Promise<Response> =>
+      operator.fetch('/api/tags', { method: 'POST', json: { scope, name: 'Isolation tag' } });
+    const mediaTagId = await created(await tag('media'));
+    const displayTagId = await created(await tag('display'));
+    const filed = await operator.fetch(`/api/media/${media.id}`, {
+      method: 'PATCH',
+      json: { folderId, tagIds: [mediaTagId] },
+    });
+    const tagged = await operator.fetch(`/api/displays/${display.id}`, {
+      method: 'PATCH',
+      json: { tagIds: [displayTagId] },
+    });
+    if (filed.status !== 200 || tagged.status !== 200) throw new Error('arranging failed');
     return {
       displayId: display.id,
       mediaId: media.id,
       playlistId: published.playlistId,
       publicationId: published.publicationId,
+      folderId,
+      mediaTagId,
+      displayTagId,
       player,
     };
   }
@@ -90,6 +117,7 @@ describe('organisation isolation through the API', () => {
       `/api/displays/${ids.displayId}/status`,
       `/api/media/${ids.mediaId}`,
       `/api/media/${ids.mediaId}/preview`,
+      `/api/media/${ids.mediaId}/usage`,
       `/api/playlists/${ids.playlistId}`,
     ];
     const foreign = paths(a);
@@ -113,11 +141,22 @@ describe('organisation isolation through the API', () => {
     for (const path of [
       '/api/sites',
       '/api/displays',
+      '/api/displays/status',
       '/api/media',
+      `/api/media/${b.mediaId}/usage`,
+      '/api/tags',
+      '/api/tags?scope=media',
+      '/api/tags?scope=display',
+      '/api/folders',
       '/api/playlists',
+      '/api/push',
+      '/api/overview',
       '/api/audit?limit=200',
+      '/api/audit?limit=200&category=tag',
     ]) {
-      const text = await (await bob.fetch(path)).text();
+      const response = await bob.fetch(path);
+      expect(response.status, path).toBe(200);
+      const text = await response.text();
       for (const id of [
         orgA.orgId,
         orgA.siteId,
@@ -126,10 +165,30 @@ describe('organisation isolation through the API', () => {
         a.mediaId,
         a.playlistId,
         a.publicationId,
+        a.folderId,
+        a.mediaTagId,
+        a.displayTagId,
         a.player.registrationId,
       ]) {
         expect(text, `${path} leaks ${id}`).not.toContain(id);
       }
+    }
+    // Each organisation's lists and numbers describe exactly its own world: both
+    // have the same things, so any row of the other would show up as a wrong count.
+    for (const operator of [alice, bob]) {
+      const json = async <T>(path: string): Promise<T> =>
+        (await (await operator.fetch(path)).json()) as T;
+      for (const path of ['/api/displays', '/api/displays/status', '/api/media', '/api/push']) {
+        expect((await json<{ items: unknown[] }>(path)).items, path).toHaveLength(1);
+      }
+      expect((await json<{ items: unknown[] }>('/api/tags')).items).toHaveLength(2);
+      expect(await json('/api/folders')).toMatchObject({ items: [{ itemCount: 1 }] });
+      expect(await json('/api/tags?scope=media')).toMatchObject({ items: [{ usageCount: 1 }] });
+      expect(await json('/api/overview')).toMatchObject({
+        displays: { total: 1, paired: 1 },
+        media: { total: 1, ready: 1 },
+        pendingPushCount: 0,
+      });
     }
     const audit = (await (await bob.fetch('/api/audit?limit=200')).json()) as {
       items: { actorId: string | null }[];
@@ -141,15 +200,89 @@ describe('organisation isolation through the API', () => {
   });
 
   it('refuses every mutation of another organisation’s object and leaves it unchanged', async () => {
-    const before = {
+    const snapshot = async (): Promise<Record<string, string>> => ({
       display: await (await alice.fetch(`/api/displays/${a.displayId}`)).text(),
       playlist: await (await alice.fetch(`/api/playlists/${a.playlistId}`)).text(),
+      playlists: await (await alice.fetch('/api/playlists')).text(),
       media: await (await alice.fetch(`/api/media/${a.mediaId}`)).text(),
-    };
+      tags: await (await alice.fetch('/api/tags')).text(),
+      folders: await (await alice.fetch('/api/folders')).text(),
+      push: await (await alice.fetch('/api/push')).text(),
+      status: JSON.stringify({
+        ...((await (await alice.fetch(`/api/displays/${a.displayId}/status`)).json()) as object),
+        asOf: null,
+      }),
+    });
+    const before = await snapshot();
+    const ownBefore = (await (
+      await bob.fetch(`/api/displays/${b.displayId}/status`)
+    ).json()) as object;
     const attempts: [string, Promise<Response>][] = [
       [
         'PATCH display',
         bob.fetch(`/api/displays/${a.displayId}`, { method: 'PATCH', json: { name: 'taken' } }),
+      ],
+      [
+        'PATCH media',
+        bob.fetch(`/api/media/${a.mediaId}`, { method: 'PATCH', json: { name: 'taken' } }),
+      ],
+      [
+        'PATCH tag',
+        bob.fetch(`/api/tags/${a.mediaTagId}`, { method: 'PATCH', json: { name: 'taken' } }),
+      ],
+      ['DELETE media tag', bob.fetch(`/api/tags/${a.mediaTagId}`, { method: 'DELETE' })],
+      ['DELETE display tag', bob.fetch(`/api/tags/${a.displayTagId}`, { method: 'DELETE' })],
+      [
+        'PATCH folder',
+        bob.fetch(`/api/folders/${a.folderId}`, { method: 'PATCH', json: { name: 'taken' } }),
+      ],
+      ['DELETE folder', bob.fetch(`/api/folders/${a.folderId}`, { method: 'DELETE' })],
+      ['DELETE playlist', bob.fetch(`/api/playlists/${a.playlistId}`, { method: 'DELETE' })],
+      [
+        'duplicate playlist',
+        bob.fetch(`/api/playlists/${a.playlistId}/duplicate`, { method: 'POST' }),
+      ],
+      [
+        'push to A display',
+        bob.fetch('/api/push', {
+          method: 'POST',
+          json: { displayIds: [a.displayId] },
+          headers: { 'idempotency-key': randomUUID() },
+        }),
+      ],
+      [
+        'push to own and A display',
+        bob.fetch('/api/push', {
+          method: 'POST',
+          json: { displayIds: [b.displayId, a.displayId] },
+          headers: { 'idempotency-key': randomUUID() },
+        }),
+      ],
+      // Pointing one's own objects at another organisation's is refused the same way.
+      [
+        'assign A playlist to own display',
+        bob.fetch(`/api/displays/${b.displayId}`, {
+          method: 'PATCH',
+          json: { assignedPlaylistId: a.playlistId },
+        }),
+      ],
+      [
+        'put A display tag on own display',
+        bob.fetch(`/api/displays/${b.displayId}`, {
+          method: 'PATCH',
+          json: { tagIds: [b.displayTagId, a.displayTagId] },
+        }),
+      ],
+      [
+        'move own media into A folder',
+        bob.fetch(`/api/media/${b.mediaId}`, { method: 'PATCH', json: { folderId: a.folderId } }),
+      ],
+      [
+        'put A media tag on own media',
+        bob.fetch(`/api/media/${b.mediaId}`, {
+          method: 'PATCH',
+          json: { tagIds: [a.mediaTagId] },
+        }),
       ],
       [
         'revoke player',
@@ -209,11 +342,24 @@ describe('organisation isolation through the API', () => {
     });
     expect(onForeignSite.status).toBe(404);
 
-    expect(await (await alice.fetch(`/api/displays/${a.displayId}`)).text()).toBe(before.display);
-    expect(await (await alice.fetch(`/api/playlists/${a.playlistId}`)).text()).toBe(
-      before.playlist,
-    );
-    expect(await (await alice.fetch(`/api/media/${a.mediaId}`)).text()).toBe(before.media);
+    expect(await snapshot()).toEqual(before);
+    // Bob's own objects were not half-changed by the refused requests either.
+    const ownDisplay = (await (await bob.fetch(`/api/displays/${b.displayId}`)).json()) as {
+      tagIds: string[];
+      assignedPlaylist: { id: string } | null;
+    };
+    expect(ownDisplay.tagIds).toEqual([b.displayTagId]);
+    expect(ownDisplay.assignedPlaylist?.id).toBe(b.playlistId);
+    const ownMedia = (await (await bob.fetch(`/api/media/${b.mediaId}`)).json()) as {
+      folderId: string | null;
+      tagIds: string[];
+    };
+    expect(ownMedia).toMatchObject({ folderId: b.folderId, tagIds: [b.mediaTagId] });
+    // The push that named A's display did not push Bob's own display either.
+    expect({
+      ...((await (await bob.fetch(`/api/displays/${b.displayId}/status`)).json()) as object),
+      asOf: null,
+    }).toEqual({ ...ownBefore, asOf: null });
     // A's player credential is still valid: the foreign revoke did nothing.
     expect((await fetch(`${t.url}/player/manifest`, { headers: a.player.headers })).status).toBe(
       200,
@@ -322,6 +468,10 @@ describe('organisation isolation through the API', () => {
       'display',
       'player_registration',
       'media',
+      'folder',
+      'tag',
+      'media_tag',
+      'display_tag',
       'playlist',
       'playlist_item',
       'publication',

@@ -105,6 +105,15 @@ export const ABSOLUTE = Object.freeze({
   maxAssetBytes: 2 * 1024 * 1024 * 1024,
   maxNameLength: 120,
   maxOriginalNameLength: 255,
+  maxDescriptionLength: 500,
+  maxTagNameLength: 40,
+  maxFolderNameLength: 80,
+  /** Tags on one media item or one display. */
+  maxTagsPerItem: 50,
+  /** Displays named in one push request. */
+  maxPushDisplays: 200,
+  /** Rows in a list response that has no paging; the portal refuses a longer list. */
+  maxListItems: 10_000,
   maxHeartbeatErrors: 10,
   maxErrorMessageLength: 300,
   maxHeartbeatBodyBytes: 16 * 1024,

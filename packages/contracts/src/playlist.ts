@@ -9,9 +9,9 @@ import {
   UtcTimestampSchema,
 } from './ids.ts';
 import { ABSOLUTE } from './limits.ts';
-import { NameSchema } from './display.ts';
 import { ManifestV1Schema } from './manifest.ts';
-import { MediaDtoSchema } from './media.ts';
+import { MEDIA_KINDS, MediaDtoSchema, MediaKindSchema } from './media.ts';
+import { DescriptionInputSchema, DescriptionSchema, NameSchema } from './text.ts';
 
 /**
  * One entry of a one-level playlist.
@@ -42,11 +42,32 @@ export const PlaylistItemDtoSchema = z
   .strict();
 export type PlaylistItemDto = z.infer<typeof PlaylistItemDtoSchema>;
 
+/** How many media ids a playlist summary carries for its thumbnail mosaic. */
+export const PLAYLIST_PREVIEW_COUNT = 4;
+
+/** One row of `GET /api/playlists`. Deleted playlists are never listed. */
 export const PlaylistSummaryDtoSchema = z
   .object({
     id: PlaylistIdSchema,
     name: z.string(),
+    description: DescriptionSchema.nullable(),
     itemCount: z.number().int().nonnegative(),
+    /**
+     * Length of one loop: each image's time on screen plus each video's natural
+     * length. An item with no length yet (an image without a duration, a video
+     * still being checked) counts as zero.
+     */
+    totalDurationMs: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(ABSOLUTE.maxPlaylistItems * ABSOLUTE.maxItemDurationMs),
+    /** The media kinds present, each once, in the order of `MEDIA_KINDS`. */
+    kinds: z.array(MediaKindSchema).max(MEDIA_KINDS.length),
+    /** The first distinct media ids in play order, for the thumbnail mosaic. */
+    previewMediaIds: z.array(MediaIdSchema).max(PLAYLIST_PREVIEW_COUNT),
+    /** How many displays have this playlist assigned. */
+    assignedDisplayCount: z.number().int().nonnegative(),
     createdAt: UtcTimestampSchema,
     updatedAt: UtcTimestampSchema,
   })
@@ -57,6 +78,7 @@ export const PlaylistDtoSchema = z
   .object({
     id: PlaylistIdSchema,
     name: z.string(),
+    description: DescriptionSchema.nullable(),
     items: z.array(PlaylistItemDtoSchema),
     createdAt: UtcTimestampSchema,
     updatedAt: UtcTimestampSchema,
@@ -73,14 +95,39 @@ export type PlaylistListResponse = z.infer<typeof PlaylistListResponseSchema>;
 export const PlaylistCreateSchema = z.object({ name: NameSchema }).strict();
 export type PlaylistCreate = z.infer<typeof PlaylistCreateSchema>;
 
-/** `PUT /api/playlists/:id` replaces the name and the whole ordered item list. */
+/**
+ * `PUT /api/playlists/:id` replaces the name and the whole ordered item list.
+ * `description` is optional: left out, the stored description stays as it is;
+ * null or an empty string clears it.
+ */
 export const PlaylistReplaceSchema = z
   .object({
     name: NameSchema,
+    description: DescriptionInputSchema.optional(),
     items: z.array(PlaylistItemInputSchema).max(ABSOLUTE.maxPlaylistItems),
   })
   .strict();
 export type PlaylistReplace = z.infer<typeof PlaylistReplaceSchema>;
+
+/**
+ * `POST /api/playlists/:id/duplicate` takes no body. It copies the description and
+ * every item into a new playlist named by `duplicatePlaylistName`, assigned to no
+ * display, and answers 201 with the copy.
+ */
+export const PlaylistDuplicateResponseSchema = PlaylistDtoSchema;
+export type PlaylistDuplicateResponse = z.infer<typeof PlaylistDuplicateResponseSchema>;
+
+const COPY_PREFIX = 'Copy of ';
+
+/** Name of a duplicated playlist: "Copy of X", cut to the name limit, never mid-character. */
+export function duplicatePlaylistName(name: string): string {
+  let result = COPY_PREFIX;
+  for (const character of name.trim()) {
+    if (result.length + character.length > ABSOLUTE.maxNameLength) break;
+    result += character;
+  }
+  return result.trimEnd();
+}
 
 /** `POST /api/playlists/:id/publish`; requires the `Idempotency-Key` header. */
 export const PublishRequestSchema = z.object({ displayId: DisplayIdSchema }).strict();

@@ -54,17 +54,21 @@ T2=$(date +%s)
 
 FAIL=0
 echo "== a. row counts"
-Q="SELECT 'organization', count(*) FROM organization UNION ALL SELECT 'membership', count(*) FROM membership
-   UNION ALL SELECT 'display', count(*) FROM display UNION ALL SELECT 'player_registration', count(*) FROM player_registration
-   UNION ALL SELECT 'media', count(*) FROM media UNION ALL SELECT 'playlist', count(*) FROM playlist
-   UNION ALL SELECT 'playlist_item', count(*) FROM playlist_item
-   UNION ALL SELECT 'publication', count(*) FROM publication UNION ALL SELECT 'publication_asset', count(*) FROM publication_asset
-   UNION ALL SELECT 'display_delivery', count(*) FROM display_delivery
-   UNION ALL SELECT 'audit_event', count(*) FROM audit_event ORDER BY 1"
+# Every table in schema public, whatever migrations have added: a table that a later
+# migration creates (tags, folders and their join tables in 0005) is counted without
+# anyone having to remember this list.
+Q="SELECT c.relname,
+          (xpath('/row/n/text()',
+                 query_to_xml(format('SELECT count(*) AS n FROM public.%I', c.relname), false, true, '')))[1]::text
+   FROM pg_class c
+   WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'r'
+   ORDER BY 1"
 psql_in tinnox -c "$Q" > "$RESTORE_ROOT/counts-source.txt"
 psql_in "$RESTORE_DB" -c "$Q" > "$RESTORE_ROOT/counts-restore.txt"
 cat "$RESTORE_ROOT/counts-restore.txt"
-if diff "$RESTORE_ROOT/counts-source.txt" "$RESTORE_ROOT/counts-restore.txt" >/dev/null; then
+if [ "$(wc -l < "$RESTORE_ROOT/counts-source.txt" | tr -d ' ')" -lt 10 ]; then
+  echo "TOO FEW TABLES COUNTED"; FAIL=1
+elif diff "$RESTORE_ROOT/counts-source.txt" "$RESTORE_ROOT/counts-restore.txt" >/dev/null; then
   echo "counts match"
 else
   echo "COUNTS DIFFER"; FAIL=1

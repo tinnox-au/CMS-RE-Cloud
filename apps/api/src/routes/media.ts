@@ -10,12 +10,14 @@ import {
   MEDIA_UPLOAD_FIELD,
   MediaErrorCodeSchema,
   MediaMimeTypeSchema,
+  MediaPatchSchema,
   ROUTES,
   type MediaDto,
   type MediaListResponse,
   type MediaUploadResponse,
+  type MediaUsageResponse,
 } from '@tinnox/contracts';
-import { auditScoped, withOrg, type Tx } from '@tinnox/db';
+import { auditScoped, STAGE_A_CONSTRAINTS, violatedConstraint, withOrg, type Tx } from '@tinnox/db';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { operatorOf, type OperatorSession } from '../auth/session.ts';
 import { perMinute, type AppContext } from '../context.ts';
@@ -23,6 +25,7 @@ import { accept, bigintToNumber, iso, refuse, withOrgDecision } from '../db-help
 import { HttpError, notFound, parseInput, pgErrorCode } from '../errors.ts';
 import { serveObject } from '../media/serve.ts';
 import { sniffMediaType } from '../media/sniff.ts';
+import { isUnknownTag, replaceTags } from './tags.ts';
 
 export interface MediaRow {
   id: string;
@@ -39,12 +42,31 @@ export interface MediaRow {
   codec: string | null;
   storage_key: string | null;
   original_name: string;
+  /** The operator's name for the item, or else the file name supplied at upload. */
+  name: string;
+  description: string | null;
+  default_duration_ms: number | null;
+  folder_id: string | null;
+  tag_ids: string[];
+  usage_count: string;
   created_at: Date;
   updated_at: Date;
 }
 
-export const MEDIA_COLUMNS = `id, kind, status, error_code, error_detail, mime_type, bytes, sha256,
-  width, height, duration_ms, codec, storage_key, original_name, created_at, updated_at`;
+/**
+ * Select list for `media m` that yields a `MediaRow`. `usage_count` is the
+ * number of live playlists that contain the item at least once.
+ */
+export const MEDIA_COLUMNS = `m.id, m.kind, m.status, m.error_code, m.error_detail, m.mime_type,
+  m.bytes, m.sha256, m.width, m.height, m.duration_ms, m.codec, m.storage_key, m.original_name,
+  COALESCE(m.name, m.original_name) AS name, m.description, m.default_duration_ms, m.folder_id,
+  ARRAY(SELECT mt.tag_id FROM media_tag mt
+        WHERE mt.media_id = m.id AND mt.org_id = m.org_id
+        ORDER BY mt.created_at, mt.tag_id)::text[] AS tag_ids,
+  (SELECT count(DISTINCT i.playlist_id) FROM playlist_item i
+   JOIN playlist p ON p.id = i.playlist_id AND p.org_id = i.org_id
+   WHERE i.media_id = m.id AND i.org_id = m.org_id AND p.deleted_at IS NULL) AS usage_count,
+  m.created_at, m.updated_at`;
 
 export function toMediaDto(row: MediaRow): MediaDto {
   const mime = MediaMimeTypeSchema.safeParse(row.mime_type);
@@ -53,7 +75,13 @@ export function toMediaDto(row: MediaRow): MediaDto {
     id: row.id,
     kind: row.kind,
     status: row.status,
+    name: row.name,
     originalName: row.original_name,
+    description: row.description,
+    defaultDurationMs: row.default_duration_ms,
+    folderId: row.folder_id,
+    tagIds: row.tag_ids.slice(0, ABSOLUTE.maxTagsPerItem),
+    usageCount: bigintToNumber(row.usage_count),
     mimeType: mime.success ? mime.data : null,
     bytes: row.bytes === null ? null : bigintToNumber(row.bytes),
     sha256: row.sha256,
@@ -69,8 +97,18 @@ export function toMediaDto(row: MediaRow): MediaDto {
   };
 }
 
+/** One live media item of the caller's organisation, or null. */
+async function loadMediaRow(tx: Tx, id: string): Promise<MediaRow | null> {
+  const { rows } = await tx.query<MediaRow>(
+    `SELECT ${MEDIA_COLUMNS} FROM media m
+     WHERE m.id = $1 AND m.org_id = app_org_id() AND m.deleted_at IS NULL`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
 /** Bytes that count against the organisation's quota: everything queued or stored. */
-async function usedBytes(tx: Tx): Promise<number> {
+export async function usedBytes(tx: Tx): Promise<number> {
   const { rows } = await tx.query<{ used: string }>(
     `SELECT coalesce(sum(bytes), 0)::bigint AS used FROM media
      WHERE org_id = app_org_id() AND status IN ('processing', 'ready')`,
@@ -136,9 +174,9 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
     const session = operatorOf(request);
     return withOrg(pool, session.orgId, async (tx) => {
       const { rows } = await tx.query<MediaRow>(
-        `SELECT ${MEDIA_COLUMNS} FROM media
-         WHERE org_id = app_org_id() AND deleted_at IS NULL
-         ORDER BY created_at DESC, id`,
+        `SELECT ${MEDIA_COLUMNS} FROM media m
+         WHERE m.org_id = app_org_id() AND m.deleted_at IS NULL
+         ORDER BY m.created_at DESC, m.id`,
       );
       return {
         items: rows.map(toMediaDto),
@@ -263,7 +301,8 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
             );
           }
           const inserted = await tx.query<MediaRow>(
-            `INSERT INTO media (id, org_id, kind, status, mime_type, bytes, sha256, original_name, created_by)
+            `INSERT INTO media AS m
+               (id, org_id, kind, status, mime_type, bytes, sha256, original_name, created_by)
              VALUES ($1, app_org_id(), $2, 'processing', $3, $4, $5, $6, $7)
              RETURNING ${MEDIA_COLUMNS}`,
             [
@@ -312,14 +351,161 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     return withOrg(pool, session.orgId, async (tx) => {
-      const { rows } = await tx.query<MediaRow>(
-        `SELECT ${MEDIA_COLUMNS} FROM media
-         WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL`,
+      const row = await loadMediaRow(tx, id);
+      if (row === null) throw notFound('The media item');
+      return toMediaDto(row);
+    });
+  });
+
+  /**
+   * Changes what an operator may say about a media item: its name, description,
+   * default time on screen (images only), folder and tags. The file itself and
+   * the worker's verdict are never changed here.
+   */
+  app.patch(ROUTES.mediaItemPattern, async (request): Promise<MediaDto> => {
+    const session = operatorOf(request);
+    const { id } = parseInput(IdParamSchema, request.params, 'address');
+    const patch = parseInput(MediaPatchSchema, request.body, 'media item');
+    try {
+      return await withOrg(pool, session.orgId, async (tx) => {
+        const locked = await tx.query<{
+          kind: 'image' | 'video';
+          name: string | null;
+          description: string | null;
+          default_duration_ms: number | null;
+          folder_id: string | null;
+        }>(
+          `SELECT kind, name, description, default_duration_ms, folder_id FROM media
+           WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL FOR NO KEY UPDATE`,
+          [id],
+        );
+        const current = locked.rows[0];
+        if (current === undefined) throw notFound('The media item');
+
+        const duration = patch.defaultDurationMs;
+        if (duration !== undefined && duration !== null) {
+          if (current.kind !== 'image') {
+            throw new HttpError(
+              400,
+              'validation_failed',
+              'Only images have a default duration; a video plays for its own length.',
+              {
+                details: [{ path: 'defaultDurationMs', message: 'must be null for a video' }],
+              },
+            );
+          }
+          if (
+            duration < limits.minImageItemDurationMs ||
+            duration > limits.maxImageItemDurationMs
+          ) {
+            throw new HttpError(
+              400,
+              'validation_failed',
+              'The default duration is outside the allowed range.',
+              {
+                details: [
+                  {
+                    path: 'defaultDurationMs',
+                    message: `must be between ${limits.minImageItemDurationMs} and ${limits.maxImageItemDurationMs} milliseconds`,
+                  },
+                ],
+              },
+            );
+          }
+        }
+        if (patch.folderId !== undefined && patch.folderId !== null) {
+          const folder = await tx.query(
+            'SELECT 1 FROM folder WHERE id = $1 AND org_id = app_org_id()',
+            [patch.folderId],
+          );
+          if (folder.rowCount !== 1) throw notFound('The folder');
+        }
+
+        // A change of tags alone leaves the row, and so its updated_at, as it is.
+        if (
+          patch.name !== undefined ||
+          patch.description !== undefined ||
+          patch.defaultDurationMs !== undefined ||
+          patch.folderId !== undefined
+        ) {
+          await tx.query(
+            `UPDATE media
+             SET name = $2, description = $3, default_duration_ms = $4, folder_id = $5
+             WHERE id = $1 AND org_id = app_org_id()`,
+            [
+              id,
+              patch.name === undefined ? current.name : patch.name,
+              patch.description === undefined ? current.description : patch.description,
+              duration === undefined ? current.default_duration_ms : duration,
+              patch.folderId === undefined ? current.folder_id : patch.folderId,
+            ],
+          );
+        }
+        if (patch.tagIds !== undefined) await replaceTags(tx, 'media', id, patch.tagIds);
+
+        await auditScoped(tx, {
+          actorType: 'operator',
+          actorId: session.membershipId,
+          action: 'media.update',
+          objectType: 'media',
+          objectId: id,
+          result: 'success',
+          detail: { fields: Object.keys(patch).sort() },
+        });
+        const row = await loadMediaRow(tx, id);
+        if (row === null) throw new Error('updated media item is not visible');
+        return toMediaDto(row);
+      });
+    } catch (error) {
+      // The folder or a tag was deleted between the check above and the write.
+      if (
+        pgErrorCode(error) === '23503' &&
+        violatedConstraint(error) === STAGE_A_CONSTRAINTS.mediaFolder
+      ) {
+        throw notFound('The folder');
+      }
+      if (isUnknownTag(error)) throw notFound('The tag');
+      throw error;
+    }
+  });
+
+  /**
+   * Where a media item is used: the live playlists that contain it, and the
+   * displays whose current publication contains it (whatever was edited since).
+   */
+  app.get(ROUTES.mediaUsagePattern, async (request): Promise<MediaUsageResponse> => {
+    const session = operatorOf(request);
+    const { id } = parseInput(IdParamSchema, request.params, 'address');
+    return withOrg(pool, session.orgId, async (tx) => {
+      const media = await tx.query(
+        'SELECT 1 FROM media WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL',
         [id],
       );
-      const row = rows[0];
-      if (row === undefined) throw notFound('The media item');
-      return toMediaDto(row);
+      if (media.rowCount !== 1) throw notFound('The media item');
+      const playlists = await tx.query<{ id: string; name: string }>(
+        `SELECT p.id, p.name FROM playlist p
+         WHERE p.org_id = app_org_id() AND p.deleted_at IS NULL
+           AND EXISTS (SELECT 1 FROM playlist_item i
+                       WHERE i.playlist_id = p.id AND i.org_id = p.org_id AND i.media_id = $1)
+         ORDER BY lower(p.name), p.id
+         LIMIT $2`,
+        [id, ABSOLUTE.maxListItems],
+      );
+      const displays = await tx.query<{ id: string; name: string }>(
+        `SELECT d.id, d.name FROM display d
+         JOIN display_delivery dd ON dd.display_id = d.id AND dd.org_id = d.org_id
+         WHERE d.org_id = app_org_id()
+           AND EXISTS (SELECT 1 FROM publication_asset pa
+                       WHERE pa.publication_id = dd.desired_publication_id
+                         AND pa.org_id = dd.org_id AND pa.media_id = $1)
+         ORDER BY lower(d.name), d.id
+         LIMIT $2`,
+        [id, ABSOLUTE.maxListItems],
+      );
+      return {
+        playlists: playlists.rows.map((r) => ({ id: r.id, name: r.name })),
+        displays: displays.rows.map((r) => ({ id: r.id, name: r.name })),
+      };
     });
   });
 
@@ -327,8 +513,14 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     const row = await withOrg(pool, session.orgId, async (tx) => {
-      const { rows } = await tx.query<MediaRow>(
-        `SELECT ${MEDIA_COLUMNS} FROM media
+      const { rows } = await tx.query<{
+        id: string;
+        status: string;
+        storage_key: string | null;
+        sha256: string | null;
+        mime_type: string | null;
+      }>(
+        `SELECT id, status, storage_key, sha256, mime_type FROM media
          WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL`,
         [id],
       );
@@ -362,6 +554,7 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
   /**
    * Deleting media:
    *  - refused while a playlist still uses it (the operator edits the playlist first);
+   *    a deleted playlist uses nothing;
    *  - refused while it is being validated;
    *  - if a publication references it, the row is hidden (deleted_at) but the bytes
    *    stay, because published snapshots are immutable and players may still need them;
@@ -387,10 +580,13 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
             'This file is still being checked. Delete it once the check has finished.',
           );
         }
+        // Only live playlists count. Deleting a playlist removes its items, so a deleted
+        // playlist never holds media back (routes/playlists.ts).
         const used = await tx.query<{ name: string }>(
           `SELECT DISTINCT p.name FROM playlist_item i
            JOIN playlist p ON p.id = i.playlist_id AND p.org_id = i.org_id
-           WHERE i.media_id = $1 AND i.org_id = app_org_id() ORDER BY p.name LIMIT 5`,
+           WHERE i.media_id = $1 AND i.org_id = app_org_id() AND p.deleted_at IS NULL
+           ORDER BY p.name LIMIT 5`,
           [id],
         );
         if (used.rows.length > 0) {

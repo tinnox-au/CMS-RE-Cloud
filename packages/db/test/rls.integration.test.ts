@@ -23,7 +23,20 @@ const TENANT_TABLES = [
   'display_delivery',
   'heartbeat_log',
   'audit_event',
+  'folder',
+  'tag',
+  'media_tag',
+  'display_tag',
 ] as const;
+/**
+ * Rows that `createOrg` gives one organisation, where that is not exactly one:
+ * registrations and heartbeats come from a player, and there is one tag per scope.
+ */
+const ROWS_PER_ORG: Partial<Record<(typeof TENANT_TABLES)[number], number>> = {
+  player_registration: 0,
+  heartbeat_log: 0,
+  tag: 2,
+};
 const LOCKED_TABLES = [
   'session',
   'login_state',
@@ -188,10 +201,8 @@ describe('with no organisation context', () => {
 describe('with organisation A as context', () => {
   it('sees exactly its own rows in every tenant table', async () => {
     await withOrg(pool, a.orgId, async (tx) => {
-      for (const table of TENANT_TABLES.filter(
-        (t) => t !== 'player_registration' && t !== 'heartbeat_log',
-      )) {
-        expect(await count(tx as never, table), table).toBe(1);
+      for (const table of TENANT_TABLES) {
+        expect(await count(tx as never, table), table).toBe(ROWS_PER_ORG[table] ?? 1);
       }
       const org = await tx.query<{ id: string }>('SELECT id FROM organization');
       expect(org.rows).toEqual([{ id: a.orgId }]);
@@ -214,6 +225,15 @@ describe('with organisation A as context', () => {
         ['SELECT 1 FROM publication_asset WHERE publication_id = $1', b.publicationId],
         ['SELECT 1 FROM display_delivery WHERE display_id = $1', b.displayId],
         ['SELECT 1 FROM audit_event WHERE org_id = $1', b.orgId],
+        ['SELECT 1 FROM folder WHERE id = $1', b.folderId],
+        ['SELECT 1 FROM tag WHERE id = $1', b.mediaTagId],
+        ['SELECT 1 FROM tag WHERE id = $1', b.displayTagId],
+        ['SELECT 1 FROM media_tag WHERE media_id = $1', b.mediaId],
+        ['SELECT 1 FROM media_tag WHERE tag_id = $1', b.mediaTagId],
+        ['SELECT 1 FROM display_tag WHERE display_id = $1', b.displayId],
+        ['SELECT 1 FROM display_tag WHERE tag_id = $1', b.displayTagId],
+        ['SELECT 1 FROM display WHERE assigned_playlist_id = $1', b.playlistId],
+        ['SELECT 1 FROM media WHERE folder_id = $1', b.folderId],
       ];
       for (const [sql, id] of probes) expect((await tx.query(sql, [id])).rowCount, sql).toBe(0);
     });
@@ -248,6 +268,47 @@ describe('with organisation A as context', () => {
       expect((await tx.query('DELETE FROM playlist WHERE id = $1', [b.playlistId])).rowCount).toBe(
         0,
       );
+      const stageA: [string, string][] = [
+        ["UPDATE tag SET name = 'hijacked' WHERE id = $1", b.mediaTagId],
+        ["UPDATE folder SET name = 'hijacked' WHERE id = $1", b.folderId],
+        ["UPDATE display SET description = 'hijacked' WHERE id = $1", b.displayId],
+        ['UPDATE display SET assigned_playlist_id = NULL WHERE id = $1', b.displayId],
+        ['UPDATE media SET folder_id = NULL WHERE id = $1', b.mediaId],
+        ['UPDATE playlist SET deleted_at = now() WHERE id = $1', b.playlistId],
+        ['DELETE FROM media_tag WHERE media_id = $1', b.mediaId],
+        ['DELETE FROM display_tag WHERE display_id = $1', b.displayId],
+        ['DELETE FROM tag WHERE id = $1', b.mediaTagId],
+        ['DELETE FROM tag WHERE id = $1', b.displayTagId],
+        ['DELETE FROM folder WHERE id = $1', b.folderId],
+      ];
+      for (const [sql, id] of stageA) expect((await tx.query(sql, [id])).rowCount, sql).toBe(0);
+    });
+    // Nothing of organisation B was touched.
+    await withOrg(pool, b.orgId, async (tx) => {
+      const { rows } = await tx.query<{
+        tags: string;
+        folders: string;
+        media_tags: string;
+        display_tags: string;
+        foldered: string;
+        assigned: string;
+      }>(
+        `SELECT (SELECT count(*) FROM tag WHERE name NOT LIKE 'hijacked%') AS tags,
+                (SELECT count(*) FROM folder WHERE name NOT LIKE 'hijacked%') AS folders,
+                (SELECT count(*) FROM media_tag) AS media_tags,
+                (SELECT count(*) FROM display_tag) AS display_tags,
+                (SELECT count(*) FROM media WHERE folder_id IS NOT NULL) AS foldered,
+                (SELECT count(*) FROM display WHERE assigned_playlist_id IS NOT NULL
+                   AND description IS NULL) AS assigned`,
+      );
+      expect(rows[0]).toEqual({
+        tags: '2',
+        folders: '1',
+        media_tags: '1',
+        display_tags: '1',
+        foldered: '1',
+        assigned: '1',
+      });
     });
     // The owner is subject to the same policy (FORCE), so it needs the context too.
     expect(
@@ -281,6 +342,22 @@ describe('with organisation A as context', () => {
         [b.orgId],
       ],
       ['INSERT INTO display_delivery (display_id, org_id) VALUES ($1, $2)', [b.displayId, b.orgId]],
+      ['INSERT INTO folder (org_id, name) VALUES ($1, $2)', [b.orgId, 'planted']],
+      ["INSERT INTO tag (org_id, scope, name) VALUES ($1, 'media', $2)", [b.orgId, 'planted']],
+      ["INSERT INTO tag (org_id, scope, name) VALUES ($1, 'display', $2)", [b.orgId, 'planted']],
+      [
+        'INSERT INTO media_tag (org_id, media_id, tag_id) VALUES ($1, $2, $3)',
+        [b.orgId, b.mediaId, b.mediaTagId],
+      ],
+      [
+        'INSERT INTO display_tag (org_id, display_id, tag_id) VALUES ($1, $2, $3)',
+        [b.orgId, b.displayId, b.displayTagId],
+      ],
+      // Its own media and tag, filed under the other organisation.
+      [
+        'INSERT INTO media_tag (org_id, media_id, tag_id) VALUES ($1, $2, $3)',
+        [b.orgId, a.mediaId, a.mediaTagId],
+      ],
     ];
     for (const [sql, values] of attempts) {
       expect(await pgCode(withOrg(pool, a.orgId, (tx) => tx.query(sql, values))), sql).toBe(
@@ -304,6 +381,17 @@ describe('with organisation A as context', () => {
         ),
       ),
     ).toBe(PG.rlsViolation);
+    // The new tables give the runtime role no UPDATE on org_id at all.
+    for (const [sql, id] of [
+      ['UPDATE tag SET org_id = $1 WHERE id = $2', a.mediaTagId],
+      ['UPDATE folder SET org_id = $1 WHERE id = $2', a.folderId],
+      ['UPDATE media_tag SET org_id = $1 WHERE media_id = $2', a.mediaId],
+      ['UPDATE display_tag SET org_id = $1 WHERE display_id = $2', a.displayId],
+    ] as const) {
+      expect(await pgCode(withOrg(pool, a.orgId, (tx) => tx.query(sql, [b.orgId, id]))), sql).toBe(
+        PG.insufficientPrivilege,
+      );
+    }
   });
 
   it("cannot attach its own rows to organisation B's rows (composite foreign keys)", async () => {
@@ -327,6 +415,35 @@ describe('with organisation A as context', () => {
       [
         'UPDATE display_delivery SET active_publication_id = $2, active_item_index = 0 WHERE display_id = $1',
         [a.displayId, b.publicationId],
+      ],
+      // Its own media with the other organisation's tag, and the reverse.
+      [
+        'INSERT INTO media_tag (org_id, media_id, tag_id) VALUES ($1, $2, $3)',
+        [a.orgId, a.mediaId, b.mediaTagId],
+      ],
+      [
+        'INSERT INTO media_tag (org_id, media_id, tag_id) VALUES ($1, $2, $3)',
+        [a.orgId, b.mediaId, a.mediaTagId],
+      ],
+      [
+        'INSERT INTO display_tag (org_id, display_id, tag_id) VALUES ($1, $2, $3)',
+        [a.orgId, a.displayId, b.displayTagId],
+      ],
+      [
+        'INSERT INTO display_tag (org_id, display_id, tag_id) VALUES ($1, $2, $3)',
+        [a.orgId, b.displayId, a.displayTagId],
+      ],
+      // Its own media in the other organisation's folder.
+      ['UPDATE media SET folder_id = $2 WHERE id = $1', [a.mediaId, b.folderId]],
+      [
+        "INSERT INTO media (org_id, kind, original_name, folder_id) VALUES ($1, 'image', 'x.png', $2)",
+        [a.orgId, b.folderId],
+      ],
+      // Its own display with the other organisation's playlist assigned.
+      ['UPDATE display SET assigned_playlist_id = $2 WHERE id = $1', [a.displayId, b.playlistId]],
+      [
+        'INSERT INTO display (org_id, site_id, name, canvas_width, canvas_height, assigned_playlist_id) VALUES ($1, $2, $3, 100, 100, $4)',
+        [a.orgId, a.siteId, 'cross-playlist', b.playlistId],
       ],
     ];
     for (const [sql, values] of attempts) {

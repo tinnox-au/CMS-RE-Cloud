@@ -1,0 +1,181 @@
+/*
+ * TINNOX CMS design tokens (docs/portal-v2/design-system.md, section 3).
+ *
+ * Components reference colour only through these custom properties. The first block is the
+ * light theme; the block under `prefers-color-scheme: dark` overrides the values that change.
+ * `src/styles/tokens.test.ts` reads this file and fails when a text or boundary pair drops
+ * below WCAG 2.2 AA, so keep the two-block shape and plain colour values.
+ *
+ * Four values differ from the specification table, three of them for contrast:
+ * - `--focus` (light) is a deeper Signal Sky. #72afc2 reaches only 2.4:1 on white; a focus
+ *   ring needs 3:1 against the surfaces around it.
+ * - `--line-control` is new: the boundary of text inputs, checkboxes and switch tracks, which
+ *   must reach 3:1. `--line` and `--line-strong` stay for hairlines, which are decoration.
+ * - Placeholder text uses `--ink-2`, not `--ink-3`; `--ink-3` is kept for disabled text only.
+ * - `--font-head` and `--font-body` name a metric-matched fallback face (styles/fonts.css)
+ *   right after the web font, so text does not move when the web font arrives.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces */
+  --bg: #f6f8f8;
+  --surface: #ffffff;
+  --surface-2: #eff5f7;
+  --surface-3: #dce9ed;
+  --glass: rgb(255 255 255 / 0.72);
+  --scrim: rgb(18 33 42 / 0.36);
+
+  /* Lines */
+  --line: #dce7ea;
+  --line-strong: #b7d3dc;
+  --line-control: #7b8f98;
+
+  /* Text */
+  --ink: #12212a;
+  --ink-2: #5d6b73;
+  --ink-3: #93a1a7;
+
+  /* Brand */
+  --brand: #0f4761;
+  --brand-hover: #0d384d;
+  --on-brand: #ffffff;
+  --focus: #3a8aa3;
+
+  /* Status */
+  --ok: #1b6e45;
+  --ok-bg: #e6f4ec;
+  --warn: #8a5a00;
+  --warn-bg: #fbf1dc;
+  --danger: #a4262c;
+  --danger-bg: #fbe9ea;
+  --neutral-bg: #eaf0f1;
+
+  /* Tag colours (the dot on a tag chip). The names match the API's tag colour set. */
+  --tag-teal: #177f8f;
+  --tag-sky: #2c7fb8;
+  --tag-slate: #5d6b73;
+  --tag-green: #2a8552;
+  --tag-amber: #a86a00;
+  --tag-red: #c2363c;
+  --tag-violet: #7257c9;
+  --tag-pink: #c4457f;
+
+  /* Type */
+  --font-head:
+    'Manrope Variable', 'Manrope', 'Manrope Fallback', -apple-system, BlinkMacSystemFont,
+    'Segoe UI', sans-serif;
+  --font-body:
+    'Inter Variable', 'Inter', 'Inter Fallback', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Shape */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-pill: 999px;
+
+  /* Space */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-7: 32px;
+  --s-8: 40px;
+  --s-9: 56px;
+
+  /* Control heights */
+  --h-sm: 32px;
+  --h-md: 36px;
+  --h-lg: 44px;
+
+  /* Depth */
+  --shadow-1: 0 1px 2px rgb(18 33 42 / 0.05);
+  --shadow-2: 0 4px 16px rgb(18 33 42 / 0.08), 0 1px 2px rgb(18 33 42 / 0.04);
+  --shadow-3: 0 24px 64px rgb(18 33 42 / 0.18);
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus);
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --t-fast: 120ms;
+  --t: 200ms;
+  --t-slow: 320ms;
+
+  /* Layout */
+  --sidebar-w: 240px;
+  --sidebar-w-collapsed: 72px;
+  --header-h: 72px;
+  --content-max: 1440px;
+  --gutter: 32px;
+
+  /* Stacking, for what is not in the browser's top layer */
+  --z-sticky: 10;
+  --z-drawer: 30;
+  --z-float: 40;
+  --z-toast: 50;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0c161c;
+    --surface: #12212a;
+    --surface-2: #182c38;
+    --surface-3: #21404f;
+    --glass: rgb(18 33 42 / 0.72);
+    --scrim: rgb(0 0 0 / 0.56);
+
+    --line: #24404d;
+    --line-strong: #35606f;
+    --line-control: #577d8c;
+
+    --ink: #f1f6f7;
+    --ink-2: #a9bcc4;
+    --ink-3: #7a8f98;
+
+    --brand: #72afc2;
+    --brand-hover: #8fc2d2;
+    --on-brand: #0c161c;
+    --focus: #b7d3dc;
+
+    --ok: #6fd3a0;
+    --ok-bg: #143526;
+    --warn: #f0c267;
+    --warn-bg: #3a2c0d;
+    --danger: #ff8f95;
+    --danger-bg: #42181b;
+    --neutral-bg: #21343e;
+
+    --tag-teal: #5cc0cc;
+    --tag-sky: #74b6e6;
+    --tag-slate: #a9bcc4;
+    --tag-green: #6fd3a0;
+    --tag-amber: #f0c267;
+    --tag-red: #ff8f95;
+    --tag-violet: #b3a1f2;
+    --tag-pink: #f08fb9;
+
+    /* The light shadows vanish on a dark page; these are deeper and neutral. */
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-2: 0 6px 20px rgb(0 0 0 / 0.42), 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-3: 0 24px 64px rgb(0 0 0 / 0.6);
+  }
+}
+
+@media (max-width: 899px) {
+  :root {
+    --gutter: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-fast: 0ms;
+    --t: 0ms;
+    --t-slow: 0ms;
+  }
+}

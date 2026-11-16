@@ -1,0 +1,298 @@
+/* Thumb, Skeleton, Spinner, Meter. */
+
+/* ---------- Thumb ---------- */
+
+.tx-thumb {
+  position: relative;
+  flex: none;
+  display: block;
+  inline-size: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--neutral-bg);
+  color: var(--ink-3);
+}
+
+.tx-thumb--square {
+  aspect-ratio: 1;
+}
+
+.tx-thumb--classic {
+  aspect-ratio: 4 / 3;
+}
+
+/* Fixed sizes for rows: 44 px in a table, 72 px in a details header. */
+.tx-thumb--sm {
+  inline-size: 44px;
+  aspect-ratio: 1;
+}
+
+.tx-thumb--md {
+  inline-size: 72px;
+}
+
+.tx-thumb--lg {
+  inline-size: 128px;
+}
+
+.tx-thumb__media {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--t) var(--ease);
+}
+
+.tx-thumb--contain .tx-thumb__media {
+  object-fit: contain;
+}
+
+.tx-thumb[data-state='loaded'] .tx-thumb__media {
+  opacity: 1;
+}
+
+.tx-thumb__placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.tx-thumb[data-state='loaded'] .tx-thumb__placeholder {
+  display: none;
+}
+
+/* While the image is on its way the box shimmers like a skeleton. */
+.tx-thumb[data-state='loading']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--surface) 55%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: tx-shimmer 1.4s linear infinite;
+}
+
+.tx-thumb__badge {
+  position: absolute;
+  inset-block-end: 6px;
+  inset-inline-start: 6px;
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink) 78%, transparent);
+  color: var(--surface);
+}
+
+/* Too small to carry a badge without hiding the picture. */
+.tx-thumb--sm .tx-thumb__badge,
+.tx-thumb--md .tx-thumb__badge {
+  display: none;
+}
+
+/* ---------- Skeleton ---------- */
+
+.tx-skeleton {
+  position: relative;
+  display: block;
+  inline-size: var(--tx-skeleton-w, 100%);
+  block-size: var(--tx-skeleton-h, 12px);
+  border-radius: var(--r-xs);
+  overflow: hidden;
+  background: var(--neutral-bg);
+}
+
+.tx-skeleton--block {
+  border-radius: var(--r-md);
+}
+
+.tx-skeleton--circle {
+  border-radius: 50%;
+}
+
+.tx-skeleton--pill {
+  border-radius: var(--r-pill);
+}
+
+.tx-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--surface) 60%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: tx-shimmer 1.4s linear infinite;
+}
+
+@keyframes tx-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+
+  to {
+    background-position: -50% 0;
+  }
+}
+
+/* ---------- Spinner ---------- */
+
+.tx-spinner {
+  flex: none;
+  display: inline-block;
+  inline-size: 16px;
+  block-size: 16px;
+  border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-block-start-color: currentColor;
+  border-radius: 50%;
+  animation: tx-spin 0.8s linear infinite;
+  vertical-align: -0.2em;
+}
+
+.tx-spinner--lg {
+  inline-size: 24px;
+  block-size: 24px;
+  border-width: 2.5px;
+}
+
+.tx-spinner-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--ink-2);
+}
+
+@keyframes tx-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes tx-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* No movement under reduced motion: shimmer stops, the spinner breathes instead of turning. */
+@media (prefers-reduced-motion: reduce) {
+  .tx-skeleton::after,
+  .tx-thumb[data-state='loading']::after {
+    animation: none;
+    background: none;
+  }
+
+  .tx-spinner {
+    animation: tx-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+/* ---------- Meter ---------- */
+
+.tx-meter {
+  display: grid;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+.tx-meter__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-meter__label {
+  color: var(--ink-2);
+}
+
+.tx-meter__value {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tx-meter__track {
+  block-size: 6px;
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  background: var(--neutral-bg);
+}
+
+.tx-meter__fill {
+  inline-size: calc(var(--tx-meter, 0) * 100%);
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+  transition: inline-size var(--t-slow) var(--ease);
+}
+
+.tx-meter[data-tone='warn'] .tx-meter__fill {
+  background: var(--warn);
+}
+
+.tx-meter[data-tone='danger'] .tx-meter__fill {
+  background: var(--danger);
+}
+
+.tx-meter__note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-meter[data-tone='warn'] .tx-meter__note {
+  color: var(--warn);
+}
+
+.tx-meter[data-tone='danger'] .tx-meter__note {
+  color: var(--danger);
+}
+
+/* A compact form for toolbars: label, bar and value on one line. */
+.tx-meter--inline {
+  grid-template-columns: auto minmax(64px, 120px) auto;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-meter--inline .tx-meter__head {
+  display: contents;
+}
+
+.tx-meter--inline .tx-meter__label {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.tx-meter--inline .tx-meter__track {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.tx-meter--inline .tx-meter__value {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.tx-meter--inline .tx-meter__note {
+  grid-column: 1 / -1;
+}

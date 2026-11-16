@@ -28,18 +28,45 @@ export const ROUTES = Object.freeze({
   displayRevokePlayer: (id: string) => `/api/displays/${enc(id)}/revoke-player`,
   displayStatusPattern: '/api/displays/:id/status',
   displayStatus: (id: string) => `/api/displays/${enc(id)}/status`,
+  /** GET: the status of every display in one call. A fixed path, registered beside `:id`. */
+  displaysStatus: '/api/displays/status',
 
   media: '/api/media',
+  /** GET, PATCH, DELETE. */
   mediaItemPattern: '/api/media/:id',
   mediaItem: (id: string) => `/api/media/${enc(id)}`,
   mediaPreviewPattern: '/api/media/:id/preview',
   mediaPreview: (id: string) => `/api/media/${enc(id)}/preview`,
+  /** GET: the playlists and displays that use a media item. */
+  mediaUsagePattern: '/api/media/:id/usage',
+  mediaUsage: (id: string) => `/api/media/${enc(id)}/usage`,
+
+  /** GET (optional `?scope=`), POST. */
+  tags: '/api/tags',
+  /** PATCH, DELETE. */
+  tagPattern: '/api/tags/:id',
+  tag: (id: string) => `/api/tags/${enc(id)}`,
+
+  /** GET, POST. */
+  folders: '/api/folders',
+  /** PATCH, DELETE. */
+  folderPattern: '/api/folders/:id',
+  folder: (id: string) => `/api/folders/${enc(id)}`,
 
   playlists: '/api/playlists',
+  /** GET, PUT, DELETE (204, or 409 `playlist_in_use` while a display has it assigned). */
   playlistPattern: '/api/playlists/:id',
   playlist: (id: string) => `/api/playlists/${enc(id)}`,
   playlistPublishPattern: '/api/playlists/:id/publish',
   playlistPublish: (id: string) => `/api/playlists/${enc(id)}/publish`,
+  /** POST: copy a playlist with its items. */
+  playlistDuplicatePattern: '/api/playlists/:id/duplicate',
+  playlistDuplicate: (id: string) => `/api/playlists/${enc(id)}/duplicate`,
+
+  /** GET: the push plan. POST: push to the chosen displays (needs `Idempotency-Key`). */
+  push: '/api/push',
+  /** GET: the dashboard numbers. */
+  overview: '/api/overview',
 
   audit: '/api/audit',
 

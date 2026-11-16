@@ -1,0 +1,115 @@
+/*
+ * Layout helpers for the page patterns (design-system.md, sections 7 and 8). They arrange
+ * components; they carry no colour of their own.
+ */
+
+/* Vertical rhythm between the parts of a page. */
+.tx-stack {
+  display: grid;
+  /* One column that may shrink, so a wide child (a table, a tab list) scrolls inside itself. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--tx-stack-gap, var(--s-4));
+  min-inline-size: 0;
+}
+
+.tx-stack--tight {
+  --tx-stack-gap: var(--s-2);
+}
+
+.tx-stack--loose {
+  --tx-stack-gap: var(--s-6);
+}
+
+/* A row of things that wraps: buttons, chips, facts. */
+.tx-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  min-inline-size: 0;
+}
+
+.tx-cluster--end {
+  justify-content: flex-end;
+}
+
+.tx-cluster--between {
+  justify-content: space-between;
+}
+
+/*
+ * List page, row 1: search and filter chips on the left, wrapping among themselves; the
+ * create button stays at the far end of the first line, so it is visible without scrolling.
+ */
+.tx-filter-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2) var(--s-4);
+}
+
+.tx-filter-row__filters {
+  flex: 1 1 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  min-inline-size: 0;
+}
+
+.tx-filter-row__end {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-inline-start: auto;
+}
+
+@media (max-width: 639px) {
+  .tx-filter-row {
+    flex-wrap: wrap;
+  }
+
+  .tx-filter-row__filters {
+    flex-basis: 100%;
+  }
+}
+
+/* List page, row 2: the count on the left, view controls on the right. */
+.tx-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2) var(--s-3);
+  min-block-size: var(--h-md);
+}
+
+.tx-toolbar__count {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tx-toolbar__end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-2);
+  min-inline-size: 0;
+  margin-inline-start: auto;
+}
+
+/* Editor page: a narrow details column and a wide settings column from 1100 px up. */
+.tx-editor {
+  display: grid;
+  gap: var(--s-6);
+  align-items: start;
+}
+
+@media (min-width: 1100px) {
+  .tx-editor {
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  }
+}

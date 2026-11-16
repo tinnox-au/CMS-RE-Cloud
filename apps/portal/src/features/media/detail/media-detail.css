@@ -1,0 +1,449 @@
+/*
+ * Media details page (docs/portal-v2/stage-a.md, 3.3). The frame, the cards, the form rows
+ * and the controls come from the kit; this file only arranges the page's own parts.
+ */
+
+/* Notices above the two columns of the editor. */
+.tx-media-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-4);
+}
+
+/* ---------- Header ---------- */
+
+/* "Saved" or "Unsaved changes" with its icon, as the playlist editor shows it. */
+.tx-media-detail-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.tx-media-detail-status[data-state='unsaved'] {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+/* Save sits inside its tooltip anchor, so the kit's first-half rule needs one more step. */
+.tx-media-detail-save {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+
+.tx-media-detail-save.tx-split > .tx-tooltip-anchor:first-child > .tx-button {
+  padding-inline-end: 14px;
+  border-start-end-radius: 6px;
+  border-end-end-radius: 6px;
+}
+
+/* ---------- Details card: preview, facts, where used ---------- */
+
+.tx-media-detail-aside {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-5);
+}
+
+.tx-media-detail-part {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-3);
+  min-inline-size: 0;
+}
+
+.tx-media-detail-part + .tx-media-detail-part {
+  padding-block-start: var(--s-5);
+  border-block-start: 1px solid var(--line);
+}
+
+.tx-media-detail-part__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-1) var(--s-3);
+  min-block-size: 28px;
+}
+
+.tx-media-detail-part__title {
+  color: var(--ink-2);
+  font: 600 12px/16px var(--font-body);
+  letter-spacing: 0.02em;
+}
+
+/* Between 640 px and the two-column editor the preview sits beside the facts. */
+@media (min-width: 640px) and (max-width: 1099px) {
+  .tx-media-detail-aside {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    column-gap: var(--s-6);
+    align-items: start;
+  }
+
+  .tx-media-detail-aside > .tx-media-detail-part--wide {
+    grid-column: 1 / -1;
+  }
+
+  .tx-media-detail-aside > .tx-media-detail-part--facts {
+    padding-block-start: 0;
+    border-block-start: 0;
+  }
+}
+
+/* ---------- Preview ---------- */
+
+.tx-media-detail-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: 100%;
+  aspect-ratio: var(--tx-media-detail-ratio, 16 / 9);
+  min-block-size: 132px;
+  max-block-size: 360px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.tx-media-detail-preview__media {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity var(--t) var(--ease);
+}
+
+.tx-media-detail-preview[data-state='loaded'] .tx-media-detail-preview__media {
+  opacity: 1;
+}
+
+/* While the picture is on its way the box shimmers like the kit's thumbnails. */
+.tx-media-detail-preview[data-state='loading']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--surface) 55%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: tx-shimmer 1.4s linear infinite;
+  pointer-events: none;
+}
+
+/* Reduced motion: no sweep, as the kit's thumbnails (styles/media.css). */
+@media (prefers-reduced-motion: reduce) {
+  .tx-media-detail-preview[data-state='loading']::after {
+    animation: none;
+    background: none;
+  }
+}
+
+.tx-media-detail-preview__message {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: var(--s-2);
+  padding: var(--s-4);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* Processing and failed media have no preview: the shared thumbnail shows the state. */
+.tx-media-detail-preview--state {
+  display: block;
+  aspect-ratio: auto;
+  min-block-size: 0;
+  max-block-size: none;
+  border: 0;
+  background: none;
+}
+
+.tx-media-detail-preview__caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-3);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* ---------- Facts ---------- */
+
+.tx-media-detail-facts.tx-facts {
+  grid-template-columns: minmax(84px, max-content) minmax(0, 1fr);
+  gap: var(--s-2) var(--s-4);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-media-detail-facts > dt,
+.tx-media-detail-facts > dd {
+  padding-block: 5px;
+}
+
+/* A technical value with its copy button on the same line. */
+.tx-media-detail-copy {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-2);
+  min-inline-size: 0;
+}
+
+.tx-media-detail-copy__value {
+  min-inline-size: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.tx-media-detail-copy > .tx-icon-button {
+  flex: none;
+  margin-block: -5px;
+}
+
+/* ---------- Used in ---------- */
+
+.tx-media-detail-usage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-4);
+}
+
+.tx-media-detail-usage__group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-1);
+}
+
+.tx-media-detail-usage__label {
+  color: var(--ink);
+  font: 600 13px/18px var(--font-body);
+  letter-spacing: 0;
+}
+
+.tx-media-detail-usage__note {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-media-detail-usage__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0 calc(var(--s-2) * -1);
+  padding: 0;
+  list-style: none;
+}
+
+.tx-media-detail-usage__link {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-block-size: var(--h-sm);
+  padding: 4px var(--s-2);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color var(--t-fast) var(--ease);
+}
+
+.tx-media-detail-usage__link:hover {
+  background: var(--surface-2);
+  color: var(--brand);
+}
+
+.tx-media-detail-usage__link > .tx-icon {
+  flex: none;
+  color: var(--ink-2);
+}
+
+.tx-media-detail-usage__link:hover > .tx-icon {
+  color: var(--brand);
+}
+
+.tx-media-detail-usage__name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-media-detail-usage__more {
+  justify-self: start;
+  margin-inline-start: calc(var(--s-2) * -1);
+}
+
+/* ---------- Settings form ---------- */
+
+.tx-media-detail-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The error summary: each line starts with a link that moves focus to the field. */
+.tx-media-detail-summary {
+  margin-block-end: var(--s-6);
+}
+
+.tx-media-detail-summary:focus-visible {
+  outline: none;
+}
+
+.tx-media-detail-summary .tx-banner:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.tx-media-detail-summary ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A note in place of a control, lined up with the controls of the rows around it. */
+.tx-media-detail-note {
+  max-inline-size: 62ch;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+@media (min-width: 900px) {
+  .tx-form-section--rows .tx-media-detail-note {
+    margin-inline-start: calc(var(--tx-label-col) + var(--tx-label-gap));
+  }
+}
+
+/* ---------- A file that is being checked, or failed its check ---------- */
+
+.tx-media-detail-state {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: start;
+  gap: var(--s-3);
+}
+
+.tx-media-detail-state__title {
+  font: 700 18px/24px var(--font-head);
+  letter-spacing: -0.01em;
+}
+
+.tx-media-detail-state__text {
+  max-inline-size: 62ch;
+  color: var(--ink-2);
+}
+
+.tx-media-detail-state__reason {
+  max-inline-size: 62ch;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Loading ---------- */
+
+.tx-media-detail-skeleton {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-4);
+}
+
+.tx-media-detail-skeleton__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-2);
+}
+
+/* ---------- Not found, or not loadable ---------- */
+
+.tx-media-detail-missing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-2);
+  max-inline-size: 720px;
+  padding-block-end: var(--s-6);
+}
+
+.tx-media-detail-missing__answer {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.tx-media-detail-skeleton__field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-2);
+}
+
+@media (min-width: 900px) {
+  .tx-media-detail-skeleton__field {
+    grid-template-columns: 200px minmax(0, 1fr);
+    column-gap: var(--s-6);
+    align-items: start;
+  }
+}
+
+/* ---------- Settings card ---------- */
+
+.tx-media-detail-form__notice {
+  margin-block-end: var(--s-6);
+}
+
+/* A read-only row (a video's duration), laid out like a Field. */
+.tx-media-detail-static__value {
+  max-inline-size: 62ch;
+  color: var(--ink-2);
+  padding-block-start: 9px;
+}
+
+.tx-media-detail-duration {
+  display: inline-flex;
+}
+
+/* The delete confirmation and the failure reason. */
+.tx-media-detail-confirm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-3);
+}
+
+.tx-media-detail-state__detail {
+  display: block;
+  margin-block-start: var(--s-1);
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.tx-media-detail-duration {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+}
+
+.tx-media-detail-duration .tx-stepper__input::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+
+.tx-media-detail-duration__note {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}

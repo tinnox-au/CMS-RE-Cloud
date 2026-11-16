@@ -15,15 +15,45 @@ export const AUDIT_ACTIONS = [
   'player.auth_rejected',
   'media.upload',
   'media.validate',
+  'media.update',
   'media.delete',
+  'tag.create',
+  'tag.update',
+  'tag.delete',
+  'folder.create',
+  'folder.update',
+  'folder.delete',
   'playlist.create',
   'playlist.update',
+  'playlist.delete',
   'publication.create',
   'security.cross_org_denied',
   'security.csrf_rejected',
 ] as const;
 export const AuditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof AuditActionSchema>;
+
+/** The part of an action before its first dot; what the audit log can be filtered by. */
+export const AUDIT_CATEGORIES = [
+  'auth',
+  'display',
+  'pairing',
+  'player',
+  'media',
+  'tag',
+  'folder',
+  'playlist',
+  'publication',
+  'security',
+] as const;
+export const AuditCategorySchema = z.enum(AUDIT_CATEGORIES);
+export type AuditCategory = z.infer<typeof AuditCategorySchema>;
+
+/** Category of a stored action: everything before the first dot. */
+export function auditCategoryOf(action: string): string {
+  const dot = action.indexOf('.');
+  return dot === -1 ? action : action.slice(0, dot);
+}
 
 export const AUDIT_ACTOR_TYPES = ['operator', 'player', 'system', 'anonymous'] as const;
 export const AuditActorTypeSchema = z.enum(AUDIT_ACTOR_TYPES);
@@ -50,6 +80,7 @@ export const AuditEventDtoSchema = z
   .strict();
 export type AuditEventDto = z.infer<typeof AuditEventDtoSchema>;
 
+/** Query of `GET /api/audit`. The filters combine; paging with `before` keeps them. */
 export const AuditListQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -58,6 +89,10 @@ export const AuditListQuerySchema = z
       .string()
       .regex(/^[0-9]{1,18}$/)
       .optional(),
+    /** Only events whose action starts with this category, for example `media`. */
+    category: AuditCategorySchema.optional(),
+    /** Only events with this result. */
+    result: AuditResultSchema.optional(),
   })
   .strict();
 export type AuditListQuery = z.infer<typeof AuditListQuerySchema>;

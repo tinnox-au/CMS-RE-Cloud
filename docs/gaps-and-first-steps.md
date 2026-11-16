@@ -153,6 +153,8 @@ That large buyers commonly ask for these is OUTSIDE KNOWLEDGE, unverified. When 
 
 **Proposed decision (NOT IN DOCS):** adopt the narrowed policy as written, record it in `decisions-2026-11.md`, and hold any signed-in Yodeck session or Yodeck test player until the lawyer has read Yodeck's terms.
 
+**Update, 2026-11-15:** TINNOX chose to go ahead with a signed-in session before that reading. Its own trial account was walked through read-only and written up in `yodeck-ui-observation.md`; the rest of the narrowed policy was kept (no decompiling, no request replay, no export, nothing written in the account). TINNOX also decided that the portal follows Yodeck's structure with TINNOX's own identity (DEC-30 to DEC-32). The lawyer's reading of Yodeck's terms is still recommended before any external customer sees the product.
+
 ## 7. Hardware to prepare
 
 Everything here is PROPOSED (DEC-20, DEC-21) and untested.

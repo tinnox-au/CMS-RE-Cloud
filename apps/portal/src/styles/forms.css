@@ -1,0 +1,447 @@
+/* Field, FieldGroup, FormSection, TextInput, Textarea, Select, SearchField. */
+
+.tx-field {
+  display: grid;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+.tx-field__label {
+  display: block;
+  color: var(--ink);
+  font: 600 13px/18px var(--font-body);
+  letter-spacing: 0;
+}
+
+.tx-field__optional {
+  margin-inline-start: 6px;
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+.tx-field__control {
+  display: block;
+  min-inline-size: 0;
+}
+
+.tx-field__hint {
+  color: var(--ink-2);
+  font: 400 13px/18px var(--font-body);
+  letter-spacing: 0;
+}
+
+.tx-field__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--danger);
+  font: 500 13px/18px var(--font-body);
+  letter-spacing: 0;
+}
+
+.tx-field__error .tx-icon {
+  margin-block-start: 1px;
+}
+
+/* A fieldset that looks like a Field: one label for several controls. */
+.tx-field-group__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s-3) var(--s-4);
+}
+
+/* Settings grouped under a caption-style title with a hairline above each group. */
+.tx-form-section {
+  display: grid;
+  gap: var(--s-5);
+  padding-block: var(--s-6);
+  border-block-start: 1px solid var(--line);
+}
+
+/* The first group has no hairline, whether it opens the form or follows an error summary. */
+.tx-form-section:first-child,
+:not(.tx-form-section) + .tx-form-section {
+  padding-block-start: 0;
+  border-block-start: 0;
+}
+
+.tx-banner + .tx-form-section {
+  margin-block-start: var(--s-6);
+}
+
+.tx-form-section:last-child {
+  padding-block-end: 0;
+}
+
+.tx-form-section__title {
+  color: var(--ink-2);
+  font: 600 12px/16px var(--font-body);
+  letter-spacing: 0.02em;
+}
+
+.tx-form-section__description {
+  margin-block-start: var(--s-1);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-form-section__fields {
+  display: grid;
+  gap: var(--s-5);
+}
+
+/* Label-left rows from 900 px up (the editor page pattern); label-above below that. */
+@media (min-width: 900px) {
+  .tx-form-section--rows {
+    --tx-label-col: 200px;
+    --tx-label-gap: var(--s-6);
+  }
+
+  .tx-form-section--rows .tx-field {
+    grid-template-columns: var(--tx-label-col) minmax(0, 1fr);
+    column-gap: var(--tx-label-gap);
+    align-items: start;
+  }
+
+  .tx-form-section--rows .tx-field > .tx-field__label {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    padding-block-start: 9px;
+  }
+
+  .tx-form-section--rows .tx-field > :not(.tx-field__label) {
+    grid-column: 2;
+  }
+
+  /*
+   * A FieldGroup in a row layout: a legend takes no part in a grid, so it is floated into
+   * the label column and the rest of the fieldset is indented past it. The fields inside
+   * the group keep their labels above, side by side.
+   */
+  .tx-form-section--rows fieldset.tx-field {
+    display: flow-root;
+  }
+
+  .tx-form-section--rows fieldset.tx-field > legend.tx-field__label {
+    float: inline-start;
+    inline-size: var(--tx-label-col);
+    margin: 0;
+  }
+
+  .tx-form-section--rows fieldset.tx-field > :not(legend) {
+    margin-inline-start: calc(var(--tx-label-col) + var(--tx-label-gap));
+  }
+
+  .tx-form-section--rows fieldset.tx-field > :not(legend) + :not(legend) {
+    margin-block-start: 6px;
+  }
+
+  .tx-form-section--rows .tx-field-group__controls .tx-field {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tx-form-section--rows .tx-field-group__controls .tx-field > .tx-field__label {
+    grid-row: auto;
+    padding-block-start: 0;
+  }
+
+  .tx-form-section--rows .tx-field-group__controls .tx-field > :not(.tx-field__label) {
+    grid-column: 1;
+  }
+
+  /* A checkbox or switch on its own row lines up with the controls, not with the labels. */
+  .tx-form-section--rows .tx-form-section__fields > :where(.tx-check, .tx-switch) {
+    margin-inline-start: calc(var(--tx-label-col) + var(--tx-label-gap));
+  }
+}
+
+/* ---------- Text input, textarea ---------- */
+
+.tx-input,
+.tx-textarea,
+.tx-select__control {
+  display: block;
+  inline-size: 100%;
+  min-inline-size: 0;
+  block-size: var(--h-md);
+  padding: 0 12px;
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: 400 14px/20px var(--font-body);
+  letter-spacing: -0.005em;
+  appearance: none;
+  transition:
+    border-color var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease),
+    background-color var(--t-fast) var(--ease);
+}
+
+.tx-textarea {
+  block-size: auto;
+  min-block-size: 88px;
+  padding-block: 8px;
+  resize: vertical;
+}
+
+.tx-input::placeholder,
+.tx-textarea::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+
+.tx-input:hover,
+.tx-textarea:hover,
+.tx-select__control:hover {
+  border-color: var(--ink-2);
+}
+
+.tx-input:focus-visible,
+.tx-textarea:focus-visible,
+.tx-select__control:focus-visible {
+  border-color: var(--brand);
+}
+
+.tx-input[aria-invalid='true'],
+.tx-textarea[aria-invalid='true'],
+.tx-select__control[aria-invalid='true'] {
+  border-color: var(--danger);
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+.tx-input[aria-invalid='true']:focus-visible,
+.tx-textarea[aria-invalid='true']:focus-visible,
+.tx-select__control[aria-invalid='true']:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px var(--danger),
+    var(--focus-ring);
+}
+
+.tx-input:disabled,
+.tx-textarea:disabled,
+.tx-select__control:disabled {
+  border-color: var(--line);
+  background: var(--neutral-bg);
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
+.tx-input:read-only:not(:disabled),
+.tx-textarea:read-only:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+
+.tx-input--mono {
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+}
+
+.tx-input--numeric {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Width presets: a field is as wide as the answer it expects. */
+.tx-w-xs {
+  max-inline-size: 96px;
+}
+
+.tx-w-sm {
+  max-inline-size: 160px;
+}
+
+.tx-w-md {
+  max-inline-size: 320px;
+}
+
+.tx-w-lg {
+  max-inline-size: 480px;
+}
+
+/* An input with a fixed unit or symbol on either side ("px", "s"). */
+.tx-input-group {
+  display: flex;
+  align-items: center;
+  inline-size: 100%;
+  block-size: var(--h-md);
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  transition:
+    border-color var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease);
+}
+
+.tx-input-group:hover {
+  border-color: var(--ink-2);
+}
+
+.tx-input-group:has(.tx-input:focus-visible) {
+  border-color: var(--brand);
+  box-shadow: var(--focus-ring);
+}
+
+.tx-input-group:has(.tx-input[aria-invalid='true']) {
+  border-color: var(--danger);
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+.tx-input-group:has(.tx-input[aria-invalid='true']:focus-visible) {
+  box-shadow:
+    inset 0 0 0 1px var(--danger),
+    var(--focus-ring);
+}
+
+.tx-input-group:has(.tx-input:disabled) {
+  border-color: var(--line);
+  background: var(--neutral-bg);
+}
+
+.tx-input-group > .tx-input,
+.tx-input-group > .tx-input:focus-visible,
+.tx-input-group > .tx-input[aria-invalid='true'] {
+  flex: 1;
+  block-size: 100%;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.tx-input-group__affix {
+  flex: none;
+  padding-inline: 12px 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.tx-input-group__affix--end {
+  padding-inline: 0 12px;
+}
+
+/* ---------- Select ---------- */
+
+.tx-select {
+  position: relative;
+  display: block;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.tx-select__control {
+  padding-inline-end: 36px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.tx-select__chevron {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: 10px;
+  translate: 0 -50%;
+  color: var(--ink-2);
+  pointer-events: none;
+}
+
+.tx-select:has(.tx-select__control:disabled) .tx-select__chevron {
+  color: var(--ink-3);
+}
+
+.tx-select--sm {
+  inline-size: auto;
+}
+
+.tx-select--sm .tx-select__control {
+  block-size: var(--h-sm);
+  padding-inline: 10px 30px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.tx-select--sm .tx-select__chevron {
+  inset-inline-end: 8px;
+}
+
+/* ---------- SearchField ---------- */
+
+.tx-search {
+  position: relative;
+  display: block;
+  inline-size: min(320px, 100%);
+  min-inline-size: 0;
+}
+
+.tx-search__input {
+  display: block;
+  inline-size: 100%;
+  block-size: var(--h-md);
+  padding: 0 38px 0 40px;
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font: 400 14px/20px var(--font-body);
+  letter-spacing: -0.005em;
+  appearance: none;
+  transition:
+    border-color var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease);
+}
+
+.tx-search__input::placeholder {
+  color: var(--ink-2);
+  opacity: 1;
+}
+
+.tx-search__input::-webkit-search-cancel-button,
+.tx-search__input::-webkit-search-decoration {
+  appearance: none;
+}
+
+.tx-search__input:hover {
+  border-color: var(--ink-2);
+}
+
+.tx-search__input:focus-visible {
+  border-color: var(--brand);
+}
+
+.tx-search__icon {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 13px;
+  translate: 0 -50%;
+  color: var(--ink-2);
+  pointer-events: none;
+}
+
+.tx-search__clear {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: 6px;
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--neutral-bg);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.tx-search__clear:hover {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+/* A legend is laid out by the fieldset, not by the grid, so it brings its own gap. */
+legend.tx-field__label {
+  margin-block-end: 6px;
+}

@@ -32,12 +32,12 @@ const SUMMARY_TEXT: { readonly [K in DeliverySummary]: SummaryText } = {
   unpaired: {
     headline: 'No player paired',
     tone: 'neutral',
-    explanation: 'No player holds a credential for this display. Pair one to deliver content.',
+    explanation: 'No player holds a credential for this screen. Pair one to deliver content.',
   },
   nothing_published: {
     headline: 'Nothing published',
     tone: 'neutral',
-    explanation: 'A player is paired, but no playlist has been published to this display yet.',
+    explanation: 'A player is paired, but no playlist has been published to this screen yet.',
   },
   awaiting_player: {
     headline: 'Waiting for the first report',
@@ -84,7 +84,7 @@ const STAGING_PHASE_LABELS = {
 } as const;
 
 /**
- * Maps the API's status view to display text. Nothing here upgrades the picture:
+ * Maps the API's status view to text an operator reads. Nothing here upgrades the picture:
  * a "good" tone needs the API to say `in_sync` and not stale at the same time.
  *
  * `elapsedSinceFetchMs` is how long ago this browser received the view. The age of
@@ -105,7 +105,7 @@ export function presentStatus(
     tone = 'warn';
     headline = 'Status is inconsistent';
     explanation =
-      'The server reported an in-sync summary together with a stale or unpaired state. Treat the display as unverified.';
+      'The server reported an in-sync summary together with a stale or unpaired state. Treat the screen as unverified.';
   }
 
   let heartbeatAgeSeconds: number | null = null;

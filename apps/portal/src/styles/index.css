@@ -1,0 +1,23 @@
+/*
+ * Portal stylesheet entry. Order matters: fonts and tokens, the base layer, one file per
+ * component group.
+ * Page-specific styles belong next to their feature; the style guide imports its own file
+ * so it stays out of production bundles.
+ */
+
+@import './fonts.css';
+@import './tokens.css';
+@import './base.css';
+@import './layout.css';
+@import './button.css';
+@import './popover.css';
+@import './dialog.css';
+@import './toast.css';
+@import './forms.css';
+@import './controls.css';
+@import './chips.css';
+@import './table.css';
+@import './surface.css';
+@import './media.css';
+@import './nav.css';
+@import './shell.css';

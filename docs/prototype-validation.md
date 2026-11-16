@@ -273,3 +273,21 @@ Three independent reviewers (security, reliability, brief conformance) reported 
 | 25 | Setup's free-port probe ignores IPv6 (low) | `[::1]:54330` busy here | Probe checks both loopback addresses; README says to use `127.0.0.1` for database clients | Probe run by hand: 54330 reported busy on `::1` |
 
 Remaining known defects after this step: items 8, 12 and the storage half of 16; no Node 22 run; dev-server headers not checked by request; IndexedDB fixes unit-tested only; and every limitation in section 9.
+
+## 11. Portal v2 end-to-end run (2026-11-16)
+
+Added on 2026-11-16 for portal v2 stage A (`docs/portal-v2/stage-a.md`), branch `feat/portal-v2`, code uncommitted. The sections above record the M0 portal and are left as they were.
+
+The Playwright specs were rewritten for the v2 screens, so the suite grew from 25 to 27 tests (the dashboard counters and the push from the header are new). `npm run test:e2e` ran against the production builds of the portal and the player (`vite build` and `vite preview`, strict Content-Security-Policy), with real Keycloak sign-in and TOTP, the real API and the real validation worker, on Node 23.10 as before.
+
+| Run | Result |
+|---|---|
+| First full run, before fixes | 10 passed, 2 failed, 15 did not run (the journey is serial, so its later tests stop after a failure) |
+| Full run 1 after the fixes | **27 passed of 27**, 6.2 minutes, none skipped |
+| Full run 2 after the fixes, straight after | **27 passed of 27**, 6.1 minutes, none skipped |
+
+Both failures were test defects; no product defect was found. The dashboard test expected the screen counters on the seeded organisation, which has no screen (the card shows its empty state); it now checks the empty state, then the counters against `GET /api/overview` once the journey has a screen. The canvas edit test read the API before the save finished; it now waits for the "Canvas saved" notification. Throughout the journey the portal kept no web-storage key and reported no Content-Security-Policy violation.
+
+Measurements of the second run (`tests/.run/evidence/e2e-measurements.json`, not copied to `docs/evidence`): network outage 111 seconds with 489 playback samples, 38 item changes and no blank sample; reconnect to a fresh report 5 seconds; interrupted download to completed update 43 seconds, with no error still reported afterwards; API and database restart to the next player report 1 second.
+
+The same day, after the runs: `npm run typecheck` exit 0; `npx eslint . --max-warnings=0` exit 0; `npx prettier --check .` exit 0; `npm test` 1,255 passed of 1,255 (64 files); `npm run test:integration` 233 passed of 233 (20 files).

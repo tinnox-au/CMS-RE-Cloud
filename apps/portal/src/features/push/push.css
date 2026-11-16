@@ -1,0 +1,282 @@
+/* The "Push to screens" dialog (features/push/PushDialog.tsx). Tokens only. */
+
+.tx-push {
+  display: grid;
+  gap: var(--s-5);
+  min-inline-size: 0;
+}
+
+/* Where focus starts when the dialog opens. Not a control, so it shows no ring. */
+.tx-push:focus,
+.tx-push:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.tx-push__outcome {
+  display: grid;
+  gap: var(--s-3);
+}
+
+/* Row above the groups: the search field or the count, then the list controls. */
+.tx-push__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  min-block-size: var(--h-md);
+}
+
+.tx-push__search {
+  flex: 1 1 220px;
+}
+
+.tx-push__count {
+  flex: 1 1 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.tx-push__skeleton {
+  display: grid;
+  gap: var(--s-3);
+}
+
+/* ---------- A group: title, note, and its rows in one bordered list ---------- */
+
+.tx-push-group {
+  display: grid;
+  gap: var(--s-3);
+  min-inline-size: 0;
+}
+
+.tx-push-group__head {
+  display: grid;
+  gap: 2px;
+}
+
+.tx-push-group__title {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.tx-push-group__count {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 22px;
+  block-size: 22px;
+  padding-inline: 6px;
+  border-radius: var(--r-pill);
+  background: var(--neutral-bg);
+  color: var(--ink-2);
+  font: 600 12px/16px var(--font-body);
+  letter-spacing: 0;
+}
+
+.tx-push-group__note {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-push-list {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.tx-push-list__all {
+  display: flex;
+  align-items: center;
+  padding: var(--s-2) var(--s-4);
+  border-block-end: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.tx-push-list__all .tx-check {
+  gap: var(--s-3);
+}
+
+.tx-push-list__all .tx-check__label {
+  color: var(--ink-2);
+  font: 600 12px/16px var(--font-body);
+  letter-spacing: 0.02em;
+}
+
+.tx-push-list__all .tx-check__text {
+  align-self: center;
+  padding-block-start: 0;
+}
+
+.tx-push-list__more {
+  display: flex;
+  justify-content: center;
+  padding: var(--s-2) var(--s-4);
+  border-block-start: 1px solid var(--line);
+}
+
+.tx-push-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ---------- A row: tick or icon, screen and playlist, state, then any issues ---------- */
+
+.tx-push-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  transition: background-color var(--t-fast) var(--ease);
+}
+
+.tx-push-row + .tx-push-row {
+  border-block-start: 1px solid var(--line);
+}
+
+.tx-push-rows > .tx-push-row:has(.tx-check__input:not(:disabled)):hover {
+  background: var(--surface-2);
+}
+
+.tx-push-row__main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  min-inline-size: 0;
+}
+
+.tx-push-row__main .tx-check__text,
+.tx-push-row__text {
+  flex: 1 1 auto;
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+  padding-block-start: 2px;
+}
+
+.tx-push-row__lead {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  color: var(--ink-2);
+}
+
+.tx-push-row[data-state='blocked'] .tx-push-row__lead {
+  color: var(--danger);
+}
+
+.tx-push-row[data-state='up_to_date'] .tx-push-row__lead {
+  color: var(--ok);
+}
+
+.tx-push-row__name {
+  color: var(--ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.tx-push-row__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-inline-size: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.tx-push-row__meta > * {
+  flex: none;
+}
+
+.tx-push-row__meta > * + *::before {
+  content: '·';
+  margin-inline-end: var(--s-2);
+}
+
+/* A long playlist name gives way first; when it was last pushed stays whole. */
+.tx-push-row__meta > .tx-push-row__playlist {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  min-inline-size: 0;
+}
+
+.tx-push-row__playlist > svg {
+  flex: none;
+}
+
+.tx-push-row__playlist-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tx-push-row__side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-2);
+}
+
+.tx-push-row__issues {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: var(--s-1);
+  margin: 0;
+  margin-inline-start: calc(24px + var(--s-3));
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-sm);
+  background: var(--danger-bg);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 18px;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.tx-push-row--skeleton .tx-push-row__main {
+  align-items: center;
+}
+
+/* Narrow: the state moves under the name, in line with the text. */
+@media (max-width: 559px) {
+  /* The count takes its own line, so the two buttons stay side by side under it. */
+  .tx-push-dialog .tx-dialog__footer-start {
+    flex-basis: 100%;
+  }
+
+  .tx-push-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tx-push-row__side {
+    justify-content: flex-start;
+    margin-inline-start: calc(24px + var(--s-3));
+  }
+
+  .tx-push-row__meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .tx-push-row__meta > * + *::before {
+    content: none;
+  }
+
+  .tx-push-row__playlist-name {
+    overflow: visible;
+  }
+}

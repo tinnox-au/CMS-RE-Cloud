@@ -1,8 +1,11 @@
 /**
- * The first user journey of prototype M0, end to end, with nothing simulated:
- * Keycloak sign-in with TOTP, the real API process, the real validation worker
- * container, production builds of the portal and the player in separate browser
- * contexts. The tests run in order and share one display and one player.
+ * The first user journey, end to end, with nothing simulated: Keycloak sign-in with
+ * TOTP, the real API process, the real validation worker container, production builds of
+ * the portal (v2 screens, docs/portal-v2/stage-a.md) and the player in separate browser
+ * contexts. The tests run in order and share one screen and one player. The operator adds
+ * the screen in the wizard, pairs it there, builds a playlist, assigns it from the editor
+ * and pushes from the header's "Push to screens" button (decision P2-05). Throughout, the
+ * portal must keep nothing in web storage and must not trip its Content-Security-Policy.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -11,6 +14,27 @@ import { expect, test, type BrowserContext, type Page, type Route } from '@playw
 import { encodePng } from '../support/png.ts';
 import { operatorSession, type OperatorSession } from './support/contexts.ts';
 import type { MediaItem, StatusView } from './support/operator.ts';
+import {
+  addToPlaylist,
+  assignFromEditor,
+  closeAddMedia,
+  createPlaylistInPortal,
+  createScreenInWizard,
+  cspViolations,
+  expectNoWebStorage,
+  finishWizardWithoutContent,
+  mediaRow,
+  mediaStatus,
+  openScreenPage,
+  pageHeading,
+  pairInWizard,
+  pushFromHeader,
+  revokePlayer,
+  savePlaylistDraft,
+  signOutFromAccountMenu,
+  uploadInLibrary,
+  watchCspViolations,
+} from './support/portal.ts';
 import {
   activeLayer,
   expectPhase,
@@ -84,8 +108,14 @@ async function deviceToken(): Promise<string> {
 }
 
 async function openDisplayPage(): Promise<void> {
-  await operator.page.goto(`${PORTAL_URL}/displays/${displayId}`);
+  await openScreenPage(operator.page, displayId);
   await expect(operator.page.getByTestId('status-headline')).toBeVisible();
+}
+
+/** The standing portal rules, checked after each portal step of the journey. */
+async function expectPortalRulesKept(): Promise<void> {
+  await expectNoWebStorage(operator.page);
+  expect(await cspViolations(operator.page)).toEqual([]);
 }
 
 function inSyncWith(publicationId: string): (view: StatusView) => boolean {
@@ -102,6 +132,7 @@ test.beforeAll(async ({ browser }) => {
   playerContext = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   player = await playerContext.newPage();
   operator = await operatorSession(browser, 'operator', { fresh: true });
+  await watchCspViolations(operator.page);
 });
 
 test.afterAll(async () => {
@@ -116,31 +147,80 @@ test('operator is signed in through the identity provider (password and one-time
   const session = await operator.api.session();
   expect(session.authenticated).toBe(true);
   expect(session.organization?.name).toBe('TINNOX Internal');
-  await expect(operator.page.getByText('TINNOX Internal')).toBeVisible();
+  await operator.page.goto(`${PORTAL_URL}/`);
+  await expect(pageHeading(operator.page, 'Dashboard')).toBeVisible();
+  await expect(operator.page.getByText('TINNOX Internal').first()).toBeVisible();
   const cookies = await operator.context.cookies(PORTAL_URL);
   const sessionCookie = cookies.find((cookie) => cookie.name === 'tinnox_session');
   expect(sessionCookie?.httpOnly).toBe(true);
   expect(sessionCookie?.sameSite).toBe('Lax');
   // Nothing about the operator session is kept in script-readable storage.
-  const stored = await operator.page.evaluate(() => ({
-    local: Object.keys(localStorage).length,
-    session: Object.keys(sessionStorage).length,
-  }));
-  expect(stored).toEqual({ local: 0, session: 0 });
+  await expectPortalRulesKept();
 });
 
-test('operator creates a display with a canvas', async () => {
+/**
+ * On the dashboard (already open): the Screens card and the Library card show what
+ * `GET /api/overview` answers. With no screen the card shows its empty state instead of
+ * counters; with screens, the four counters of stage-a.md 3.1, as grouped in section 8.
+ */
+async function expectDashboardMatchesOverview(): Promise<{ screens: number }> {
   const page = operator.page;
-  await page.goto(`${PORTAL_URL}/displays`);
-  await page.getByRole('link', { name: 'New display' }).click();
-  await page.getByLabel('Name').fill(displayName);
-  await page.getByLabel('Width (px)').fill('1280');
-  await page.getByLabel('Height (px)').fill('720');
-  await page.getByRole('button', { name: 'Create display' }).click();
-  await page.waitForURL(/\/displays\/[0-9a-f-]{36}$/);
-  displayId = page.url().split('/').pop() ?? '';
-  await expect(page.getByRole('heading', { level: 1, name: displayName })).toBeVisible();
-  await expect(page.getByTestId('status-headline')).toHaveAttribute('data-summary', 'unpaired');
+  const overview = (await (await operator.api.get('/api/overview')).json()) as {
+    displays: { total: number; bySummary: Record<string, number> };
+    media: { total: number };
+    playlists: { total: number };
+  };
+  await expect(page.getByTestId('dashboard-library-media')).toHaveAttribute(
+    'data-count',
+    String(overview.media.total),
+  );
+  await expect(page.getByTestId('dashboard-library-playlists')).toHaveAttribute(
+    'data-count',
+    String(overview.playlists.total),
+  );
+  const card = page.getByTestId('dashboard-screens');
+  if (overview.displays.total === 0) {
+    await expect(card.getByRole('heading', { level: 3, name: 'No screens yet' })).toBeVisible();
+    await expect(page.locator('[data-testid^="dashboard-counter-"]')).toHaveCount(0);
+    return { screens: 0 };
+  }
+  const by = overview.displays.bySummary;
+  // The four counters of stage-a.md 3.1, as grouped in section 8.
+  const expected: Record<string, number> = {
+    in_sync: by['in_sync'] ?? 0,
+    updating: (by['updating'] ?? 0) + (by['awaiting_player'] ?? 0) + (by['nothing_published'] ?? 0),
+    attention: (by['error'] ?? 0) + (by['stale'] ?? 0),
+    unpaired: by['unpaired'] ?? 0,
+  };
+  for (const [status, count] of Object.entries(expected)) {
+    await expect(card.getByTestId(`dashboard-counter-${status}`)).toHaveAttribute(
+      'data-count',
+      String(count),
+    );
+  }
+  return { screens: overview.displays.total };
+}
+
+test('the dashboard counts screens and the library from the API', async () => {
+  // The run's database is rebuilt from the seed, which has no screen: the Screens card shows
+  // its empty state here. The four counters are checked against the API again once the
+  // journey has a screen (in the playlist test, before the push).
+  const page = operator.page;
+  await page.goto(`${PORTAL_URL}/dashboard`);
+  await expectDashboardMatchesOverview();
+  await page.screenshot({ path: shot('00-portal-dashboard.png') });
+  await expectPortalRulesKept();
+});
+
+test('operator adds a screen with a canvas in the wizard', async () => {
+  const page = operator.page;
+  displayId = await createScreenInWizard(page, { name: displayName, width: 1280, height: 720 });
+  const created = (await (await operator.api.get(`/api/displays/${displayId}`)).json()) as {
+    name: string;
+    canvas: { width: number; height: number };
+  };
+  expect(created).toMatchObject({ name: displayName, canvas: { width: 1280, height: 720 } });
+  expect((await operator.api.status(displayId)).summary).toBe('unpaired');
   await page.screenshot({ path: shot('01-portal-display-created.png') });
 });
 
@@ -150,10 +230,8 @@ test('player shows a pairing code; the operator claims it; the player registers'
   await expectPhase(player, 'pairing');
   await player.screenshot({ path: shot('02-player-pairing-code.png') });
 
-  const page = operator.page;
-  await page.getByLabel('Pairing code shown on the player').fill(code);
-  await page.getByRole('button', { name: 'Pair player' }).click();
-  await expect(page.getByText('Code accepted')).toBeVisible();
+  // Still on the wizard's pairing step.
+  await pairInWizard(operator.page, code);
 
   await expectPhase(player, 'idle');
   await expect(player.getByTestId('slate-display-name')).toHaveText(displayName);
@@ -171,55 +249,64 @@ test('player shows a pairing code; the operator claims it; the player registers'
   );
   expect(view.summary).toBe('nothing_published');
   expect(view.registrationId).toBe(registration?.registrationId);
+
+  // The wizard can be left without content; the screen's page shows the paired player.
+  await finishWizardWithoutContent(operator.page, displayId);
+  await expect(operator.page.getByTestId('status-headline')).toHaveAttribute(
+    'data-summary',
+    'nothing_published',
+  );
+  await expectPortalRulesKept();
 });
 
 test('operator uploads JPEG, PNG and MP4; the isolated worker validates them', async () => {
   const page = operator.page;
-  await page.goto(`${PORTAL_URL}/media`);
-  // File names are unique to this run, so a "Ready" chip can only belong to these uploads.
-  await page.locator('input[type="file"]').setInputFiles(
+  // File names are unique to this run, so a "Ready" status can only belong to these uploads.
+  await uploadInLibrary(
+    page,
     SAMPLES.map((sample) => ({
       name: sample.name,
       mimeType: sample.mimeType,
       buffer: readFileSync(join(fixturesDir, sample.source)),
     })),
   );
+  await closeAddMedia(page);
   for (const sample of SAMPLES) {
-    const card = page.locator('.media-card', { hasText: sample.name });
-    await expect(card).toHaveCount(1);
-    await expect(card.getByText('Ready', { exact: true })).toBeVisible({ timeout: 90_000 });
+    const row = mediaRow(page, sample.name);
+    await expect(row).toHaveCount(1);
+    await expect(mediaStatus(row)).toHaveAttribute('data-status', 'ready', { timeout: 90_000 });
   }
   // The previews are served from private storage through the session, and really decode.
-  const thumb = page.locator('.media-card', { hasText: SAMPLES[0].name }).locator('img').first();
+  const thumb = mediaRow(page, SAMPLES[0].name).locator('img').first();
   await expect(thumb).toBeVisible();
   await expect
     .poll(async () => thumb.evaluate((img: HTMLImageElement) => img.naturalWidth))
     .toBeGreaterThan(0);
   await page.screenshot({ path: shot('03-portal-media-ready.png') });
+  await expectPortalRulesKept();
 });
 
-test('operator builds a playlist and publishes it to the display', async () => {
+test('operator builds a playlist, assigns it and pushes it from the header', async () => {
   const page = operator.page;
-  await page.goto(`${PORTAL_URL}/playlists`);
-  await page.getByLabel('Name').fill(playlistName);
-  await page.getByRole('button', { name: 'Create playlist' }).click();
-  await page.waitForURL(/\/playlists\/[0-9a-f-]{36}$/);
-  playlistId = page.url().split('/').pop() ?? '';
-
-  for (const { name } of SAMPLES) {
-    await page.locator('.add-row', { hasText: name }).getByRole('button', { name: /^Add/ }).click();
-  }
+  playlistId = await createPlaylistInPortal(page, playlistName);
+  for (const { name } of SAMPLES) await addToPlaylist(page, name);
   const durations = page.getByLabel('Seconds on screen');
   await expect(durations).toHaveCount(2);
   await durations.nth(0).fill('3');
   await durations.nth(1).fill('3');
-  await page.getByRole('button', { name: 'Save draft' }).click();
-  await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+  await savePlaylistDraft(page);
 
-  await page.getByLabel('Display', { exact: true }).selectOption(displayId);
-  await page.getByRole('button', { name: 'Publish to display' }).click();
-  await expect(page.getByText('Publication created')).toBeVisible();
+  // Assigning changes nothing on the screen until a push (P2-05).
+  await assignFromEditor(page, displayName);
+  expect((await operator.api.status(displayId)).desired).toBeNull();
+
+  await page.goto(`${PORTAL_URL}/dashboard`);
+  // The journey's screen now exists: the four counters equal the API's overview.
+  expect((await expectDashboardMatchesOverview()).screens).toBeGreaterThan(0);
+  const summary = await pushFromHeader(page, [displayId]);
+  expect(summary).toContain('Pushed to 1 screen');
   await page.screenshot({ path: shot('04-portal-published.png') });
+  await expectPortalRulesKept();
 
   const view = await operator.api.status(displayId);
   v1 = view.desired?.publicationId ?? '';
@@ -288,12 +375,8 @@ test('editing the draft does not change the live publication', async () => {
 
   const page = operator.page;
   await page.goto(`${PORTAL_URL}/playlists/${playlistId}`);
-  await page
-    .getByRole('button', { name: /^Remove/ })
-    .first()
-    .click();
-  await page.getByRole('button', { name: 'Save draft' }).click();
-  await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+  await page.getByTestId('playlist-editor-item-remove').first().click();
+  await savePlaylistDraft(page);
   const draft = (await (await operator.api.get(`/api/playlists/${playlistId}`)).json()) as {
     items: unknown[];
   };
@@ -314,11 +397,10 @@ test('editing the draft does not change the live publication', async () => {
   expect((await operator.api.status(displayId)).desired?.publicationId).toBe(v1);
 });
 
-test('publishing a second version switches the player over', async () => {
+test('pushing a second version from the header switches the player over', async () => {
   const page = operator.page;
-  await page.getByLabel('Display', { exact: true }).selectOption(displayId);
-  await page.getByRole('button', { name: 'Publish to display' }).click();
-  await expect(page.getByText('Publication created')).toBeVisible();
+  await page.goto(`${PORTAL_URL}/dashboard`);
+  expect(await pushFromHeader(page, [displayId])).toContain('Pushed to 1 screen');
   const desired = (await operator.api.status(displayId)).desired?.publicationId ?? '';
   expect(desired).not.toBe(v1);
   v2 = desired;
@@ -605,11 +687,7 @@ test('revoking the player stops its access; it shows the unregistered screen and
   const signedUrl = signed.urls[0]?.url ?? '';
   expect((await fetch(signedUrl)).status).toBe(200);
 
-  await openDisplayPage();
-  const page = operator.page;
-  await page.getByRole('button', { name: 'Revoke player' }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Revoke player' }).click();
-  await expect(page.getByText('The player credential was revoked.')).toBeVisible();
+  await revokePlayer(operator.page, displayId);
 
   // Server side, at once: the credential and even the unexpired signed URL are dead.
   expect((await playerFetch('/player/manifest', token)).status).toBe(401);
@@ -667,11 +745,14 @@ test('the audit trail records the journey without secrets', async () => {
   expect(text).not.toMatch(/sig=|Bearer |tinnox_session/);
   const page = operator.page;
   await page.goto(`${PORTAL_URL}/audit`);
-  await expect(page.getByRole('heading', { level: 1, name: 'Audit' })).toBeVisible();
-  await expect(page.getByText('publication.create').first()).toBeVisible();
+  await expect(pageHeading(page, 'Audit log')).toBeVisible();
+  await expect(
+    page.getByTestId('audit-raw-action').filter({ hasText: 'publication.create' }).first(),
+  ).toBeVisible();
   await page.screenshot({ path: shot('12-portal-audit.png') });
-  // Sign-out ends the server session.
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  await expectPortalRulesKept();
+  // Sign-out, from the account menu, ends the server session.
+  await signOutFromAccountMenu(page);
   await expect
     .poll(async () => (await operator.api.session()).authenticated, { timeout: 30_000 })
     .toBe(false);

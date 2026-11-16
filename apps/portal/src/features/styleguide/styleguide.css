@@ -1,0 +1,360 @@
+/*
+ * Layout of the development-only style guide. Imported by StyleguidePage.tsx, not by
+ * styles/index.css, so none of it reaches a production bundle.
+ */
+
+/* As wide as the application's content column, so the samples have the room real pages have. */
+.tx-sg {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-inline-size: var(--content-max);
+  margin-inline: auto;
+  padding: 0 var(--gutter) var(--s-9);
+}
+
+.tx-sg__header {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: var(--s-2);
+  padding-block: var(--s-8) var(--s-6);
+  border-block-end: 1px solid var(--line);
+}
+
+.tx-sg__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--ink);
+  font: 800 15px/20px var(--font-head);
+  letter-spacing: 0.08em;
+}
+
+.tx-sg__brand-tag {
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  font: 600 11px/16px var(--font-body);
+  letter-spacing: 0.04em;
+}
+
+.tx-sg__lead {
+  max-inline-size: 72ch;
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.tx-sg__nav {
+  display: none;
+}
+
+.tx-sg__main {
+  display: grid;
+  gap: var(--s-9);
+  min-inline-size: 0;
+  padding-block-start: var(--s-7);
+}
+
+.tx-sg__main:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+@media (min-width: 1100px) {
+  .tx-sg {
+    grid-template-columns: 184px minmax(0, 1fr);
+    column-gap: var(--s-8);
+  }
+
+  .tx-sg__nav {
+    position: sticky;
+    inset-block-start: var(--s-6);
+    align-self: start;
+    display: block;
+    max-block-size: calc(100dvh - var(--s-8));
+    padding-block-start: var(--s-7);
+    overflow-y: auto;
+  }
+}
+
+.tx-sg__nav-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tx-sg__nav-link {
+  display: block;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.tx-sg__nav-link:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.tx-sg-section {
+  display: grid;
+  gap: var(--s-5);
+  min-inline-size: 0;
+  scroll-margin-block-start: var(--s-6);
+}
+
+.tx-sg-section__head {
+  display: grid;
+  gap: var(--s-1);
+  max-inline-size: 72ch;
+}
+
+.tx-sg-demo {
+  display: grid;
+  gap: var(--s-2);
+  min-inline-size: 0;
+}
+
+.tx-sg-demo__stage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3) var(--s-4);
+  min-inline-size: 0;
+  padding: var(--s-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.tx-sg-demo__stage--stack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--s-4);
+}
+
+/* For pieces that live directly on the page background, such as the list page pattern. */
+.tx-sg-demo__stage--page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-4);
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.tx-sg-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: var(--s-4);
+  align-items: start;
+}
+
+/* Colour tokens */
+
+.tx-sg-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tx-sg-swatch {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-3);
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.tx-sg-swatch__chip {
+  inline-size: 44px;
+  block-size: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--tx-sg-swatch);
+}
+
+.tx-sg-swatch__text {
+  display: grid;
+  min-inline-size: 0;
+}
+
+.tx-sg-sample {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 56px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  background: var(--tx-sg-back);
+  color: var(--tx-sg-fore);
+  font-weight: 600;
+}
+
+.tx-sg-sample--ring {
+  box-shadow: inset 0 0 0 3px var(--tx-sg-fore);
+  color: transparent;
+}
+
+/* Typography */
+
+.tx-sg-type {
+  display: grid;
+  margin: 0;
+}
+
+.tx-sg-type__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-1) var(--s-6);
+  align-items: baseline;
+  padding-block: var(--s-3);
+  border-block-end: 1px solid var(--line);
+}
+
+.tx-sg-type__row:last-child {
+  border-block-end: 0;
+}
+
+@media (min-width: 720px) {
+  .tx-sg-type__row {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+}
+
+.tx-sg-type__spec {
+  display: grid;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* A dark stage for pieces meant to sit on a brand fill. */
+.tx-sg-on-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  color: var(--on-brand);
+  font-weight: 600;
+}
+
+.tx-sg-thumb-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s-5);
+}
+
+.tx-sg-thumb-row > figure {
+  display: grid;
+  gap: var(--s-2);
+  margin: 0;
+}
+
+.tx-sg-thumb-fill {
+  inline-size: 240px;
+}
+
+.tx-sg-skeleton-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-3);
+  inline-size: min(100%, 360px);
+}
+
+.tx-sg-skeleton-lines {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.tx-sg-counter {
+  display: grid;
+  gap: 2px;
+}
+
+.tx-sg-counter__value {
+  font: 700 26px/32px var(--font-head);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.tx-sg-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tx-sg-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  min-block-size: 52px;
+  padding: var(--s-2) var(--s-4) var(--s-2) var(--s-6);
+  border-block-end: 1px solid var(--line);
+}
+
+.tx-sg-list > li:last-child {
+  border-block-end: 0;
+}
+
+.tx-sg-form {
+  max-inline-size: 760px;
+}
+
+.tx-sg-code-field {
+  max-inline-size: 240px;
+}
+
+.tx-sg-counters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-4);
+}
+
+/* Something colourful for the glass sample to blur. */
+.tx-sg-glass-stage {
+  position: relative;
+  block-size: 168px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.tx-sg-glass-stage__art {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 30%, var(--brand) 0 13%, transparent 13.5%),
+    radial-gradient(circle at 52% 12%, var(--tag-amber) 0 9%, transparent 9.5%),
+    radial-gradient(circle at 78% 42%, var(--tag-pink) 0 11%, transparent 11.5%),
+    radial-gradient(circle at 36% 78%, var(--tag-sky) 0 12%, transparent 12.5%);
+}
+
+.tx-sg-glass-stage__bar {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  block-size: var(--header-h);
+  padding-inline: var(--s-6);
+  border-block-end: 1px solid var(--line);
+}

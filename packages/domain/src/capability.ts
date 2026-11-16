@@ -38,14 +38,14 @@ export function checkCapabilities(
     issues.push({
       index: null,
       code: 'canvas_too_large',
-      message: `The display canvas is ${draft.canvas.width}x${draft.canvas.height}; ${route} supports up to ${profile.maxCanvas.width}x${profile.maxCanvas.height}.`,
+      message: `The screen canvas is ${draft.canvas.width}x${draft.canvas.height}; ${route} supports up to ${profile.maxCanvas.width}x${profile.maxCanvas.height}.`,
     });
   }
   if (draft.contentRect !== null && !profile.supportsContentRect) {
     issues.push({
       index: null,
       code: 'content_rect_unsupported',
-      message: `${route} cannot place content in a sub-rectangle of the output frame. Remove the content rectangle from the display.`,
+      message: `${route} cannot place content in a sub-rectangle of the output frame. Remove the content rectangle from the screen.`,
     });
   }
   if (draft.items.length > profile.maxItems) {

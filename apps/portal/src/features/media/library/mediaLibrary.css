@@ -1,0 +1,456 @@
+/*
+ * The media library and the Add media dialog (docs/portal-v2/stage-a.md, section 3.2). The
+ * page is built from the component kit; these rules add only what is particular to it.
+ * Tokens only, no raw colours.
+ */
+
+/* ---------- Filter rows ---------- */
+
+.tx-media-library__statuses {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.tx-media-library__folders {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  min-inline-size: 0;
+}
+
+/*
+ * Loaded: the chips wrap in the first column; "New folder" and the chosen folder's menu keep
+ * the second, so choosing a folder (which brings its menu) never reflows the row.
+ */
+.tx-media-library__folders--ready {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.tx-media-library__folder-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  min-inline-size: 0;
+}
+
+.tx-media-library__folder-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+
+.tx-media-library__folder-actions {
+  display: inline-flex;
+  flex: none;
+  inline-size: 28px;
+}
+
+/* Narrow: the tools take their own line under the chips. */
+@media (max-width: 639px) {
+  .tx-media-library__folders--ready {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The test hooks around each chip take no room of their own. */
+.tx-media-library__chip {
+  display: contents;
+}
+
+/*
+ * A folder chip's label is a row: the name takes the ellipsis, the count keeps its room. The
+ * label clips, so it is also the positioning box of the visually hidden words inside it;
+ * otherwise those absolutely placed words sit past the clip and widen the page.
+ */
+.tx-media-library__chip .tx-chip__label {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  min-inline-size: 0;
+}
+
+.tx-media-library__chip-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tx-media-library__chip-count {
+  flex: none;
+  margin-inline-start: var(--s-1);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+/* On the filled background of the chosen chip --ink-2 falls under 4.5:1 in the light theme. */
+.tx-media-library__chip button.tx-chip[aria-pressed='true'] .tx-media-library__chip-count {
+  color: var(--ink);
+}
+
+/* ---------- Toolbar ---------- */
+
+.tx-media-library__count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-3);
+  min-inline-size: 0;
+}
+
+.tx-media-library__checking-note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-media-library__meter {
+  min-inline-size: 220px;
+}
+
+.tx-media-library__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* In list view the column headers sort; the select shows only once the table drops Size. */
+.tx-media-library__sort--list {
+  display: none;
+}
+
+.tx-media-library:has(.tx-table[data-drop]) .tx-media-library__sort--list {
+  display: inline-flex;
+}
+
+.tx-media-library__uploads-warn {
+  color: var(--warn);
+}
+
+@media (max-width: 639px) {
+  .tx-media-library__meter {
+    flex-basis: 100%;
+    min-inline-size: 0;
+  }
+}
+
+/* ---------- Table and tiles ---------- */
+
+.tx-media-library__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--ink-2);
+}
+
+.tx-media-library__none {
+  color: var(--ink-2);
+}
+
+.tx-media-library__status {
+  white-space: nowrap;
+}
+
+/*
+ * The second line of the name cell repeats Details and Size. It shows once the table has
+ * dropped a column for want of room (the kit's DataTable sets `data-drop`), so a narrow
+ * window still reads them.
+ */
+.tx-media-library__summary {
+  display: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.tx-media-library .tx-table[data-drop] .tx-media-library__summary {
+  display: inline;
+}
+
+/* Why a file failed: always shown, in full, wrapping inside the name cell. */
+.tx-media-library__failure {
+  display: block;
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 18px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* In a tile: the explanation on two lines at most, the code on a line of its own. */
+.tx-media-library__failure--compact {
+  display: grid;
+  justify-items: start;
+  gap: var(--s-1);
+}
+
+.tx-media-library__failure-message {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.tx-media-library__failure-detail {
+  color: var(--ink-2);
+}
+
+.tx-media-library__tile-meta {
+  display: grid;
+  gap: var(--s-1);
+  justify-items: start;
+  min-inline-size: 0;
+}
+
+.tx-media-library__tile-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-3);
+  color: var(--ink-2);
+}
+
+/* Tiles of one row share a height; keep each tile's content at its top. */
+.tx-media-library .tx-tile {
+  align-content: start;
+}
+
+.tx-media-library__grid-empty,
+.tx-media-library__grid-footer {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+/* ---------- Drop anywhere ---------- */
+
+.tx-media-library__drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-float);
+  display: grid;
+  place-items: center;
+  padding: var(--s-6);
+  background: var(--scrim);
+  pointer-events: none;
+}
+
+.tx-media-library__drop-card {
+  display: grid;
+  justify-items: center;
+  gap: var(--s-2);
+  padding: var(--s-8) var(--s-9);
+  border: 2px dashed var(--brand);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+  text-align: center;
+}
+
+.tx-media-library__drop-icon {
+  inline-size: 32px;
+  block-size: 32px;
+  color: var(--brand);
+  stroke-width: 1.75;
+}
+
+/* ---------- Add media dialog ---------- */
+
+.tx-media-library__dropzone {
+  display: grid;
+  justify-items: center;
+  gap: var(--s-2);
+  padding: var(--s-7) var(--s-5);
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  text-align: center;
+  transition:
+    border-color var(--t-fast) var(--ease),
+    background-color var(--t-fast) var(--ease);
+}
+
+.tx-media-library__dropzone.is-dragging {
+  border-color: var(--brand);
+  background: var(--surface-3);
+}
+
+/* With files queued: one row, so the queue stays in view. */
+.tx-media-library__dropzone--compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2) var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  text-align: start;
+}
+
+.tx-media-library__dropzone--compact .tx-media-library__dropzone-title {
+  font-weight: 500;
+}
+
+.tx-media-library__dropzone-icon {
+  display: grid;
+  place-items: center;
+  inline-size: 56px;
+  block-size: 56px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--brand);
+}
+
+.tx-media-library__dropzone-title {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.tx-media-library__dropzone p {
+  margin: 0;
+}
+
+.tx-media-library__uploads {
+  position: relative;
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  list-style: none;
+}
+
+.tx-media-library__upload {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-4);
+}
+
+.tx-media-library__upload + .tx-media-library__upload {
+  border-block-start: 1px solid var(--line);
+}
+
+.tx-media-library__upload-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2) var(--s-3);
+}
+
+.tx-media-library__upload-name {
+  display: grid;
+  min-inline-size: 0;
+  flex: 1 1 200px;
+}
+
+.tx-media-library__upload-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-2);
+}
+
+.tx-media-library__upload-note {
+  margin: 0;
+}
+
+.tx-media-library__upload-open {
+  color: var(--brand);
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+
+.tx-media-library__upload-open:hover {
+  color: var(--brand-hover);
+}
+
+.tx-media-library__checking {
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.tx-media-library__bar {
+  inline-size: 100%;
+  block-size: 6px;
+  border: 0;
+  border-radius: var(--r-pill);
+  overflow: hidden;
+  background: var(--neutral-bg);
+  color: var(--brand);
+  appearance: none;
+}
+
+.tx-media-library__bar::-webkit-progress-bar {
+  border-radius: var(--r-pill);
+  background: var(--neutral-bg);
+}
+
+.tx-media-library__bar::-webkit-progress-value {
+  border-radius: var(--r-pill);
+  background: var(--brand);
+  transition: inline-size var(--t) var(--ease);
+}
+
+.tx-media-library__bar::-moz-progress-bar {
+  border-radius: var(--r-pill);
+  background: var(--brand);
+}
+
+.tx-media-library__progress-note {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Delete dialog ---------- */
+
+.tx-media-library__names {
+  position: relative;
+  display: grid;
+  max-block-size: 240px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.tx-media-library__names li {
+  display: grid;
+  gap: 2px;
+  padding: var(--s-2) var(--s-3);
+}
+
+.tx-media-library__names li + li {
+  border-block-start: 1px solid var(--line);
+}
+
+.tx-media-library__names-note,
+.tx-media-library__hint {
+  display: block;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-media-library__failures {
+  display: grid;
+  gap: var(--s-2);
+  margin: 0;
+  padding-inline-start: var(--s-5);
+}

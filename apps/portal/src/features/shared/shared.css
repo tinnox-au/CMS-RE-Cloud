@@ -1,0 +1,763 @@
+/*
+ * Shared feature parts (features/shared): tag chips, filter and picker, folder choice, media
+ * thumbnails and playlist mosaics, picker dialogs and status pills. Tokens only; no colour
+ * is written here. Class prefix `tx-shared-`.
+ */
+
+/* ---------- Tag colours ---------- */
+
+/* One custom property per colour name of the API, read by dots and swatches. */
+.tx-shared-colour--teal {
+  --tx-shared-colour: var(--tag-teal);
+}
+
+.tx-shared-colour--sky {
+  --tx-shared-colour: var(--tag-sky);
+}
+
+.tx-shared-colour--slate {
+  --tx-shared-colour: var(--tag-slate);
+}
+
+.tx-shared-colour--green {
+  --tx-shared-colour: var(--tag-green);
+}
+
+.tx-shared-colour--amber {
+  --tx-shared-colour: var(--tag-amber);
+}
+
+.tx-shared-colour--red {
+  --tx-shared-colour: var(--tag-red);
+}
+
+.tx-shared-colour--violet {
+  --tx-shared-colour: var(--tag-violet);
+}
+
+.tx-shared-colour--pink {
+  --tx-shared-colour: var(--tag-pink);
+}
+
+.tx-shared-dot {
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--tx-shared-colour, var(--tag-slate));
+}
+
+/* ---------- TagChips ---------- */
+
+.tx-shared-tagchips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tx-shared-tagchips__item {
+  display: flex;
+  min-inline-size: 0;
+  max-inline-size: 160px;
+}
+
+.tx-shared-tagchips__more {
+  flex: none;
+  display: flex;
+}
+
+.tx-shared-tagchips__more .tx-chip {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+/* ---------- TagFilter ---------- */
+
+.tx-shared-tagfilter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  min-inline-size: 0;
+}
+
+.tx-shared-tagfilter .tx-chip {
+  max-inline-size: 200px;
+}
+
+/* ---------- TagPicker and its checklist ---------- */
+
+.tx-shared-tagpicker {
+  display: grid;
+  gap: var(--s-3);
+  min-inline-size: 0;
+}
+
+.tx-shared-tagpicker__chosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  min-block-size: 28px;
+}
+
+.tx-shared-tagpicker__chosen .tx-chip {
+  max-inline-size: 240px;
+}
+
+.tx-shared-checklist {
+  display: grid;
+  gap: var(--s-3);
+  min-inline-size: 0;
+}
+
+.tx-shared-checklist .tx-search {
+  inline-size: 100%;
+  max-inline-size: none;
+}
+
+.tx-shared-checklist__empty {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* The list box: a hairline frame with rows like menu items. It scrolls by itself. */
+.tx-shared-options {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  max-block-size: 232px;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  list-style: none;
+}
+
+.tx-shared-options[hidden] {
+  display: none;
+}
+
+.tx-shared-options--loading {
+  gap: var(--s-3);
+  padding: var(--s-4);
+}
+
+.tx-shared-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-block-size: 36px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tx-shared-option:hover {
+  background: var(--surface-2);
+}
+
+/* The option the keyboard is on, while the search field has the focus. */
+.tx-shared-checklist:has(.tx-search__input:focus) .tx-shared-option[data-active] {
+  background: var(--surface-2);
+}
+
+.tx-shared-checklist:has(.tx-search__input:focus-visible) .tx-shared-option[data-active] {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+
+.tx-shared-option[aria-disabled='true'] {
+  color: var(--ink-2);
+  cursor: not-allowed;
+}
+
+.tx-shared-option__box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 18px;
+  block-size: 18px;
+  border: 1.5px solid var(--line-control);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  color: var(--on-brand);
+}
+
+.tx-shared-option[data-state='all'] .tx-shared-option__box,
+.tx-shared-option[data-state='some'] .tx-shared-option__box {
+  border-color: var(--brand);
+  background: var(--brand);
+}
+
+.tx-shared-option[aria-disabled='true'] .tx-shared-option__box {
+  opacity: 0.45;
+}
+
+.tx-shared-option__box--plain {
+  border-color: transparent;
+  background: transparent;
+  color: var(--brand);
+}
+
+.tx-shared-option__name {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-shared-option--create .tx-shared-option__name {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.tx-shared-option--create[aria-disabled='true'] .tx-shared-option__name,
+.tx-shared-option--create[aria-disabled='true'] .tx-shared-option__box--plain {
+  color: var(--ink-3);
+}
+
+.tx-shared-option__note {
+  flex: none;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* The colour of a new tag: eight radio buttons drawn as swatches. */
+.tx-shared-swatches {
+  display: grid;
+  gap: var(--s-2);
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.tx-shared-swatches__legend {
+  padding: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-shared-swatches__legend .tx-strong {
+  color: var(--ink);
+}
+
+.tx-shared-swatches__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1);
+}
+
+.tx-shared-swatches__create {
+  margin-inline-start: auto;
+}
+
+.tx-shared-swatch {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 32px;
+  block-size: 32px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tx-shared-swatch__input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  border-radius: 50%;
+  appearance: none;
+  cursor: pointer;
+}
+
+.tx-shared-swatch__input:disabled {
+  cursor: not-allowed;
+}
+
+.tx-shared-swatch__dot {
+  display: grid;
+  place-items: center;
+  inline-size: 22px;
+  block-size: 22px;
+  border-radius: 50%;
+  background: var(--tx-shared-colour, var(--tag-slate));
+  color: var(--surface);
+  pointer-events: none;
+  transition: scale var(--t-fast) var(--ease);
+}
+
+.tx-shared-swatch__dot .tx-icon {
+  opacity: 0;
+}
+
+.tx-shared-swatch__input:checked + .tx-shared-swatch__dot {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--tx-shared-colour, var(--tag-slate));
+}
+
+.tx-shared-swatch__input:checked + .tx-shared-swatch__dot .tx-icon {
+  opacity: 1;
+}
+
+.tx-shared-swatch__input:disabled + .tx-shared-swatch__dot {
+  opacity: 0.45;
+}
+
+/* ---------- Folder choice ---------- */
+
+.tx-shared-folderselect {
+  display: grid;
+  gap: var(--s-3);
+  min-inline-size: 0;
+}
+
+.tx-shared-folderselect__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.tx-shared-folderselect__row .tx-select {
+  flex: 1 1 200px;
+  min-inline-size: 0;
+}
+
+.tx-shared-newfolder {
+  display: grid;
+  gap: 6px;
+  min-inline-size: 0;
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+.tx-shared-newfolder__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.tx-shared-newfolder__row .tx-input {
+  flex: 1 1 180px;
+  inline-size: auto;
+  min-inline-size: 0;
+}
+
+/* ---------- Failure list of a bulk change ---------- */
+
+.tx-shared-failures {
+  display: grid;
+  gap: var(--s-1);
+  margin: var(--s-1) 0 0;
+  padding-inline-start: var(--s-5);
+}
+
+/* ---------- Picker lists (playlists, screens, folders) ---------- */
+
+.tx-shared-picker-search .tx-search,
+.tx-shared-picker-search.tx-search {
+  inline-size: 100%;
+  max-inline-size: none;
+}
+
+.tx-shared-picklist {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.tx-shared-picklist__all {
+  padding: 0 var(--s-3) var(--s-2);
+  border-block-end: 1px solid var(--line);
+}
+
+.tx-shared-pickrow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 56px;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background-color var(--t-fast) var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tx-shared-pickrow:hover {
+  background: var(--surface-2);
+}
+
+.tx-shared-pickrow:has(input:checked) {
+  background: var(--surface-2);
+}
+
+.tx-shared-pickrow--disabled,
+.tx-shared-pickrow--disabled:hover {
+  background: transparent;
+  cursor: not-allowed;
+}
+
+.tx-shared-pickrow--disabled .tx-shared-pickrow__title {
+  color: var(--ink-2);
+}
+
+.tx-shared-pickrow--disabled .tx-shared-pickrow__media {
+  opacity: 0.55;
+}
+
+/* A checkbox row is the kit's Checkbox with the row content as its label. */
+.tx-shared-pickrow.tx-check {
+  align-items: center;
+}
+
+.tx-shared-pickrow .tx-check__text {
+  flex: 1;
+  display: block;
+  min-inline-size: 0;
+  padding: 0;
+}
+
+.tx-shared-pickrow .tx-check__label {
+  display: block;
+}
+
+.tx-shared-pickrow__content {
+  flex: 1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--s-3);
+  min-inline-size: 0;
+}
+
+.tx-shared-pickrow__media {
+  grid-column: 1;
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+}
+
+.tx-shared-pickrow__icon {
+  display: grid;
+  place-items: center;
+  inline-size: 40px;
+  block-size: 40px;
+  border-radius: var(--r-sm);
+  background: var(--neutral-bg);
+  color: var(--ink-2);
+}
+
+/* As wide as a playlist mosaic, so "No playlist" lines up with the rows under it. */
+.tx-shared-pickrow__icon--wide {
+  inline-size: 72px;
+}
+
+.tx-shared-pickrow__text {
+  grid-column: 2;
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.tx-shared-pickrow__title {
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-shared-pickrow__meta {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-shared-pickrow__end {
+  grid-column: 3;
+  display: flex;
+  justify-content: flex-end;
+  min-inline-size: 0;
+  text-align: end;
+}
+
+/* A radio button: an 18 px ring in a 24 px target, the dot when chosen. */
+.tx-shared-radio {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+}
+
+.tx-shared-radio__input {
+  display: block;
+  inline-size: 18px;
+  block-size: 18px;
+  margin: 0;
+  border: 1.5px solid var(--line-control);
+  border-radius: 50%;
+  background: var(--surface);
+  appearance: none;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease);
+}
+
+.tx-shared-radio__input:hover:not(:disabled) {
+  border-color: var(--ink-2);
+}
+
+.tx-shared-radio__input:checked {
+  border-color: var(--brand);
+}
+
+.tx-shared-radio__input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tx-shared-radio__dot {
+  position: absolute;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--brand);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tx-shared-radio__input:checked + .tx-shared-radio__dot {
+  opacity: 1;
+}
+
+.tx-shared-pickrow--skeleton,
+.tx-shared-pickrow--skeleton:hover {
+  background: transparent;
+  cursor: default;
+}
+
+.tx-shared-pickrow--skeleton .tx-shared-pickrow__text {
+  flex: 1;
+}
+
+.tx-shared-pickrow__skeleton-mark {
+  flex: none;
+  inline-size: 18px;
+  block-size: 18px;
+  margin-inline: 3px;
+}
+
+.tx-shared-pickrow__skeleton-media {
+  flex: none;
+  inline-size: 72px;
+  block-size: 40px;
+}
+
+.tx-shared-pickrow__skeleton-line {
+  inline-size: 48%;
+}
+
+.tx-shared-pickrow__skeleton-line--short {
+  inline-size: 28%;
+}
+
+/* Under 560 px the status moves under the name instead of squeezing it. */
+@media (max-width: 559px) {
+  .tx-shared-pickrow__content {
+    row-gap: var(--s-1);
+  }
+
+  .tx-shared-pickrow__media {
+    align-self: start;
+  }
+
+  .tx-shared-pickrow__end {
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-start;
+    text-align: start;
+  }
+
+  .tx-shared-pickrow .tx-shared-pickrow__end .tx-shared-status {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-1) var(--s-2);
+  }
+}
+
+/* ---------- MediaThumb ---------- */
+
+.tx-shared-thumb {
+  position: relative;
+  flex: none;
+  display: block;
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.tx-shared-thumb--sm {
+  inline-size: 44px;
+}
+
+.tx-shared-thumb--md {
+  inline-size: 72px;
+}
+
+.tx-shared-thumb--lg {
+  inline-size: 128px;
+}
+
+/* Processing and failed media: the state covers the kind placeholder of the kit's Thumb. */
+.tx-shared-thumb__state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: var(--neutral-bg);
+  color: var(--ink-2);
+}
+
+.tx-shared-thumb__state--failed {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* ---------- PlaylistMosaic ---------- */
+
+.tx-shared-mosaic {
+  position: relative;
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  inline-size: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--neutral-bg);
+  color: var(--ink-3);
+}
+
+.tx-shared-mosaic--sm {
+  gap: 1px;
+  inline-size: 44px;
+  aspect-ratio: 1;
+}
+
+.tx-shared-mosaic--md {
+  gap: 1px;
+  inline-size: 72px;
+}
+
+.tx-shared-mosaic--lg {
+  inline-size: 128px;
+}
+
+.tx-shared-mosaic__empty {
+  grid-area: 1 / 1 / -1 / -1;
+  display: grid;
+  place-items: center;
+}
+
+.tx-shared-mosaic__cell {
+  position: relative;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+.tx-shared-mosaic[data-count='1'] .tx-shared-mosaic__cell {
+  grid-area: 1 / 1 / -1 / -1;
+}
+
+.tx-shared-mosaic[data-count='2'] .tx-shared-mosaic__cell,
+.tx-shared-mosaic[data-count='3'] .tx-shared-mosaic__cell:first-child {
+  grid-row: 1 / -1;
+}
+
+/* Inside a cell the thumbnail takes the cell's shape, not its own. */
+.tx-shared-mosaic__cell .tx-shared-thumb,
+.tx-shared-mosaic__cell .tx-thumb {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+
+/* A cell is too small for the kit's placeholder icon; an empty cell stays a plain tile. */
+.tx-shared-mosaic__cell .tx-thumb__placeholder .tx-icon {
+  display: none;
+}
+
+/* ---------- ScreenStatusPill, PushStatePill ---------- */
+
+.tx-shared-status {
+  display: inline-grid;
+  justify-items: start;
+  gap: 2px;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  vertical-align: middle;
+}
+
+.tx-shared-status--inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-2);
+}
+
+.tx-shared-status__detail {
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tx-shared-pickrow__end .tx-shared-status {
+  justify-items: end;
+}
+
+.tx-shared-push {
+  display: inline-flex;
+  max-inline-size: 100%;
+  vertical-align: middle;
+}

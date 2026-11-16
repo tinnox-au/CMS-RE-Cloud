@@ -1,4 +1,4 @@
-# TINNOX CMS (CMS-RE-Cloud)
+# TINNOX CMS
 
 TINNOX sells and installs LED walls, outdoor LED signs, pylons, billboards and kiosks across Australia. **TINNOX CMS** is the content management software TINNOX will sell with that hardware: customers upload images, video and PDFs, schedule them, publish them to their screens, and see proof that they are playing. TINNOX staff use the same platform to provision devices, watch the fleet and support customers.
 

@@ -5,6 +5,7 @@ import {
   createApiClient,
   errorFromResponse,
   isOutcomeUnknown,
+  parseRetryAfter,
   type FetchLike,
 } from './client.ts';
 import { mediaFromUploadResponse } from './upload.ts';
@@ -229,6 +230,32 @@ describe('api client: responses and errors', () => {
     expect(error.message).toContain('502');
   });
 
+  it('keeps the wait a throttled answer asks for', async () => {
+    const { client } = harness(() =>
+      json(429, apiErrorBody('rate_limited', 'Too many requests. Try again in 7 seconds.'), {
+        'retry-after': '7',
+      }),
+    );
+    const error = await rejection(
+      client.request({ path: ROUTES.displays }, DisplayListResponseSchema),
+    );
+    expect(error.code).toBe('rate_limited');
+    expect(error.retryAfterMs).toBe(7_000);
+    expect(errorFromResponse(500, '', null).retryAfterMs).toBeNull();
+  });
+
+  it('reads Retry-After as seconds or as a date', () => {
+    const now = Date.parse('2026-11-16T00:00:00Z');
+    expect(parseRetryAfter('0', now)).toBe(0);
+    expect(parseRetryAfter(' 12 ', now)).toBe(12_000);
+    expect(parseRetryAfter('Mon, 16 Nov 2026 00:00:30 GMT', now)).toBe(30_000);
+    expect(parseRetryAfter('Sun, 15 Nov 2026 23:00:00 GMT', now)).toBe(0);
+    expect(parseRetryAfter('99999999', now)).toBe(10 * 60 * 1000);
+    for (const bad of [null, '', '-3', '1.5', 'soon', '12abc']) {
+      expect(parseRetryAfter(bad, now), String(bad)).toBeNull();
+    }
+  });
+
   it('rejects a 2xx body that does not match the shared schema', async () => {
     const { client } = harness(() => json(200, { items: [{ id: 'not-a-display' }] }));
     const error = await rejection(
@@ -290,7 +317,13 @@ describe('upload response handling', () => {
     id: ORG,
     kind: 'image',
     status: 'processing',
+    name: 'poster.png',
     originalName: 'poster.png',
+    description: null,
+    defaultDurationMs: null,
+    folderId: null,
+    tagIds: [],
+    usageCount: 0,
     mimeType: null,
     bytes: null,
     sha256: null,

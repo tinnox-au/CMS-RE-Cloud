@@ -1,0 +1,480 @@
+/* Switch, Checkbox, Stepper, Segmented, Tabs. */
+
+/* ---------- Switch ---------- */
+
+.tx-switch {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-block-size: 24px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The track is 36 by 22 px; the control around it is the 24 px tall target. */
+.tx-switch__control {
+  position: relative;
+  flex: none;
+  display: block;
+  inline-size: 36px;
+  block-size: 24px;
+}
+
+.tx-switch__input {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  border: 0;
+  border-block: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: var(--line-control);
+  background-clip: padding-box;
+  appearance: none;
+  cursor: pointer;
+  transition: background-color var(--t) var(--ease);
+}
+
+.tx-switch__thumb {
+  position: absolute;
+  inset-block-start: 3px;
+  inset-inline-start: 2px;
+  inline-size: 18px;
+  block-size: 18px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  pointer-events: none;
+  transition:
+    translate var(--t) var(--ease),
+    background-color var(--t) var(--ease);
+}
+
+.tx-switch__input:checked {
+  background: var(--brand);
+}
+
+.tx-switch__input:checked + .tx-switch__thumb {
+  translate: 14px 0;
+  background: var(--on-brand);
+}
+
+.tx-switch__input:hover:not(:disabled) {
+  background: var(--ink-2);
+}
+
+.tx-switch__input:checked:hover:not(:disabled) {
+  background: var(--brand-hover);
+}
+
+.tx-switch__input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tx-switch:has(.tx-switch__input:disabled) {
+  cursor: not-allowed;
+}
+
+.tx-switch__text {
+  display: grid;
+  gap: 2px;
+  padding-block-start: 2px;
+}
+
+.tx-switch__label {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.tx-switch__hint {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* ---------- Checkbox ---------- */
+
+.tx-check {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  min-inline-size: 24px;
+  min-block-size: 24px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The box is 18 px; the control around it is the 24 px target. */
+.tx-check__control {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+}
+
+.tx-check__input {
+  display: block;
+  inline-size: 18px;
+  block-size: 18px;
+  margin: 0;
+  border: 1.5px solid var(--line-control);
+  border-radius: var(--r-xs);
+  background: var(--surface);
+  appearance: none;
+  cursor: pointer;
+  transition:
+    background-color var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease);
+}
+
+.tx-check__input:hover:not(:disabled) {
+  border-color: var(--ink-2);
+}
+
+.tx-check__input:checked,
+.tx-check__input:indeterminate {
+  border-color: var(--brand);
+  background: var(--brand);
+}
+
+.tx-check__input:checked:hover:not(:disabled),
+.tx-check__input:indeterminate:hover:not(:disabled) {
+  border-color: var(--brand-hover);
+  background: var(--brand-hover);
+}
+
+.tx-check__mark,
+.tx-check__dash {
+  position: absolute;
+  color: var(--on-brand);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tx-check__input:checked:not(:indeterminate) ~ .tx-check__mark,
+.tx-check__input:indeterminate ~ .tx-check__dash {
+  opacity: 1;
+}
+
+.tx-check__input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tx-check:has(.tx-check__input:disabled) {
+  cursor: not-allowed;
+}
+
+.tx-check__text {
+  display: grid;
+  gap: 2px;
+  padding-block-start: 2px;
+}
+
+.tx-check__label {
+  color: var(--ink);
+}
+
+.tx-check__hint {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* ---------- Stepper ---------- */
+
+.tx-stepper {
+  display: inline-flex;
+  align-items: center;
+  block-size: var(--h-md);
+  padding: 0 2px;
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  transition:
+    border-color var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease);
+}
+
+.tx-stepper:hover {
+  border-color: var(--ink-2);
+}
+
+.tx-stepper:has(.tx-stepper__input:focus-visible) {
+  border-color: var(--brand);
+  box-shadow: var(--focus-ring);
+}
+
+.tx-stepper:has(.tx-stepper__input[aria-invalid='true']) {
+  border-color: var(--danger);
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+.tx-stepper:has(.tx-stepper__input[aria-invalid='true']:focus-visible) {
+  box-shadow:
+    inset 0 0 0 1px var(--danger),
+    var(--focus-ring);
+}
+
+.tx-stepper:has(.tx-stepper__input:disabled) {
+  border-color: var(--line);
+  background: var(--neutral-bg);
+}
+
+.tx-stepper__button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 30px;
+  block-size: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition:
+    background-color var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+
+.tx-stepper__button:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.tx-stepper__button:active {
+  background: var(--surface-3);
+}
+
+.tx-stepper__button:disabled,
+.tx-stepper__button[aria-disabled='true'] {
+  background: transparent;
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
+.tx-stepper__value {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px;
+  padding-inline: 2px;
+}
+
+.tx-stepper__input,
+.tx-stepper__input:focus-visible {
+  inline-size: calc(var(--tx-stepper-chars, 4) * 1ch + 4px);
+  block-size: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  color: var(--ink);
+  font: 500 14px/20px var(--font-body);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  appearance: none;
+}
+
+.tx-stepper__input:disabled {
+  color: var(--ink-3);
+}
+
+.tx-stepper__unit {
+  color: var(--ink-2);
+  font-size: 13px;
+  user-select: none;
+}
+
+.tx-stepper__unit:empty {
+  display: none;
+}
+
+/* ---------- Segmented ---------- */
+
+.tx-segmented {
+  position: relative;
+  isolation: isolate;
+  flex: none;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  block-size: var(--h-md);
+  padding: 2px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+}
+
+.tx-segmented--sm {
+  block-size: var(--h-sm);
+}
+
+/* The sliding thumb. Its boundary reaches 3:1 against the track and against itself. */
+.tx-segmented::before {
+  content: '';
+  position: absolute;
+  inset-block: 2px;
+  inset-inline-start: 2px;
+  z-index: -1;
+  inline-size: calc((100% - 4px) / var(--tx-seg-count, 1));
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  translate: calc(var(--tx-seg-index, 0) * 100%) 0;
+  transition: translate var(--t) var(--ease);
+}
+
+.tx-segmented[data-empty]::before {
+  display: none;
+}
+
+.tx-segmented__option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-inline-size: 40px;
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  color: var(--ink-2);
+  font: 600 13px/18px var(--font-body);
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: color var(--t-fast) var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tx-segmented--icons .tx-segmented__option {
+  padding: 0 10px;
+}
+
+.tx-segmented__option:hover {
+  color: var(--ink);
+}
+
+.tx-segmented__option:has(:checked) {
+  color: var(--ink);
+}
+
+.tx-segmented__option:has(:focus-visible) {
+  box-shadow: var(--focus-ring);
+}
+
+.tx-segmented__option:has(:disabled) {
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
+.tx-segmented__input,
+.tx-segmented__input:focus-visible {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  border-radius: inherit;
+  box-shadow: none;
+  outline: none;
+  opacity: 0;
+  appearance: none;
+  cursor: inherit;
+}
+
+/* ---------- Tabs ---------- */
+
+/* `position: relative`: see `.tx-table-scroll` in table.css (hidden text inside a scroller). */
+.tx-tabs {
+  position: relative;
+  display: flex;
+  gap: var(--s-1);
+  border-block-end: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tx-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tx-tab {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: 600 14px/20px var(--font-body);
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tx-tab::after {
+  content: '';
+  position: absolute;
+  inset-inline: 12px;
+  inset-block-end: 0;
+  block-size: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--brand);
+  opacity: 0;
+  scale: 0.6 1;
+  transition:
+    opacity var(--t) var(--ease),
+    scale var(--t) var(--ease);
+}
+
+.tx-tab:hover {
+  color: var(--ink);
+}
+
+.tx-tab[aria-selected='true'] {
+  color: var(--brand);
+}
+
+.tx-tab[aria-selected='true']::after {
+  opacity: 1;
+  scale: 1 1;
+}
+
+/* The tab list scrolls sideways, so the ring is drawn inside the tab where it cannot be clipped. */
+.tx-tab:focus-visible {
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+
+.tx-tab[aria-disabled='true'],
+.tx-tab[aria-disabled='true']:hover {
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
+.tx-tab__note {
+  color: var(--ink-2);
+  font: 500 11px/16px var(--font-body);
+  letter-spacing: 0.02em;
+}
+
+.tx-tab-panel {
+  padding-block-start: var(--s-6);
+}
+
+.tx-tab-panel:focus-visible {
+  border-radius: var(--r-sm);
+}

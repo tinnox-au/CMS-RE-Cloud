@@ -1,0 +1,42 @@
+/**
+ * Names of the constraints, unique indexes and guard triggers of
+ * db/migrations/0005_portal_v2_stage_a.sql that a caller has to tell apart to
+ * answer correctly (a taken name is a conflict; an unknown folder is not found).
+ * PostgreSQL reports the name in the `constraint` field of the error.
+ */
+export const STAGE_A_CONSTRAINTS = Object.freeze({
+  /** 23505: another tag of the same organisation and scope has this name, ignoring case. */
+  tagNameTaken: 'tag_org_scope_name_key',
+  /** 23505: another folder of the same organisation has this name, ignoring case. */
+  folderNameTaken: 'folder_org_name_key',
+  /** 23503: the folder does not exist in this organisation. */
+  mediaFolder: 'media_folder_fk',
+  /** 23503: the media item does not exist in this organisation. */
+  mediaTagMedia: 'media_tag_media_fk',
+  /** 23503: the tag does not exist in this organisation, or is not a media tag. */
+  mediaTagTag: 'media_tag_tag_fk',
+  /** 23503: the display does not exist in this organisation. */
+  displayTagDisplay: 'display_tag_display_fk',
+  /** 23503: the tag does not exist in this organisation, or is not a display tag. */
+  displayTagTag: 'display_tag_tag_fk',
+  /**
+   * 23503: on a display, the playlist does not exist in this organisation; on a
+   * playlist, a hard delete was attempted while a display has it assigned.
+   */
+  displayAssignedPlaylist: 'display_assigned_playlist_fk',
+  /** 23001: the playlist being assigned to a display is deleted. */
+  assignedPlaylistDeleted: 'display_assigned_playlist_guard',
+  /** 23001: the playlist being deleted is assigned to a display. */
+  playlistStillAssigned: 'playlist_delete_guard',
+  /** 23514: a default duration was set on a media item that is not an image. */
+  defaultDurationImagesOnly: 'media_default_duration_images_only',
+});
+
+export type StageAConstraint = (typeof STAGE_A_CONSTRAINTS)[keyof typeof STAGE_A_CONSTRAINTS];
+
+/** The constraint a PostgreSQL error names, or null when it names none. */
+export function violatedConstraint(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const constraint = (error as { constraint?: unknown }).constraint;
+  return typeof constraint === 'string' && constraint !== '' ? constraint : null;
+}
