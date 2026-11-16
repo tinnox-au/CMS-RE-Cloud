@@ -105,7 +105,7 @@ Root cause, fix, a regression test, an update to the threat model and control ma
 
 Purpose: prove that a database backup and a media backup taken together restore to a consistent state, where every `ready` media row has its file with the recorded size and SHA-256, and every publication's assets resolve.
 
-The steps below are automated, with stricter checks, by `scripts/backup-restore-check.sh` (`npm run backup:verify`): it refuses to run while the API listens on port 4000, verifies every publication asset against the SHA-256 and size frozen in the immutable manifest (not only the media row), and also checks that the restored database still hides rows from `tinnox_app` without an organisation context and still refuses a publication update. The manual commands remain as the reference procedure; the script is what was run.
+The steps below are automated, with stricter checks, by `scripts/backup-restore-check.sh` (`npm run backup:verify`): it refuses to run while the API listens on port 4000, verifies every media item of every publication against the SHA-256 and size frozen in the immutable manifest (not only the media row; app items have no file and are only counted), checks that every thumbnail a media row names was restored as a non-empty file (no thumbnail hash is stored), and also checks that the restored database still hides rows from `tinnox_app` without an organisation context and still refuses a publication update. The manual commands remain as the reference procedure; the script is what was run.
 
 Facts the procedure relies on:
 
