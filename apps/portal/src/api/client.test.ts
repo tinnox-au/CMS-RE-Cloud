@@ -321,6 +321,8 @@ describe('upload response handling', () => {
     originalName: 'poster.png',
     description: null,
     defaultDurationMs: null,
+    availableFrom: null,
+    availableUntil: null,
     folderId: null,
     tagIds: [],
     usageCount: 0,

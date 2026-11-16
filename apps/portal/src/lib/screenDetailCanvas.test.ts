@@ -26,6 +26,8 @@ const display: DisplayDto = {
   canvas: { width: 1920, height: 1080 },
   contentRect: null,
   defaultFit: 'contain',
+  rotation: 0,
+  workingHours: null,
   route: 'browser',
   player: null,
   tagIds: [],
@@ -38,15 +40,17 @@ const limits = { minCanvasSidePx: 16, maxCanvasSidePx: 16384 };
 describe('canvas form', () => {
   it('is dirty only for the canvas fields, and the rectangle only while it is on', () => {
     const stored = displayFormFromDto(display);
-    expect(canvasFormDirty(stored, display)).toBe(false);
-    expect(canvasFormDirty({ ...stored, name: 'Other' }, display)).toBe(false);
-    expect(canvasFormDirty({ ...stored, width: '3840' }, display)).toBe(true);
-    expect(canvasFormDirty({ ...stored, rectWidth: '100' }, display)).toBe(false);
-    expect(canvasFormDirty({ ...stored, useContentRect: true }, display)).toBe(true);
-    expect(canvasFormDirty({ ...stored, defaultFit: 'cover' }, display)).toBe(true);
+    expect(canvasFormDirty(stored, display, 0)).toBe(false);
+    expect(canvasFormDirty({ ...stored, name: 'Other' }, display, 0)).toBe(false);
+    expect(canvasFormDirty({ ...stored, width: '3840' }, display, 0)).toBe(true);
+    expect(canvasFormDirty({ ...stored, rectWidth: '100' }, display, 0)).toBe(false);
+    expect(canvasFormDirty({ ...stored, useContentRect: true }, display, 0)).toBe(true);
+    expect(canvasFormDirty({ ...stored, defaultFit: 'cover' }, display, 0)).toBe(true);
+    expect(canvasFormDirty(stored, display, 90)).toBe(true);
+    expect(canvasFormDirty(stored, { ...display, rotation: 270 }, 270)).toBe(false);
   });
 
-  it('validates with the stored name and site and sends only the canvas', () => {
+  it('validates with the stored name and site and sends only the canvas and rotation', () => {
     const values = {
       ...displayFormFromDto(display),
       name: '',
@@ -57,10 +61,11 @@ describe('canvas form', () => {
     const result = validateDisplayForm(canvasFormForValidation(values, display), limits);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(toCanvasPatch(result.value)).toEqual({
+    expect(toCanvasPatch(result.value, 90)).toEqual({
       canvas: { width: 3840, height: 480 },
       contentRect: null,
       defaultFit: 'contain',
+      rotation: 90,
     });
   });
 

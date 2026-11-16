@@ -1,7 +1,7 @@
 import {
   parseManifest,
   type ManifestAssetV1,
-  type ManifestV1,
+  type Manifest,
   type PlayerError,
 } from '@tinnox/contracts';
 import { downloadAsset } from './download.ts';
@@ -51,7 +51,7 @@ export type StageOutcome =
   | { readonly kind: 'activated'; readonly publicationId: string }
   | { readonly kind: 'failed'; readonly error: PlayerError }
   /** The server published something newer while this one was downloading. */
-  | { readonly kind: 'superseded'; readonly next: ManifestV1 };
+  | { readonly kind: 'superseded'; readonly next: Manifest };
 
 function iso(clock: Clock): string {
   return new Date(clock.now()).toISOString();
@@ -145,7 +145,7 @@ export async function collectGarbage(
  * are thrown to the caller; every other failure is returned as `failed`.
  */
 export async function stagePublication(
-  manifest: ManifestV1,
+  manifest: Manifest,
   deps: StagingDeps,
 ): Promise<StageOutcome> {
   const { state, assets } = deps;
@@ -297,7 +297,7 @@ export async function stagePublication(
   return { kind: 'activated', publicationId };
 }
 
-async function newerManifest(deps: StagingDeps, staged: ManifestV1): Promise<ManifestV1 | null> {
+async function newerManifest(deps: StagingDeps, staged: Manifest): Promise<Manifest | null> {
   try {
     const result = await deps.api.fetchManifest(staged.publicationId);
     if (result.kind !== 'manifest') return null;

@@ -1,7 +1,7 @@
 import {
   CanvasSchema,
   DisplayIdSchema,
-  ManifestV1Schema,
+  ManifestSchema,
   OpaqueTokenSchema,
   OrgIdSchema,
   PairingCodeSchema,
@@ -12,7 +12,7 @@ import {
   StagingPhaseSchema,
   UtcTimestampSchema,
   type ManifestAssetV1,
-  type ManifestV1,
+  type Manifest,
   type MediaUrlsResponse,
   type PlayerError,
 } from '@tinnox/contracts';
@@ -43,14 +43,14 @@ export type RegistrationRecord = z.infer<typeof RegistrationRecordSchema>;
 
 /** The complete, verified publication the renderer plays. */
 export const ActiveVersionSchema = z
-  .object({ manifest: ManifestV1Schema, activatedAt: UtcTimestampSchema })
+  .object({ manifest: ManifestSchema, activatedAt: UtcTimestampSchema })
   .strict();
 export type ActiveVersion = z.infer<typeof ActiveVersionSchema>;
 
 /** An update in progress or the last failed one. Never rendered. */
 export const StagingRecordSchema = z
   .object({
-    manifest: ManifestV1Schema,
+    manifest: ManifestSchema,
     phase: StagingPhaseSchema,
     assetsDone: z.number().int().nonnegative(),
     assetsTotal: z.number().int().nonnegative(),
@@ -101,7 +101,7 @@ export interface StateStore {
    * the stored, unrevoked registration, write the active version and remove the
    * staging record. Returns false (and changes nothing) when the check fails.
    */
-  activate(registrationId: string, manifest: ManifestV1, at: string): Promise<boolean>;
+  activate(registrationId: string, manifest: Manifest, at: string): Promise<boolean>;
 
   /** Returns a sequence number greater than every one returned before, across reloads. */
   nextHeartbeatSeq(nowMs: number): Promise<number>;
@@ -168,7 +168,7 @@ export interface Clock {
 export type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
 
 /** Assets of a manifest with duplicates (same bytes used twice in the playlist) removed. */
-export function uniqueAssets(manifest: ManifestV1): ManifestAssetV1[] {
+export function uniqueAssets(manifest: Manifest): ManifestAssetV1[] {
   const bySha = new Map<string, ManifestAssetV1>();
   for (const asset of manifest.assets) {
     if (!bySha.has(asset.sha256)) bySha.set(asset.sha256, asset);
@@ -176,6 +176,6 @@ export function uniqueAssets(manifest: ManifestV1): ManifestAssetV1[] {
   return [...bySha.values()];
 }
 
-export function manifestHashes(manifest: ManifestV1): Set<string> {
+export function manifestHashes(manifest: Manifest): Set<string> {
   return new Set(manifest.assets.map((asset) => asset.sha256));
 }

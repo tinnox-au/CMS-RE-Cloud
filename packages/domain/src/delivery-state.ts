@@ -162,6 +162,13 @@ export function buildDeliveryStatusView(input: StatusViewInput): DeliveryStatusV
   else if (stale) summary = 'stale';
   else if (input.desired === null) summary = 'nothing_published';
   else if (reported.playerState === 'error') summary = 'error';
+  // shortcut: also true for a moment between activation and the first item; a heartbeat v2 state would make it exact.
+  else if (
+    reported.playerState === 'idle' &&
+    reported.activePublicationId === null &&
+    reported.downloadedPublicationId === input.desired.publicationId
+  )
+    summary = 'standing_by';
   else if (
     reported.playerState === 'playing' &&
     reported.activePublicationId === input.desired.publicationId

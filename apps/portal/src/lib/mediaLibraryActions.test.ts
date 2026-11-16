@@ -16,7 +16,16 @@ import {
 const T = '2026-11-14T03:00:00.000Z';
 
 function playlist(items: PlaylistDto['items']): PlaylistDto {
-  return { id: ID(9), name: 'Lobby loop', description: 'Foyer', items, createdAt: T, updatedAt: T };
+  return {
+    id: ID(9),
+    name: 'Lobby loop',
+    description: 'Foyer',
+    items,
+    transition: 'cut',
+    shuffle: false,
+    createdAt: T,
+    updatedAt: T,
+  };
 }
 
 describe('adding a file to a playlist', () => {

@@ -1,6 +1,7 @@
 /**
  * Portrait and unusual LED-shaped canvases, in software only. One browser player is paired
- * with three displays in turn; between displays it is reset locally, which is also the
+ * with four displays in turn (the last one mounted on its side, rotation 90); between
+ * displays it is reset locally, which is also the
  * test that a reset removes the credential and every cached file before the next pairing.
  *
  * Geometry is checked two ways, both computed here and not with the player's own code:
@@ -265,3 +266,33 @@ for (const testCase of CASES) {
     expect(view.downloaded?.publicationId).toBe(published.publicationId);
   });
 }
+
+test('rotation 90: a portrait canvas is turned clockwise to fill a landscape screen', async () => {
+  const display = await operator.api.createDisplay({
+    name: `E2E rotated ${runId}`,
+    canvas: { width: 1080, height: 1920 },
+  });
+  const patched = await operator.api.patch(`/api/displays/${display.id}`, { rotation: 90 });
+  expect(patched.status(), await patched.text()).toBe(200);
+  await operator.api.publish(playlistId, display.id);
+
+  await localReset(player);
+  expect((await operator.api.claim(display.id, await pairingCode(player))).status()).toBe(200);
+  await expectPhase(player, 'playing', 90_000);
+
+  const layer = await waitForLayer(
+    player,
+    'the rotated contain item',
+    (info) => info.fit === 'contain',
+  );
+  const pixel = await capturePixels(player);
+  // Laid out in the turned 700x1000 frame (562.5x1000 at 68.75,0), then turned onto the
+  // 1000x700 screen: the canvas spans the full width, centred vertically.
+  const turned: Rect = { x: 0, y: 68.75, width: 1000, height: 562.5 };
+  expectBox(await elementBox(player, 'canvas'), turned, 'rotated canvas');
+  expectBox(layer.box, turned, 'rotated media element');
+  // Clockwise: the left (red) band is now at the top and the right (blue) one at the bottom.
+  expectColour(pixel(500, 120), RED, 'left band turned to the top');
+  expectColour(pixel(500, 580), BLUE, 'right band turned to the bottom');
+  expectColour(pixel(150, 350), BLACK, 'outside the picture');
+});

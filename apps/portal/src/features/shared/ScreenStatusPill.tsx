@@ -3,6 +3,7 @@ import { screenStatus, type ScreenStatusKind } from '../../lib/screenStatus.ts';
 import {
   CircleCheck,
   CircleDashed,
+  CirclePause,
   CircleQuestionMark,
   CircleX,
   Clock,
@@ -41,6 +42,7 @@ export interface ScreenStatusPillProps {
 /** The icon of each screen status, for any page that draws its own status headline. */
 export const SCREEN_STATUS_ICONS: { readonly [K in ScreenStatusKind]: IconComponent } = {
   in_sync: CircleCheck,
+  standing_by: CirclePause,
   updating: RefreshCw,
   not_reporting: CircleQuestionMark,
   error: CircleX,

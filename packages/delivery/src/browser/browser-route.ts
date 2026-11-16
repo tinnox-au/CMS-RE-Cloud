@@ -5,7 +5,7 @@ import {
   HeartbeatV1Schema,
   manifestEtag,
   type CapabilityProfile,
-  type ManifestV1,
+  type Manifest,
 } from '@tinnox/contracts';
 import { checkCapabilities, type PublicationDraft, type PublishIssue } from '@tinnox/domain';
 import type { DeliveryRoute, NormalizeStatusResult } from '../port.ts';
@@ -14,7 +14,7 @@ import type { DeliveryRoute, NormalizeStatusResult } from '../port.ts';
 export interface BrowserPreparedPublication {
   readonly kind: 'pull';
   readonly etag: string;
-  readonly manifest: ManifestV1;
+  readonly manifest: Manifest;
 }
 
 export interface BrowserRouteOptions {
@@ -60,7 +60,7 @@ export function createBrowserRoute(
     validate(draft: PublicationDraft): readonly PublishIssue[] {
       return checkCapabilities(draft, profile);
     },
-    prepare(manifest: ManifestV1): BrowserPreparedPublication {
+    prepare(manifest: Manifest): BrowserPreparedPublication {
       return { kind: 'pull', etag: manifestEtag(manifest.publicationId), manifest };
     },
     normalizeStatus(report: unknown): NormalizeStatusResult {

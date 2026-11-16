@@ -14,13 +14,16 @@ import { randomUUID } from 'node:crypto';
 import {
   HEADERS,
   IdempotencyKeySchema,
-  ManifestV1Schema,
+  ManifestSchema,
   MediaMimeTypeSchema,
   type FitMode,
-  type ManifestV1,
+  type Manifest,
   type PlaylistRef,
   type PushIssue,
   type PushState,
+  type Rotation,
+  type Transition,
+  type WorkingHours,
 } from '@tinnox/contracts';
 import { auditScoped, type Tx } from '@tinnox/db';
 import {
@@ -38,6 +41,7 @@ import type { AppContext } from './context.ts';
 import { bigintToNumber } from './db-helpers.ts';
 import { HttpError, parseInput } from './errors.ts';
 import { contentRectOf } from './routes/displays.ts';
+import { MEDIA_WINDOW_COLUMNS } from './routes/media.ts';
 
 /** The columns of `display` that planning a publication needs. */
 export interface DisplayPlanRow {
@@ -52,12 +56,16 @@ export interface DisplayPlanRow {
   default_fit: FitMode;
   route: 'browser';
   assigned_playlist_id: string | null;
+  rotation: Rotation;
+  working_hours: WorkingHours | null;
+  site_timezone: string;
 }
 
 /** Select list for `display d` that yields a `DisplayPlanRow`. */
 export const DISPLAY_PLAN_COLUMNS = `d.id, d.name, d.canvas_width, d.canvas_height,
   d.content_x, d.content_y, d.content_width, d.content_height,
-  d.default_fit, d.route, d.assigned_playlist_id`;
+  d.default_fit, d.route, d.assigned_playlist_id, d.rotation, d.working_hours,
+  (SELECT s.timezone FROM site s WHERE s.id = d.site_id AND s.org_id = d.org_id) AS site_timezone`;
 
 export interface PublicationRow {
   id: string;
@@ -73,6 +81,8 @@ const PUBLICATION_COLUMNS = 'id, display_id, playlist_id, manifest, created_at';
 export interface PlaylistDraft {
   readonly id: string;
   readonly name: string;
+  readonly transition: Transition;
+  readonly shuffle: boolean;
   readonly items: readonly DraftItem[];
 }
 
@@ -85,7 +95,7 @@ export interface CurrentPublication {
 /** A current publication with its stored document, while the two are being compared. */
 interface LoadedPublication extends CurrentPublication {
   /** Null when it was not loaded, or when the stored document no longer parses. */
-  readonly manifest: ManifestV1 | null;
+  readonly manifest: Manifest | null;
 }
 
 /** Where one display stands between its assigned playlist and its current publication. */
@@ -208,8 +218,13 @@ export async function loadPlaylistDrafts(
   const drafts = new Map<string, PlaylistDraft>();
   const ids = [...new Set(playlistIds.map((id) => id.toLowerCase()))];
   if (ids.length === 0) return drafts;
-  const playlists = await tx.query<{ id: string; name: string }>(
-    `SELECT id, name FROM playlist
+  const playlists = await tx.query<{
+    id: string;
+    name: string;
+    transition: Transition;
+    shuffle: boolean;
+  }>(
+    `SELECT id, name, transition, shuffle FROM playlist
      WHERE org_id = app_org_id() AND deleted_at IS NULL AND id = ANY($1::uuid[])
      ${lock ? 'FOR SHARE' : ''}`,
     [ids],
@@ -233,7 +248,13 @@ export async function loadPlaylistDrafts(
       ?.push({ mediaId: row.media_id, durationMs: row.duration_ms, fit: row.fit });
   }
   for (const row of playlists.rows) {
-    drafts.set(row.id, { id: row.id, name: row.name, items: itemsByPlaylist.get(row.id) ?? [] });
+    drafts.set(row.id, {
+      id: row.id,
+      name: row.name,
+      transition: row.transition,
+      shuffle: row.shuffle,
+      items: itemsByPlaylist.get(row.id) ?? [],
+    });
   }
   return drafts;
 }
@@ -249,6 +270,8 @@ interface MediaRecordRow {
   height: number | null;
   duration_ms: number | null;
   codec: string | null;
+  available_from: string | null;
+  available_until: string | null;
 }
 
 /**
@@ -264,9 +287,10 @@ export async function loadMediaRecords(
   const byId = new Map<string, MediaRecord>();
   if (ids.length === 0) return byId;
   const { rows } = await tx.query<MediaRecordRow>(
-    `SELECT id, kind, status, mime_type, bytes, sha256, width, height, duration_ms, codec
-     FROM media
-     WHERE org_id = app_org_id() AND deleted_at IS NULL AND id = ANY($1::uuid[])
+    `SELECT m.id, m.kind, m.status, m.mime_type, m.bytes, m.sha256, m.width, m.height,
+            m.duration_ms, m.codec, ${MEDIA_WINDOW_COLUMNS}
+     FROM media m
+     WHERE m.org_id = app_org_id() AND m.deleted_at IS NULL AND m.id = ANY($1::uuid[])
      ${lock ? 'FOR KEY SHARE' : ''}`,
     [[...new Set(ids)]],
   );
@@ -283,6 +307,8 @@ export async function loadMediaRecords(
       height: row.height,
       durationMs: row.duration_ms,
       codec: row.codec,
+      availableFrom: row.available_from,
+      availableUntil: row.available_until,
     });
   }
   return byId;
@@ -302,10 +328,14 @@ export function planDraft(
       contentRect: contentRectOf(display),
       defaultFit: display.default_fit,
       route: display.route,
+      rotation: display.rotation,
+      workingHours: display.working_hours,
+      timeZone: display.site_timezone,
     },
     items: playlist.items,
     mediaById,
     limits: ctx.config.limits,
+    playback: { transition: playlist.transition, shuffle: playlist.shuffle },
     route: ctx.delivery.get(display.route),
   });
 }
@@ -337,7 +367,7 @@ async function loadCurrentPublications(
     [displayIds, manifestFor],
   );
   for (const row of rows) {
-    const manifest = ManifestV1Schema.safeParse(row.manifest);
+    const manifest = ManifestSchema.safeParse(row.manifest);
     current.set(row.display_id, {
       publicationId: row.id,
       createdAt: row.created_at,

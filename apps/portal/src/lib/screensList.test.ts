@@ -58,6 +58,8 @@ function display(n: number, change: Partial<DisplayDto> = {}): DisplayDto {
     canvas: { width: 1920, height: 1080 },
     contentRect: null,
     defaultFit: 'contain',
+    rotation: 0,
+    workingHours: null,
     route: 'browser',
     player: null,
     tagIds: [],
@@ -239,6 +241,7 @@ describe('the status filter', () => {
   it('puts every status in exactly one chip', () => {
     expect(SCREEN_STATUS_KINDS.map((kind) => [kind, statusFilterOf(kind)])).toEqual([
       ['in_sync', 'in_sync'],
+      ['standing_by', 'in_sync'],
       ['updating', 'updating'],
       ['not_reporting', 'attention'],
       ['error', 'attention'],

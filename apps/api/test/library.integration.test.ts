@@ -220,6 +220,49 @@ describe('media details, tags and folders', () => {
       expect(after.updatedAt).toBe(before.updatedAt);
     });
 
+    it('keeps an availability window as the wall-clock text sent, as a pair in order', async () => {
+      const image = await readyImage(t, alice);
+      expect(await getMedia(alice, image.id)).toMatchObject({
+        availableFrom: null,
+        availableUntil: null,
+      });
+      const window = { availableFrom: '2026-12-01T09:00', availableUntil: '2026-12-24T17:30' };
+      const set = await patchMedia(alice, image.id, window);
+      expect(set.status).toBe(200);
+      expect(MediaDtoSchema.parse(await set.json())).toMatchObject(window);
+      expect(await getMedia(alice, image.id)).toMatchObject(window);
+
+      const cases: [string, unknown][] = [
+        ['only availableFrom', { availableFrom: '2026-12-01T09:00' }],
+        ['only availableUntil', { availableUntil: '2026-12-24T17:30' }],
+        [
+          'from equal to until',
+          { availableFrom: '2026-12-01T09:00', availableUntil: '2026-12-01T09:00' },
+        ],
+        [
+          'from after until',
+          { availableFrom: '2026-12-02T09:00', availableUntil: '2026-12-01T09:00' },
+        ],
+        ['a day that does not exist', { availableFrom: '2026-02-30T09:00', availableUntil: null }],
+        ['year 0000', { availableFrom: '0000-01-01T00:00', availableUntil: null }],
+      ];
+      for (const [what, body] of cases) {
+        const response = await patchMedia(alice, image.id, body);
+        expect(response.status, what).toBe(400);
+        expect((await errorOf(response)).code, what).toBe('validation_failed');
+      }
+      expect(await getMedia(alice, image.id)).toMatchObject(window);
+
+      const openStart = await patchMedia(alice, image.id, {
+        availableFrom: null,
+        availableUntil: '2027-01-01T00:00',
+      });
+      expect(MediaDtoSchema.parse(await openStart.json())).toMatchObject({
+        availableFrom: null,
+        availableUntil: '2027-01-01T00:00',
+      });
+    });
+
     it('refuses a request that changes nothing, has unknown fields or breaks a bound', async () => {
       const image = await readyImage(t, alice);
       const tag = await createTag(alice, 'media', unique('Twice'));

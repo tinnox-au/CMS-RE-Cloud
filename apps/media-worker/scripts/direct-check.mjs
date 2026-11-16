@@ -63,9 +63,11 @@ function job(label, bytes, expected, spec = {}) {
 }
 const fixture = (name) => readFileSync(join(fixtures, name));
 
-job('landscape.jpg', fixture('landscape.jpg'), 'accepted image/jpeg 640x360');
-job('portrait.png', fixture('portrait.png'), 'accepted image/png 360x640');
-job('h264.mp4', fixture('h264.mp4'), 'accepted video/mp4 320x240');
+const thumbChecks = [
+  [job('landscape.jpg', fixture('landscape.jpg'), 'accepted image/jpeg 640x360'), '480x270'],
+  [job('portrait.png', fixture('portrait.png'), 'accepted image/png 360x640'), '270x480'],
+  [job('h264.mp4', fixture('h264.mp4'), 'accepted video/mp4 320x240'), 'none'],
+];
 job('h264-with-audio.mp4', fixture('h264-with-audio.mp4'), 'accepted video/mp4 320x240');
 job('hevc.mp4', fixture('hevc.mp4'), 'rejected unsupported_codec');
 job('vp9.mp4', fixture('vp9.mp4'), 'rejected unsupported_codec');
@@ -220,6 +222,20 @@ for (const { label, jobId, expected } of expectations) {
   if (!ok) failures += 1;
   console.log(
     `${ok ? 'ok   ' : 'FAIL '} ${label}: ${actual}${ok ? '' : ` (expected ${expected})`}`,
+  );
+}
+for (const [jobId, expected] of thumbChecks) {
+  const path = join(outbox, `${jobId}.thumb.jpg`);
+  let actual = 'none';
+  if (existsSync(path)) {
+    const meta = await sharp(readFileSync(path)).metadata();
+    actual = `${meta.format} ${meta.width}x${meta.height}`;
+  }
+  const want = expected === 'none' ? 'none' : `jpeg ${expected}`;
+  const ok = actual === want;
+  if (!ok) failures += 1;
+  console.log(
+    `${ok ? 'ok   ' : 'FAIL '} thumbnail for ${jobId}: ${actual}${ok ? '' : ` (expected ${want})`}`,
   );
 }
 const audio = log.split('\n').filter((line) => line.includes('"hasAudio":true')).length;

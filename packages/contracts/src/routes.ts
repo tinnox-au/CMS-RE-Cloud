@@ -37,6 +37,9 @@ export const ROUTES = Object.freeze({
   mediaItem: (id: string) => `/api/media/${enc(id)}`,
   mediaPreviewPattern: '/api/media/:id/preview',
   mediaPreview: (id: string) => `/api/media/${enc(id)}/preview`,
+  /** GET: a small JPEG for images that have one, otherwise the same bytes as the preview. */
+  mediaThumbnailPattern: '/api/media/:id/thumbnail',
+  mediaThumbnail: (id: string) => `/api/media/${enc(id)}/thumbnail`,
   /** GET: the playlists and displays that use a media item. */
   mediaUsagePattern: '/api/media/:id/usage',
   mediaUsage: (id: string) => `/api/media/${enc(id)}/usage`,

@@ -326,21 +326,28 @@ describe('pairing codes and device credentials', () => {
     expect(view.stale).toBe(true);
     expect(view.lastHeartbeatAt).toBeNull();
 
-    // Downloaded but not yet active is not "in sync".
+    // Reporting, but the push is not downloaded yet: updating, not "in sync".
+    await sendHeartbeat(t, player, heartbeatBody(display.id, 1));
+    view = await status();
+    expect(view.downloaded).toBeNull();
+    expect(view.summary).toBe('updating');
+
+    // Downloaded, idle and showing nothing: standing by (stage B; also briefly true before
+    // the first item is shown, see the shortcut in delivery-state.ts).
     await sendHeartbeat(
       t,
       player,
-      heartbeatBody(display.id, 1, { downloadedPublicationId: publicationId }),
+      heartbeatBody(display.id, 2, { downloadedPublicationId: publicationId }),
     );
     view = await status();
     expect(view.downloaded?.publicationId).toBe(publicationId);
     expect(view.active).toBeNull();
-    expect(view.summary).toBe('updating');
+    expect(view.summary).toBe('standing_by');
 
     await sendHeartbeat(
       t,
       player,
-      heartbeatBody(display.id, 2, {
+      heartbeatBody(display.id, 3, {
         downloadedPublicationId: publicationId,
         activePublicationId: publicationId,
         activeItemIndex: 0,

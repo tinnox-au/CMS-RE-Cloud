@@ -75,6 +75,7 @@ describe('screen status', () => {
       stale: 'Not reporting',
       updating: 'Updating',
       error: 'Error',
+      standing_by: 'Standing by',
       in_sync: 'In sync',
     });
   });
@@ -119,6 +120,7 @@ describe('screen status', () => {
     expect(approved).toEqual(
       new Set([
         'In sync',
+        'Standing by',
         'Updating',
         'Not reporting',
         'Error',
@@ -192,6 +194,14 @@ describe('screen status', () => {
     }
   });
 
+  it('shows standing_by as Standing by, neutral, counted with in sync', () => {
+    const status = screenStatus(view({ summary: 'standing_by' }), 0);
+    expect(status.label).toBe('Standing by');
+    expect(status.tone).toBe('neutral');
+    expect(status.explanation).toBe('Has the latest push; nothing in it is due to show right now.');
+    expect(screenStatusGroup(status.kind)).toBe('in_sync');
+  });
+
   it('maps every summary to a kind, a tone and a counter group', () => {
     const kinds = new Set(DELIVERY_SUMMARIES.map(screenStatusKindOf));
     expect(kinds).toEqual(new Set(SCREEN_STATUS_KINDS));
@@ -200,6 +210,7 @@ describe('screen status', () => {
       if (kind !== 'in_sync') expect(screenStatusTone(kind)).not.toBe('ok');
     }
     expect(SCREEN_STATUS_KINDS.map(screenStatusGroup)).toEqual([
+      'in_sync',
       'in_sync',
       'pending',
       'attention',

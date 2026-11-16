@@ -622,6 +622,7 @@ interface ThumbProps {
 
 ```tsx
 <Thumb size="sm" kind={media.kind} src={media.status === 'ready' ? ROUTES.mediaPreview(media.id) : null} />
+// Pages use MediaThumb (features/shared), which asks ROUTES.mediaThumbnail(id) for images.
 ```
 
 Look: a 12 px radius (10 px for the 44 px `sm` square) on `--neutral-bg`; the kind badge is a small round capsule.

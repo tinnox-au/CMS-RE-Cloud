@@ -5,6 +5,7 @@
  *   <jobs>/inbox/<id>        complete bytes, waiting for the worker
  *   <jobs>/inbox/<id>.json   job specification (limits); written last, atomically
  *   <jobs>/outbox/<id>.json  the worker's verdict
+ *   <jobs>/outbox/<id>.thumb.jpg  an image's JPEG thumbnail, written before the verdict
  *
  * The job id is the media id. The database is the source of truth: a media row
  * in status "processing" is a pending job. `tick()` lists those rows (through
@@ -17,7 +18,10 @@
  *   - a verdict is size-capped, opened without following links, and re-validated;
  *   - the bytes are copied into private storage by the API, which recomputes the
  *     size and SHA-256 and compares them with the values recorded at upload;
- *   - accepted metadata is checked against the configured limits again.
+ *   - accepted metadata is checked against the configured limits again;
+ *   - a thumbnail is size-capped, opened without following links, must belong to the
+ *     verdict's owner and look like a JPEG; it is never decoded here, and any problem
+ *     with it only leaves the media without a thumbnail.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { constants as fsConstants, createWriteStream } from 'node:fs';
@@ -46,10 +50,11 @@ import {
 } from '@tinnox/contracts';
 import { auditScoped, poolAsTx, withOrg, type Pool } from '@tinnox/db';
 import { newObjectKey, type ObjectStorage } from '@tinnox/storage';
-import { SNIFF_BYTES } from './sniff.ts';
+import { SNIFF_BYTES, sniffMediaType } from './sniff.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_RESULT_BYTES = 16 * 1024;
+const MAX_THUMB_BYTES = 524_288;
 const TICK_INTERVAL_MS = 750;
 /** A processing row with no job file for this long is re-queued or failed. */
 const ENQUEUE_GRACE_MS = 30_000;
@@ -101,7 +106,7 @@ interface PendingJob {
 type ResultRead =
   | { readonly kind: 'missing' }
   | { readonly kind: 'malformed'; readonly reason: string }
-  | { readonly kind: 'ok'; readonly result: MediaJobResult };
+  | { readonly kind: 'ok'; readonly result: MediaJobResult; readonly uid: number };
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && typeof (error as NodeJS.ErrnoException).code === 'string';
@@ -358,7 +363,7 @@ export class MediaPipeline {
       try {
         const read = await this.#readResult(job.mediaId);
         if (read.kind === 'ok') {
-          await this.#ingest(job, read.result);
+          await this.#ingest(job, read.result, read.uid);
           continue;
         }
         if (read.kind === 'malformed') {
@@ -410,7 +415,11 @@ export class MediaPipeline {
     const path = this.#path(this.#outbox, jobId, '.json');
     let handle;
     try {
-      handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+      // O_NONBLOCK: a planted FIFO opens at once and is refused below, instead of blocking.
+      handle = await open(
+        path,
+        fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK,
+      );
     } catch (error) {
       if (isNodeError(error) && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) {
         return { kind: 'missing' };
@@ -436,7 +445,7 @@ export class MediaPipeline {
       if (parsed.data.jobId !== jobId) {
         return { kind: 'malformed', reason: 'result names another job' };
       }
-      return { kind: 'ok', result: parsed.data };
+      return { kind: 'ok', result: parsed.data, uid: info.uid };
     } finally {
       await handle.close();
     }
@@ -488,7 +497,52 @@ export class MediaPipeline {
     return null;
   }
 
-  async #ingest(job: PendingJob, result: MediaJobResult): Promise<void> {
+  /**
+   * The worker's thumbnail for an image, or null. Any problem is logged and leaves the
+   * media without a thumbnail; it never fails the media.
+   */
+  async #readThumbnail(jobId: string, verdictUid: number): Promise<Buffer | null> {
+    const path = this.#path(this.#outbox, jobId, '.thumb.jpg');
+    let handle;
+    try {
+      // O_NONBLOCK: a planted FIFO opens at once and is refused below, instead of blocking.
+      handle = await open(
+        path,
+        fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK,
+      );
+    } catch (error) {
+      const reason =
+        isNodeError(error) && error.code === 'ENOENT'
+          ? 'thumbnail is missing'
+          : 'thumbnail could not be opened as a regular file';
+      this.#log.warn({ mediaId: jobId, reason }, 'thumbnail ignored');
+      return null;
+    }
+    try {
+      const info = await handle.stat();
+      let reason: string;
+      if (!info.isFile()) reason = 'thumbnail is not a regular file';
+      // Another local process cannot plant a thumbnail: it must come from the verdict's writer.
+      else if (info.uid !== verdictUid) reason = 'thumbnail owner differs from the verdict owner';
+      else if (info.size < 1 || info.size > MAX_THUMB_BYTES)
+        reason = 'thumbnail size is out of bounds';
+      else {
+        const buffer = Buffer.alloc(info.size);
+        const { bytesRead } = await handle.read(buffer, 0, info.size, 0);
+        const bytes = buffer.subarray(0, bytesRead);
+        if (bytesRead > 0 && sniffMediaType(bytes.subarray(0, SNIFF_BYTES)) === 'image/jpeg') {
+          return bytes;
+        }
+        reason = 'thumbnail is not a JPEG';
+      }
+      this.#log.warn({ mediaId: jobId, reason }, 'thumbnail ignored');
+      return null;
+    } finally {
+      await handle.close();
+    }
+  }
+
+  async #ingest(job: PendingJob, result: MediaJobResult, verdictUid: number): Promise<void> {
     if (result.outcome === 'rejected') {
       await this.#fail(job, result.errorCode, cleanDetail(result.errorDetail));
       return;
@@ -549,6 +603,20 @@ export class MediaPipeline {
       return;
     }
 
+    // shortcut: thumbnail content is worker-trusted and not tied to the source bytes; a compromised worker can inject or copy up to 512 KiB of image bytes between organisations. Upgrade by running a per-job worker that sees only one job's files.
+    let thumbKey: string | null = null;
+    const thumb =
+      result.kind === 'image' ? await this.#readThumbnail(job.mediaId, verdictUid) : null;
+    if (thumb !== null) {
+      const candidate = newObjectKey(job.orgId);
+      try {
+        await this.#storage.put(candidate, thumb, { maxBytes: MAX_THUMB_BYTES });
+        thumbKey = candidate;
+      } catch (error) {
+        this.#log.warn({ err: error, mediaId: job.mediaId }, 'could not store thumbnail');
+      }
+    }
+
     let updated = false;
     try {
       updated = await withOrg(this.#pool, job.orgId, async (tx) => {
@@ -556,7 +624,7 @@ export class MediaPipeline {
           `UPDATE media
            SET status = 'ready', kind = $2, mime_type = $3, bytes = $4, sha256 = $5,
                width = $6, height = $7, duration_ms = $8, codec = $9, storage_key = $10,
-               error_code = NULL, error_detail = NULL
+               thumb_storage_key = $11, error_code = NULL, error_detail = NULL
            WHERE id = $1 AND org_id = app_org_id() AND status = 'processing'`,
           [
             job.mediaId,
@@ -569,6 +637,7 @@ export class MediaPipeline {
             result.durationMs,
             result.codec,
             key,
+            thumbKey,
           ],
         );
         if (done.rowCount !== 1) return false;
@@ -591,7 +660,10 @@ export class MediaPipeline {
         return true;
       });
     } finally {
-      if (!updated) await this.#storage.delete(key).catch(() => undefined);
+      if (!updated) {
+        await this.#storage.delete(key).catch(() => undefined);
+        if (thumbKey !== null) await this.#storage.delete(thumbKey).catch(() => undefined);
+      }
     }
     await this.#cleanup(job.mediaId);
   }
@@ -625,6 +697,8 @@ export class MediaPipeline {
       this.#path(this.#inbox, jobId, '.part'),
       this.#path(this.#outbox, jobId, '.json'),
       this.#path(this.#outbox, jobId, '.started'),
+      this.#path(this.#outbox, jobId, '.thumb.jpg'),
+      this.#path(this.#outbox, jobId, '.thumb.tmp'),
     ];
     for (const path of paths) {
       // `rm` rather than `unlink`: a misbehaving worker may have left a directory or a

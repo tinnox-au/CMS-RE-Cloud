@@ -103,7 +103,7 @@ const COUNTER_TEXT: { readonly [K in ScreenStatusGroup]: CounterText } = {
   in_sync: {
     status: 'in_sync',
     label: 'In sync',
-    hint: 'As the player last reported',
+    hint: 'In sync or standing by, as the player last reported',
     tone: 'ok',
   },
   pending: {

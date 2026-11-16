@@ -1,4 +1,4 @@
-import { parseManifest, type ManifestV1, type PlayerError } from '@tinnox/contracts';
+import { parseManifest, type Manifest, type PlayerError } from '@tinnox/contracts';
 import { backoffDelay, jitteredInterval, type BackoffPolicy } from './backoff.ts';
 import { AbortedError, PlayerFault, RevokedError, toPlayerError } from './errors.ts';
 import { collectGarbage, stagePublication, type StagingDeps } from './staging.ts';
@@ -86,7 +86,7 @@ export async function syncCycle(deps: SyncDeps): Promise<CycleResult> {
     return { kind: 'update_failed', error, publicationId: null };
   }
 
-  let manifest: ManifestV1 = parsed.manifest;
+  let manifest: Manifest = parsed.manifest;
   for (let hop = 0; ; hop += 1) {
     if (manifest.displayId !== deps.displayId) {
       const error = toPlayerError(

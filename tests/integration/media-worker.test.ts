@@ -16,6 +16,7 @@ import {
   createDisplay,
   createOrg,
   fixturesDir,
+  imageMetadata,
   repoRoot,
   signIn,
   startTestApp,
@@ -113,6 +114,19 @@ describe('upload validation by the isolated worker', () => {
     expect(preview.headers.get('x-content-type-options')).toBe('nosniff');
     expect(Buffer.from(await preview.arrayBuffer()).equals(bytes)).toBe(true);
     expect((await fetch(`${t.url}/api/media/${mp4.id}/preview`)).status).toBe(401);
+
+    // Images get a JPEG thumbnail with a long side of at most 480 px (the originals are
+    // 640 px); a video gets none, so /thumbnail serves the original.
+    for (const image of [jpeg, png]) {
+      const thumb = await operator.fetch(`/api/media/${image.id}/thumbnail`);
+      expect(thumb.headers.get('content-type')).toBe('image/jpeg');
+      const meta = await imageMetadata(Buffer.from(await thumb.arrayBuffer()));
+      expect(meta.format).toBe('jpeg');
+      expect(Math.max(meta.width, meta.height)).toBe(480);
+    }
+    const poster = await operator.fetch(`/api/media/${mp4.id}/thumbnail`);
+    expect(poster.headers.get('content-type')).toBe('video/mp4');
+    expect(Buffer.from(await poster.arrayBuffer()).equals(bytes)).toBe(true);
   });
 
   it('rejects unsupported codecs and disguised or damaged files with a specific reason', async () => {

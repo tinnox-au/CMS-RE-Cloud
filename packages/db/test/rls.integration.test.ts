@@ -774,7 +774,7 @@ describe('immutable publications and append-only audit', () => {
     expect(
       await pgCode(insert(id, { ...good, displayId: b.displayId }, 'key-aaaaaaaaaaaaaaaa')),
     ).toBe(PG.check);
-    expect(await pgCode(insert(id, { ...good, schemaVersion: 2 }, 'key-aaaaaaaaaaaaaaaa'))).toBe(
+    expect(await pgCode(insert(id, { ...good, schemaVersion: 3 }, 'key-aaaaaaaaaaaaaaaa'))).toBe(
       PG.check,
     );
     expect(await pgCode(insert(id, { ...good, assets: [] }, 'key-aaaaaaaaaaaaaaaa'))).toBe(

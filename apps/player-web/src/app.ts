@@ -1,4 +1,4 @@
-import type { PairingPollResponse, PlayerError } from '@tinnox/contracts';
+import { manifestV2Facts, type PairingPollResponse, type PlayerError } from '@tinnox/contracts';
 import { API_ORIGIN, IS_PRODUCTION_BUILD, PLAYER_VERSION } from './config.ts';
 import { backoffDelay, type BackoffPolicy } from './core/backoff.ts';
 import { describeError, ErrorLog, sanitiseMessage, toPlayerError } from './core/errors.ts';
@@ -12,6 +12,7 @@ import {
 import { heartbeatStateFor, PlayerMachine, type PlayerPhase } from './core/machine.ts';
 import { PlaybackLoop, type PlaybackEvent } from './core/playback.ts';
 import { SyncLoop } from './core/sync.ts';
+import { localWallClock } from './core/time-rules.ts';
 import { sleep, systemClock } from './core/timing.ts';
 import type { PairingRecord, RegistrationRecord, StagingRecord } from './core/types.ts';
 import { PlayerHttpApi } from './platform/api.ts';
@@ -27,7 +28,7 @@ import { acquireLeadership, type LeadershipMode } from './platform/leader.ts';
 import { probeAsset, sha256Hex } from './platform/media.ts';
 import { registerShellWorker, shellCacheStatus } from './platform/sw-register.ts';
 import { Diagnostics, type DiagnosticsModel } from './ui/diagnostics.ts';
-import { DomPresenter } from './ui/presenter.ts';
+import { DomPresenter, FADE_MS } from './ui/presenter.ts';
 import { Screens } from './ui/screens.ts';
 
 const PAIRING_BACKOFF: BackoffPolicy = { baseMs: 5_000, maxMs: 2 * 60_000, factor: 2, jitter: 0.5 };
@@ -78,6 +79,9 @@ export class PlayerApp {
   #pairingCode: PairingRecord | null = null;
   #persisted: boolean | null = null;
   #leadership: LeadershipMode | 'waiting' = 'waiting';
+  /** Server time minus local time, from the last heartbeat response; working hours read this clock. */
+  // shortcut: offset ignores round-trip time; halve RTT if minute edges must be exact.
+  #clockOffsetMs = 0;
   #revokedDisplayName: string | null = null;
   #reloading = false;
 
@@ -394,8 +398,9 @@ export class PlayerApp {
     const playback = new PlaybackLoop({
       loadActive: async () => (await store.getActive())?.manifest ?? null,
       presenter,
-      clock: systemClock,
+      clock: { now: () => Date.now() + this.#clockOffsetMs },
       sleep,
+      random: Math.random,
       signal,
       onEvent: (event) => {
         this.#onPlaybackEvent(event, displayName);
@@ -465,6 +470,7 @@ export class PlayerApp {
       signal,
       onRevoked,
       onResponse: (response) => {
+        this.#clockOffsetMs = Date.parse(response.serverTime) - Date.now();
         void store
           .getActive()
           .then((active) => {
@@ -507,6 +513,11 @@ export class PlayerApp {
           // version needed can be removed. (Collecting at 'version_adopted' would be
           // too early: the old item is still on screen then and would be kept for ever.)
           session.sync.requestGarbageCollection();
+          // A fade keeps the previous version's last image on screen, and so in use, for
+          // FADE_MS more; collect once more after the presenter has dropped it.
+          setTimeout(() => {
+            session.sync.requestGarbageCollection();
+          }, FADE_MS);
         }
         break;
       }
@@ -528,7 +539,9 @@ export class PlayerApp {
           session.heartbeat.notifyChange();
         }
         this.#machine.dispatch({ type: 'NO_CONTENT' });
-        this.#screens.slate(displayName, WAITING_TEXT);
+        // Outside working hours or windows the stage stays black: this is planned, not waiting.
+        if (event.reason === 'not_now') this.#screens.hide();
+        else this.#screens.slate(displayName, WAITING_TEXT);
         break;
     }
   }
@@ -678,6 +691,10 @@ export class PlayerApp {
       const sync = session.sync.status;
       const hb = session.heartbeat.status;
       const manifest = active?.manifest ?? null;
+      const facts = manifest === null ? null : manifestV2Facts(manifest);
+      const timeZone = facts?.timeZone ?? null;
+      const there =
+        timeZone === null ? null : localWallClock(Date.now() + this.#clockOffsetMs, timeZone);
       sections.push({
         title: 'Content',
         rows: [
@@ -698,6 +715,15 @@ export class PlayerApp {
               ? 'whole canvas'
               : `${manifest.contentRect.width}×${manifest.contentRect.height} at ${manifest.contentRect.x},${manifest.contentRect.y}`,
           ],
+          ['Rotation', facts === null ? '—' : `${facts.rotation}°`],
+          ['Time zone', timeZone ?? '— (no time rules)'],
+          [
+            'Local time there',
+            timeZone === null
+              ? '—'
+              : (there?.stamp.replace('T', ' ') ?? 'zone unknown to this browser'),
+          ],
+          ['Clock offset', `${(this.#clockOffsetMs / 1000).toFixed(1)} s from server time`],
           [
             'On screen',
             session.rendering === null

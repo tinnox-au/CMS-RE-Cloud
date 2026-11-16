@@ -11,6 +11,7 @@ import {
   type PlaylistDto,
   type PushPlanResponse,
   type PushPlanRow,
+  type WorkingHours,
 } from '@tinnox/contracts';
 import { playlistSummaryLabel } from './mediaName.ts';
 
@@ -41,7 +42,7 @@ export const SCREEN_DETAIL_TABS = [
   { id: 'canvas', label: 'Canvas', plannedStage: null },
   { id: 'pairing', label: 'Pairing', plannedStage: null },
   { id: 'tags', label: 'Tags', plannedStage: null },
-  { id: 'working-hours', label: 'Working hours', plannedStage: 'B' },
+  { id: 'working-hours', label: 'Working hours', plannedStage: null },
   { id: 'alerts', label: 'Alerts', plannedStage: 'C' },
   { id: 'advanced', label: 'Advanced', plannedStage: 'B' },
 ] as const satisfies readonly ScreenDetailTab[];
@@ -49,7 +50,13 @@ export const SCREEN_DETAIL_TABS = [
 export type ScreenDetailTabId = (typeof SCREEN_DETAIL_TABS)[number]['id'];
 
 /** The tabs that can be opened. */
-export const SCREEN_DETAIL_OPEN_TABS = ['overview', 'canvas', 'pairing', 'tags'] as const;
+export const SCREEN_DETAIL_OPEN_TABS = [
+  'overview',
+  'canvas',
+  'pairing',
+  'tags',
+  'working-hours',
+] as const;
 export type ScreenDetailOpenTabId = (typeof SCREEN_DETAIL_OPEN_TABS)[number];
 
 export const DEFAULT_SCREEN_DETAIL_TAB: ScreenDetailOpenTabId = 'overview';
@@ -187,6 +194,87 @@ export function sameTagIds(a: readonly string[], b: readonly string[]): boolean 
 export function tagsSavedText(count: number): string {
   if (count === 0) return 'Tags removed from this screen';
   return count === 1 ? '1 tag saved for this screen' : `${count} tags saved for this screen`;
+}
+
+// ---------- Working hours ----------
+
+/** Index 0 is Monday, as in `WorkingHoursSchema`. */
+export const WEEKDAYS = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+] as const;
+
+export interface WorkingDayDraft {
+  readonly open: boolean;
+  /** 'HH:mm' as a time field gives it; an end of '00:00' is midnight at the end of the day. */
+  readonly start: string;
+  readonly end: string;
+}
+
+export interface WorkingHoursDraft {
+  readonly alwaysOn: boolean;
+  /** Seven days, Monday first. */
+  readonly days: readonly WorkingDayDraft[];
+}
+
+export interface WorkingHoursErrors {
+  /** One message per day, Monday first; null where the day is fine. */
+  readonly days: readonly (string | null)[];
+  readonly form: string | null;
+}
+
+export type WorkingHoursResult =
+  | { readonly ok: true; readonly value: WorkingHours | null }
+  | { readonly ok: false; readonly errors: WorkingHoursErrors };
+
+/** What the tab shows for stored hours; with none, Monday to Friday 09:00 to 17:00 to start from. */
+export function workingHoursDraftOf(hours: WorkingHours | null): WorkingHoursDraft {
+  const days = WEEKDAYS.map((_, index) => {
+    const day =
+      hours === null ? (index < 5 ? { start: '09:00', end: '17:00' } : null) : hours[index];
+    if (day === null || day === undefined) return { open: false, start: '09:00', end: '17:00' };
+    // A time field cannot show 24:00.
+    return { open: true, start: day.start, end: day.end === '24:00' ? '00:00' : day.end };
+  });
+  return { alwaysOn: hours === null, days };
+}
+
+/** Checks the draft and builds `workingHours` for `PATCH /api/displays/:id` (null is always on). */
+export function validateWorkingHours(draft: WorkingHoursDraft): WorkingHoursResult {
+  if (draft.alwaysOn) return { ok: true, value: null };
+  const days = draft.days.map((day) => {
+    if (!day.open) return { error: null, hours: null };
+    const end = day.end === '00:00' ? '24:00' : day.end;
+    if (day.start === '' || day.end === '') {
+      return { error: 'Enter a start and an end time.', hours: null };
+    }
+    if (day.start >= end) return { error: 'End must be after start.', hours: null };
+    return { error: null, hours: { start: day.start, end } };
+  });
+  const form = draft.days.some((day) => day.open)
+    ? null
+    : 'Choose at least one day, or turn on Always on.';
+  if (form !== null || days.some((day) => day.error !== null)) {
+    return { ok: false, errors: { days: days.map((day) => day.error), form } };
+  }
+  return { ok: true, value: days.map((day) => day.hours) };
+}
+
+/** True when the draft holds other hours than those stored. */
+export function workingHoursDirty(draft: WorkingHoursDraft, stored: WorkingHours | null): boolean {
+  const saved = workingHoursDraftOf(stored);
+  if (draft.alwaysOn !== saved.alwaysOn) return true;
+  if (draft.alwaysOn) return false;
+  return draft.days.some((day, index) => {
+    const other = saved.days[index];
+    if (other === undefined || day.open !== other.open) return true;
+    return day.open && (day.start !== other.start || day.end !== other.end);
+  });
 }
 
 // ---------- Pairing ----------

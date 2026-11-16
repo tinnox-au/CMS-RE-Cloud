@@ -13,7 +13,7 @@ import cors from '@fastify/cors';
 import {
   ABSOLUTE,
   IdParamSchema,
-  ManifestV1Schema,
+  ManifestSchema,
   MediaIdSchema,
   MediaMimeTypeSchema,
   MediaUrlQuerySchema,
@@ -388,7 +388,7 @@ export async function registerPlayerRoutes(app: FastifyInstance, ctx: AppContext
         void reply.code(304);
         return undefined;
       }
-      const manifest = ManifestV1Schema.safeParse(row.manifest);
+      const manifest = ManifestSchema.safeParse(row.manifest);
       if (!manifest.success) throw new Error('stored manifest failed schema validation');
       return { manifest: manifest.data };
     },

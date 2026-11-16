@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import type { FitMode, ManifestAssetV1, ManifestV1 } from '@tinnox/contracts';
-import { ID, display, library, limits } from './fixtures.test-support.ts';
+import type { FitMode, Manifest, ManifestAssetV1, ManifestV1 } from '@tinnox/contracts';
+import { ID, display, library, limits, playback } from './fixtures.test-support.ts';
 import { buildManifest, type PlanPublicationResult } from './manifest.ts';
 import { buildPublicationDraft } from './playlist.ts';
 import { decidePushState, draftMatchesManifest, firstDraftManifestDifference } from './push.ts';
-import type { DisplayTarget, DraftItem, PublicationDraft } from './types.ts';
+import type {
+  DisplayTarget,
+  DraftItem,
+  MediaRecord,
+  PlaybackOptions,
+  PublicationDraft,
+} from './types.ts';
 
 const image = (
   mediaId: string,
@@ -23,21 +29,30 @@ const BASE: readonly DraftItem[] = [image(ID.jpeg), video(ID.video), image(ID.pn
 function draftOf(
   items: readonly DraftItem[] = BASE,
   target: DisplayTarget = display(),
+  options: PlaybackOptions = playback,
+  mediaById: ReadonlyMap<string, MediaRecord> = library(),
 ): PublicationDraft {
-  const built = buildPublicationDraft(target, items, library(), limits);
+  const built = buildPublicationDraft(target, items, mediaById, limits, options);
   if (!built.ok) throw new Error(`fixture playlist is not publishable: ${built.issues[0]?.code}`);
   return built.draft;
 }
 
-/** The manifest a display holds after `items` were published to `target`. */
+/** The manifest a display holds after `draft` was published. */
+function published(draft: PublicationDraft): Manifest {
+  return buildManifest(draft, {
+    publicationId: ID.pubA,
+    createdAt: new Date('2026-11-14T00:00:00.000Z'),
+  });
+}
+
+/** The v1 manifest a display holds after `items` were published to `target`. */
 function publishedManifest(
   items: readonly DraftItem[] = BASE,
   target: DisplayTarget = display(),
 ): ManifestV1 {
-  return buildManifest(draftOf(items, target), {
-    publicationId: ID.pubA,
-    createdAt: new Date('2026-11-14T00:00:00.000Z'),
-  });
+  const manifest = published(draftOf(items, target));
+  if (manifest.schemaVersion !== 1) throw new Error('fixture should publish v1');
+  return manifest;
 }
 
 /** A stored manifest whose entry at `index` differs in the given facts. */
@@ -300,6 +315,91 @@ describe('draftMatchesManifest', () => {
     expect(draftMatchesManifest(draft, manifest)).toBe(true);
     const other = deepFreeze(draftOf([image(ID.png)]));
     expect(draftMatchesManifest(other, manifest)).toBe(false);
+  });
+});
+
+describe('draftMatchesManifest with playback options and time rules', () => {
+  const HOURS = [
+    { start: '09:00', end: '17:00' },
+    { start: '09:00', end: '17:00' },
+    null,
+    null,
+    null,
+    null,
+    { start: '10:00', end: '24:00' },
+  ];
+  const fade: PlaybackOptions = { transition: 'fade', shuffle: false };
+  const windowed = (from: string | null, until: string | null): Map<string, MediaRecord> => {
+    const lib = library();
+    const jpeg = lib.get(ID.jpeg);
+    if (jpeg === undefined) throw new Error('fixture');
+    lib.set(ID.jpeg, { ...jpeg, availableFrom: from, availableUntil: until });
+    return lib;
+  };
+
+  it('matches a v1 manifest with a draft at the defaults', () => {
+    expect(firstDraftManifestDifference(draftOf(), publishedManifest())).toBeNull();
+  });
+
+  it('asks for a push back to v1 when every v2 option is off', () => {
+    const v2 = published(draftOf(BASE, display(), fade));
+    expect(firstDraftManifestDifference(draftOf(), v2)).toEqual({
+      kind: 'playback',
+      field: 'schemaVersion',
+    });
+  });
+
+  it('sees each playback option', () => {
+    const stored = published(draftOf(BASE, display(), fade));
+    const cases: [PublicationDraft, string][] = [
+      [draftOf(BASE, display(), { transition: 'fade', shuffle: true }), 'shuffle'],
+      [draftOf(BASE, display({ rotation: 90 }), fade), 'rotation'],
+      [draftOf(BASE, display({ workingHours: HOURS }), fade), 'workingHours'],
+      [draftOf(BASE, display({ timeZone: 'Europe/London' }), fade), 'timeZone'],
+    ];
+    for (const [draft, field] of cases) {
+      expect(firstDraftManifestDifference(draft, stored), field).toEqual({
+        kind: 'playback',
+        field,
+      });
+    }
+    const shuffled = published(draftOf(BASE, display(), { transition: 'cut', shuffle: true }));
+    expect(
+      firstDraftManifestDifference(
+        draftOf(BASE, display(), { transition: 'fade', shuffle: true }),
+        shuffled,
+      ),
+    ).toEqual({ kind: 'playback', field: 'transition' });
+  });
+
+  it('matches working hours stored as jsonb, with keys in another order', () => {
+    const target = display({ workingHours: HOURS });
+    const stored = JSON.parse(
+      JSON.stringify(published(draftOf(BASE, target))).replace(
+        /\{"start":"([0-9:]+)","end":"([0-9:]+)"\}/g,
+        '{"end":"$2","start":"$1"}',
+      ),
+    ) as Manifest;
+    expect(JSON.stringify(stored)).toContain('{"end":"17:00","start":"09:00"}');
+    expect(firstDraftManifestDifference(draftOf(BASE, target), stored)).toBeNull();
+  });
+
+  it('sees each side of an availability window', () => {
+    const stored = published(
+      draftOf(BASE, display(), playback, windowed('2026-12-01T09:00', null)),
+    );
+    expect(
+      firstDraftManifestDifference(
+        draftOf(BASE, display(), playback, windowed('2026-12-01T10:00', null)),
+        stored,
+      ),
+    ).toEqual({ kind: 'item', index: 0, field: 'availableFrom' });
+    expect(
+      firstDraftManifestDifference(
+        draftOf(BASE, display(), playback, windowed('2026-12-01T09:00', '2026-12-24T18:00')),
+        stored,
+      ),
+    ).toEqual({ kind: 'item', index: 0, field: 'availableUntil' });
   });
 });
 

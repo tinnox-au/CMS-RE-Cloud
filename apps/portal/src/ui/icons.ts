@@ -96,6 +96,7 @@ export {
   CircleCheck,
   CircleDashed,
   CircleExclamationPoint,
+  CirclePause,
   CircleQuestionMark,
   CircleX,
   Info,

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DisplayIdSchema, MediaIdSchema, PublicationIdSchema, UtcTimestampSchema } from './ids.ts';
 import { ABSOLUTE } from './limits.ts';
-import { ManifestV1Schema } from './manifest.ts';
+import { ManifestSchema } from './manifest.ts';
 
 /**
  * `GET /player/manifest`
@@ -9,7 +9,7 @@ import { ManifestV1Schema } from './manifest.ts';
  * - 304 when `If-None-Match` equals the current ETag
  * - 204 when nothing is published to the display yet
  */
-export const ManifestResponseSchema = z.object({ manifest: ManifestV1Schema }).strict();
+export const ManifestResponseSchema = z.object({ manifest: ManifestSchema }).strict();
 export type ManifestResponse = z.infer<typeof ManifestResponseSchema>;
 
 export function manifestEtag(publicationId: string): string {

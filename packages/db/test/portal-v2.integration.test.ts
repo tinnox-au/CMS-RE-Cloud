@@ -358,7 +358,8 @@ describe('playlist and display columns', () => {
     }
   });
 
-  it('grants the runtime role the two new display columns and nothing more', async () => {
+  // The exact list of updatable display columns is checked in stage-b.integration.test.ts.
+  it('grants the runtime role the two new display columns, but not route or site_id', async () => {
     await withOrg(pool, a.orgId, async (tx) => {
       const playlist = await newPlaylist(tx);
       const display = await newDisplay(tx, a.siteId);

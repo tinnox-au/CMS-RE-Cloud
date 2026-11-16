@@ -1,9 +1,25 @@
-import { ABSOLUTE, type PlaylistDto } from '@tinnox/contracts';
+import { ABSOLUTE, type PlaylistDto, type Transition } from '@tinnox/contracts';
 import type { RefObject } from 'react';
 import { formatTimestamp } from '../../../lib/format.ts';
 import type { EditorDraft, EditorErrors } from '../../../lib/playlistEditor.ts';
-import { Card, CardHeader, Field, Textarea, TextInput } from '../../../ui/index.ts';
+import {
+  Card,
+  CardHeader,
+  Field,
+  FieldGroup,
+  FormSection,
+  Segmented,
+  type SegmentedOption,
+  Switch,
+  Textarea,
+  TextInput,
+} from '../../../ui/index.ts';
 import './playlistEditor.css';
+
+const TRANSITION_OPTIONS: readonly SegmentedOption<Transition>[] = [
+  { value: 'cut', label: 'Cut' },
+  { value: 'fade', label: 'Fade' },
+];
 
 export interface DetailsCardProps {
   readonly draft: EditorDraft;
@@ -14,7 +30,7 @@ export interface DetailsCardProps {
   readonly onChange: (draft: EditorDraft) => void;
 }
 
-/** Name and description of the playlist. Both are part of the draft and saved with it. */
+/** Name, description and playback options of the playlist. All are part of the draft and saved with it. */
 export function DetailsCard({
   draft,
   saved,
@@ -76,6 +92,30 @@ export function DetailsCard({
           )}
         </Field>
       </div>
+      <FormSection title="Playback">
+        <FieldGroup
+          legend="Transition"
+          hint="Fade blends one image into the next. Videos always cut."
+        >
+          <Segmented
+            label="Transition"
+            options={TRANSITION_OPTIONS}
+            value={draft.transition}
+            onChange={(transition) => {
+              onChange({ ...draft, transition });
+            }}
+          />
+        </FieldGroup>
+        <Switch
+          label="Shuffle"
+          hint="Plays every item once per round, in a new order each round."
+          checked={draft.shuffle}
+          data-testid="playlist-editor-shuffle"
+          onChange={(shuffle) => {
+            onChange({ ...draft, shuffle });
+          }}
+        />
+      </FormSection>
     </Card>
   );
 }

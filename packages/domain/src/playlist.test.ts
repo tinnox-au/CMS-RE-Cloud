@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { ManifestV1Schema } from '@tinnox/contracts';
+import { ManifestV1Schema, ManifestV2Schema } from '@tinnox/contracts';
 import { checkCapabilities } from './capability.ts';
-import { ID, display, library, limits } from './fixtures.test-support.ts';
+import { ID, display, library, limits, playback } from './fixtures.test-support.ts';
 import {
   buildManifest,
   manifestAssetIds,
   manifestStorageBytes,
+  needsV2,
   planPublication,
 } from './manifest.ts';
 import { buildPublicationDraft, validatePlaylist } from './playlist.ts';
@@ -106,6 +107,7 @@ describe('buildPublicationDraft and buildManifest', () => {
       ],
       library(),
       limits,
+      playback,
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -144,6 +146,7 @@ describe('buildPublicationDraft and buildManifest', () => {
       [image(ID.png)],
       library(),
       limits,
+      playback,
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -158,6 +161,7 @@ describe('buildPublicationDraft and buildManifest', () => {
       [image(ID.processing), image(ID.failed)],
       library(),
       limits,
+      playback,
     );
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -169,14 +173,14 @@ describe('buildPublicationDraft and buildManifest', () => {
     const jpeg = lib.get(ID.jpeg);
     if (jpeg === undefined) throw new Error('fixture');
     lib.set(ID.jpeg, { ...jpeg, sha256: null });
-    const result = buildPublicationDraft(display(), [image(ID.jpeg)], lib, limits);
+    const result = buildPublicationDraft(display(), [image(ID.jpeg)], lib, limits, playback);
     expect(result.ok).toBe(false);
   });
 
   it('does not change a built manifest when the draft inputs change afterwards', () => {
     const lib = library();
     const items = [image(ID.jpeg, 5000)];
-    const result = buildPublicationDraft(display(), items, lib, limits);
+    const result = buildPublicationDraft(display(), items, lib, limits, playback);
     if (!result.ok) throw new Error('expected ok');
     const manifest = buildManifest(result.draft, created);
     const snapshot = JSON.stringify(manifest);
@@ -191,11 +195,76 @@ describe('buildPublicationDraft and buildManifest', () => {
       [image(ID.jpeg), image(ID.png), image(ID.jpeg, 2000)],
       library(),
       limits,
+      playback,
     );
     if (!result.ok) throw new Error('expected ok');
     const manifest = buildManifest(result.draft, created);
     expect(manifestAssetIds(manifest)).toEqual([ID.jpeg, ID.png]);
     expect(manifestStorageBytes(manifest)).toBe(120_000 + 300_000);
+  });
+});
+
+describe('manifest version', () => {
+  const created = { publicationId: ID.pubA, createdAt: new Date('2026-11-14T01:02:03.000Z') };
+  const draftWith = (
+    d = display(),
+    options = playback,
+    lib = library(),
+  ): Parameters<typeof buildManifest>[0] => {
+    const r = buildPublicationDraft(d, [image(ID.jpeg), video(ID.video)], lib, limits, options);
+    if (!r.ok) throw new Error('fixture draft should build');
+    return r.draft;
+  };
+
+  it('writes v1 at the defaults and v2 when any v2 option or time rule is used', () => {
+    const lib = library();
+    const jpeg = lib.get(ID.jpeg);
+    if (jpeg === undefined) throw new Error('fixture');
+    lib.set(ID.jpeg, { ...jpeg, availableUntil: '2026-12-24T18:00' });
+    const hours = [{ start: '09:00', end: '17:00' }, null, null, null, null, null, null];
+    expect(needsV2(draftWith())).toBe(false);
+    expect(buildManifest(draftWith(), created).schemaVersion).toBe(1);
+    for (const draft of [
+      draftWith(display(), { transition: 'fade', shuffle: false }),
+      draftWith(display(), { transition: 'cut', shuffle: true }),
+      draftWith(display({ rotation: 270 })),
+      draftWith(display({ workingHours: hours })),
+      draftWith(display(), playback, lib),
+    ]) {
+      expect(needsV2(draft)).toBe(true);
+    }
+  });
+
+  it('builds a v2 manifest that parses, with the facts carried through', () => {
+    const lib = library();
+    const jpeg = lib.get(ID.jpeg);
+    if (jpeg === undefined) throw new Error('fixture');
+    lib.set(ID.jpeg, { ...jpeg, availableFrom: '2026-12-01T09:00' });
+    const manifest = buildManifest(
+      draftWith(display({ rotation: 90 }), { transition: 'fade', shuffle: true }, lib),
+      created,
+    );
+    expect(ManifestV2Schema.safeParse(manifest).success).toBe(true);
+    expect(manifest).toMatchObject({
+      schemaVersion: 2,
+      timeZone: 'Australia/Melbourne',
+      transition: 'fade',
+      shuffle: true,
+      rotation: 90,
+      workingHours: null,
+    });
+    expect(manifest.assets.map((a) => ('availableFrom' in a ? a.availableFrom : 'v1'))).toEqual([
+      '2026-12-01T09:00',
+      null,
+    ]);
+  });
+
+  it('throws on a site time zone the runtime does not know when v2 is needed', () => {
+    const d = draftWith(display({ timeZone: 'Mars/Olympus_Mons' }), {
+      transition: 'fade',
+      shuffle: false,
+    });
+    expect(() => buildManifest(d, created)).toThrow(RangeError);
   });
 });
 
@@ -216,6 +285,7 @@ describe('planPublication', () => {
       items: [image(ID.jpeg)],
       mediaById: library(),
       limits,
+      playback,
       route,
     });
     expect(calls).toEqual([1]);
@@ -236,6 +306,7 @@ describe('planPublication', () => {
       items: [],
       mediaById: library(),
       limits,
+      playback,
       route,
     });
     expect(result.ok).toBe(false);
@@ -263,7 +334,7 @@ describe('checkCapabilities', () => {
     items: { mediaId: string; durationMs: number | null; fit: null }[],
     d = display(),
   ) => {
-    const r = buildPublicationDraft(d, items, library(), limits);
+    const r = buildPublicationDraft(d, items, library(), limits, playback);
     if (!r.ok) throw new Error('fixture draft should build');
     return r.draft;
   };

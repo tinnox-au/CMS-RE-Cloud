@@ -109,7 +109,7 @@ A player that is paired to a display of another organisation must first delete e
 | Response | Meaning |
 |---|---|
 | `204` | Nothing is published to this display |
-| `200 {"manifest": ManifestV1}` with `ETag: "<publicationId>"` | The current (desired) publication |
+| `200 {"manifest": Manifest}` with `ETag: "<publicationId>"` | The current (desired) publication, version 1 or 2 (below) |
 | `304` with the same `ETag` | `If-None-Match` named the current publication |
 | `401` | Credential revoked or invalid |
 
@@ -138,6 +138,32 @@ ETag rules: the ETag is the publication id in double quotes (`manifestEtag`). `I
 - `fit` is already resolved (`contain` or `cover`); the display's default was applied at publish time.
 - `contentRect` null means the whole canvas. Content is drawn only inside the rectangle; the rest of the frame stays black.
 - The manifest contains no URLs. A player must reject a manifest whose `schemaVersion` it does not know (`parseManifest` distinguishes "unsupported version" from "malformed") and keep playing the previous version.
+
+### Manifest v2 (stage B, slice 1)
+
+`ManifestV2Schema` is the v1 document with `schemaVersion: 2` and these fields added. Every field is required; none has a default.
+
+| Field | Meaning |
+|---|---|
+| `timeZone` | The IANA zone of the screen's site, for example `Australia/Melbourne`. The contract only checks its length (1 to 64); the server checks the zone when it builds the manifest. |
+| `transition` | `cut` or `fade`. Fade is 500 ms and only from one image to the next image; the first item and anything with a video cut. |
+| `shuffle` | `true` plays every item once per round in a new order each round. |
+| `rotation` | `0`, `90`, `180` or `270`, clockwise. The canvas keeps its size; the player turns the picture. |
+| `workingHours` | `null` (always on) or 7 entries, index 0 = Monday. Each is `null` (closed all day) or `{start, end}` as `HH:mm`, with `start < end`; `24:00` is the only way to say midnight at the end of a day. At least one day is open. |
+| `assets[].availableFrom`, `assets[].availableUntil` | `null` or a wall-clock `YYYY-MM-DDTHH:mm` (year 1000 or later) in `timeZone`. From is inclusive, until is exclusive; when both are set, from is before until. |
+
+`assets` stays a flat top-level list with `assetId`, and `activeItemIndex` in the heartbeat stays an index into `assets`, also under shuffle.
+
+Time rules (required player behaviour, `apps/player-web/src/core/time-rules.ts`):
+
+- Rules are evaluated with the player's clock corrected by the server: offset = `serverTime` of the last heartbeat reply minus the local clock.
+- The local wall clock in `timeZone` decides. Outside working hours (the day is `null`, or the time is not `start <= time < end`) nothing is shown: the stage is black, no slate, and the player reports `state: idle` with `activePublicationId: null`.
+- Inside working hours an item plays when `availableFrom <= now < availableUntil` (a `null` side is no limit).
+- Fail open: when the corrected clock is more than 5 minutes before the publication's `createdAt`, or the browser does not know `timeZone`, every item plays. A screen never goes blank because of a dead real-time clock or an old time zone database.
+- Rules are checked at item boundaries, so an item may run past an edge by up to its own length. An edge inside the repeated hour of a daylight-saving fall-back is ambiguous.
+- When at least one item is playable but every playable item fails, the player reports a playback fault as in v1; a window cannot hide a broken publication behind "nothing is due".
+
+The portal shows a screen whose player holds the desired publication, is idle and shows nothing as `standing_by` ("Standing by"), in the in-sync group.
 
 ## 6. Media download
 
@@ -236,7 +262,7 @@ Rules:
 - Send every `nextHeartbeatInMs` (default 15 s). The portal marks a display stale when the last **accepted** report is older than 60 s (`LIMIT_HEARTBEAT_STALE_AFTER_SECONDS`), measured on the server clock at the time the status is read. Nothing stores an "online" flag. Raw reports are kept as diagnostic history only when accepted, at most one per display per 10 s, for `LIMIT_HEARTBEAT_LOG_RETENTION_HOURS` (default 24); ignored reports (stale `seq`) are not stored.
 - Rate limit: 120 reports per minute per credential.
 
-What the portal derives (`GET /api/displays/:id/status`, `DeliveryStatusViewSchema`): `summary` is `unpaired`, `nothing_published`, `awaiting_player`, `stale`, `updating`, `error` or `in_sync`. Reports from a registration that is no longer the active one are not shown as current.
+What the portal derives (`GET /api/displays/:id/status`, `DeliveryStatusViewSchema`): `summary` is `unpaired`, `nothing_published`, `awaiting_player`, `stale`, `updating`, `standing_by`, `error` or `in_sync`. `standing_by` means the player holds the desired publication and reports nothing is due to show now (idle, no active publication); it is also reported for a moment between activation and the first item. Reports from a registration that is no longer the active one are not shown as current.
 
 ## 9. Capability negotiation
 
@@ -245,7 +271,9 @@ M0 negotiates on the server, at publish time, not with each device.
 - Every display has a `route` (only `browser` exists). Each route has a capability profile (`CapabilityProfileSchema`, `packages/delivery`). For the browser route, profile version 1: JPEG, PNG and MP4 with H.264 (8-bit 4:2:0); `contain` and `cover`; one full-frame region; muted; optional content rectangle; canvas up to 16384 px per side; video up to 3840x2160; assets up to the upload limit; up to 200 items.
 - `POST /api/playlists/:id/publish` checks the playlist against the profile of the target display's route. A playlist the route cannot show is refused with `422 publication_rejected` and one readable reason per item (`PUBLISH_REJECTION_CODES`). Nothing unsupported reaches a manifest.
 - A player declares nothing about itself except `player.version`. If a device cannot play an asset that the profile allows (for example a browser build without H.264), it reports `unsupported_media` or `decode_failed` in the heartbeat and keeps the previous version. Per-device capability reports are a later addition and would be a new field in a new heartbeat schema version.
-- Version handling: `schemaVersion` is explicit in the manifest and the heartbeat. A server that adds a v2 keeps serving v1 to v1 players; a v1 player rejects other versions.
+- Version handling: `schemaVersion` is explicit in the manifest and the heartbeat. There is no per-player version negotiation. The server writes manifest v1 unless the publication needs v2: a transition other than `cut`, shuffle, a rotation other than 0, working hours, or an availability window on any item. So a screen whose settings did not change keeps getting the same kind of document. The ETag stays the publication id; there is no request header, `Vary` or down-conversion.
+- A v1 player (before `player-web/0.2.0`) that receives v2 reports `manifest_unsupported_version` and keeps playing its last content. Nothing reloads a running player: it moves to v2 only when its page is reloaded. The portal says so under that error on the screen's Overview tab.
+- Manifest v2 stays open while stage B is built: fields may still be added. It is frozen when stage B closes.
 
 A later LED route (a dedicated player over HDMI, or controller-native playback) gets its own profile and its own `route` id. Nothing in this protocol claims compatibility with any LED controller.
 

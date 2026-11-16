@@ -1,7 +1,14 @@
 import { z } from 'zod';
-import { CanvasSchema, contentRectProblem, FitModeSchema, RectSchema } from './canvas.ts';
+import {
+  CanvasSchema,
+  contentRectProblem,
+  FitModeSchema,
+  RectSchema,
+  RotationSchema,
+} from './canvas.ts';
 import {
   DisplayIdSchema,
+  LocalTimeSchema,
   PlaylistIdSchema,
   RegistrationIdSchema,
   SiteIdSchema,
@@ -29,6 +36,20 @@ export type SiteDto = z.infer<typeof SiteDtoSchema>;
 export const SiteListResponseSchema = z.object({ items: z.array(SiteDtoSchema) }).strict();
 export type SiteListResponse = z.infer<typeof SiteListResponseSchema>;
 
+/** Opening hours of one day, in the site's zone. '24:00' is the only way to say midnight at the end. */
+export const DayHoursSchema = z
+  .object({ start: LocalTimeSchema, end: LocalTimeSchema })
+  .strict()
+  .refine((d) => d.start < d.end, { path: ['end'], message: 'end must be after start' });
+export type DayHours = z.infer<typeof DayHoursSchema>;
+
+/** Seven days, index 0 is Monday; null means closed all day. Null for the whole value means always on. */
+export const WorkingHoursSchema = z
+  .array(DayHoursSchema.nullable())
+  .length(7)
+  .refine((days) => days.some((d) => d !== null), { message: 'at least one day must be open' });
+export type WorkingHours = z.infer<typeof WorkingHoursSchema>;
+
 export const DisplayDtoSchema = z
   .object({
     id: DisplayIdSchema,
@@ -38,6 +59,9 @@ export const DisplayDtoSchema = z
     canvas: CanvasSchema,
     contentRect: RectSchema.nullable(),
     defaultFit: FitModeSchema,
+    rotation: RotationSchema,
+    /** Null means always on. */
+    workingHours: WorkingHoursSchema.nullable(),
     route: DeliveryRouteIdSchema,
     /** Present when a player registration is currently active for this display. */
     player: z
@@ -87,6 +111,7 @@ export type DisplayCreateInput = z.input<typeof DisplayCreateSchema>;
  *   the media scope, answers 404.
  * - `assignedPlaylistId`: null removes the assignment. An unknown or deleted
  *   playlist answers 404. Nothing reaches the display until a push.
+ * - `workingHours`: null clears them (always on).
  */
 export const DisplayPatchSchema = z
   .object({
@@ -95,6 +120,8 @@ export const DisplayPatchSchema = z
     canvas: CanvasSchema.optional(),
     contentRect: RectSchema.nullable().optional(),
     defaultFit: FitModeSchema.optional(),
+    rotation: RotationSchema.optional(),
+    workingHours: WorkingHoursSchema.nullable().optional(),
     tagIds: TagIdsInputSchema.optional(),
     assignedPlaylistId: PlaylistIdSchema.nullable().optional(),
   })

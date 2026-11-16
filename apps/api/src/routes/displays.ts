@@ -22,7 +22,9 @@ import {
   type PairingClaimResponse,
   type Rect,
   type RevokePlayerResponse,
+  type Rotation,
   type SiteListResponse,
+  type WorkingHours,
 } from '@tinnox/contracts';
 import {
   auditScoped,
@@ -54,6 +56,8 @@ interface DisplayRow {
   content_height: number | null;
   default_fit: 'contain' | 'cover';
   route: 'browser';
+  rotation: Rotation;
+  working_hours: WorkingHours | null;
   created_at: Date;
   updated_at: Date;
   registration_id: string | null;
@@ -67,7 +71,7 @@ interface DisplayRow {
 const DISPLAY_SELECT = `
   SELECT d.id, d.site_id, d.name, d.description, d.canvas_width, d.canvas_height,
          d.content_x, d.content_y, d.content_width, d.content_height,
-         d.default_fit, d.route, d.created_at, d.updated_at,
+         d.default_fit, d.route, d.rotation, d.working_hours, d.created_at, d.updated_at,
          pr.id AS registration_id, pr.created_at AS registered_at,
          ARRAY(SELECT dt.tag_id FROM display_tag dt
                WHERE dt.display_id = d.id AND dt.org_id = d.org_id
@@ -111,6 +115,8 @@ function toDisplayDto(row: DisplayRow): DisplayDto {
     canvas: { width: row.canvas_width, height: row.canvas_height },
     contentRect: contentRectOf(row),
     defaultFit: row.default_fit,
+    rotation: row.rotation,
+    workingHours: row.working_hours,
     route: row.route,
     player:
       row.registration_id === null || row.registered_at === null
@@ -355,10 +361,12 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
           content_height: number | null;
           default_fit: 'contain' | 'cover';
           assigned_playlist_id: string | null;
+          rotation: Rotation;
+          working_hours: WorkingHours | null;
         }>(
           `SELECT d.name, d.description, d.canvas_width, d.canvas_height,
                   d.content_x, d.content_y, d.content_width, d.content_height,
-                  d.default_fit, d.assigned_playlist_id
+                  d.default_fit, d.assigned_playlist_id, d.rotation, d.working_hours
            FROM display d WHERE d.id = $1 AND d.org_id = app_org_id() FOR UPDATE`,
           [id],
         );
@@ -390,11 +398,16 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
         // A change of tags alone leaves the row, and so its updated_at, as it is.
         const { tagIds, ...columns } = patch;
         if (Object.keys(columns).length > 0) {
+          // Stringified, as node-postgres would send a JS array as a PostgreSQL
+          // array; null stays SQL NULL (always on), never the jsonb 'null'.
+          const hours =
+            patch.workingHours === undefined ? current.working_hours : patch.workingHours;
           await tx.query(
             `UPDATE display
              SET name = $2, canvas_width = $3, canvas_height = $4,
                  content_x = $5, content_y = $6, content_width = $7, content_height = $8,
-                 default_fit = $9, description = $10, assigned_playlist_id = $11
+                 default_fit = $9, description = $10, assigned_playlist_id = $11,
+                 rotation = $12, working_hours = $13::jsonb
              WHERE id = $1 AND org_id = app_org_id()`,
             [
               id,
@@ -408,6 +421,8 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
               patch.defaultFit ?? current.default_fit,
               patch.description === undefined ? current.description : patch.description,
               assign === undefined ? current.assigned_playlist_id : assign,
+              patch.rotation ?? current.rotation,
+              hours === null ? null : JSON.stringify(hours),
             ],
           );
         }

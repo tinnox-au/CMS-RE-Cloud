@@ -117,6 +117,7 @@ describe('organisation isolation through the API', () => {
       `/api/displays/${ids.displayId}/status`,
       `/api/media/${ids.mediaId}`,
       `/api/media/${ids.mediaId}/preview`,
+      `/api/media/${ids.mediaId}/thumbnail`,
       `/api/media/${ids.mediaId}/usage`,
       `/api/playlists/${ids.playlistId}`,
     ];

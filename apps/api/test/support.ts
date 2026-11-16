@@ -293,6 +293,14 @@ export async function pngBytes(width = 32, height = 16): Promise<Buffer> {
     .toBuffer();
 }
 
+/** Format and pixel size of an image, decoded here in test code only (the API never decodes). */
+export async function imageMetadata(
+  bytes: Uint8Array,
+): Promise<{ format: string | null; width: number; height: number }> {
+  const meta = await sharp(bytes).metadata();
+  return { format: meta.format ?? null, width: meta.width ?? 0, height: meta.height ?? 0 };
+}
+
 export async function uploadBytes(
   operator: Operator,
   bytes: Uint8Array,

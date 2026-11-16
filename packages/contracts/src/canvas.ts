@@ -5,6 +5,16 @@ export const FIT_MODES = ['contain', 'cover'] as const;
 export const FitModeSchema = z.enum(FIT_MODES);
 export type FitMode = z.infer<typeof FitModeSchema>;
 
+/** Clockwise turn of the picture, for a screen mounted on its side or upside down. */
+export const ROTATIONS = [0, 90, 180, 270] as const;
+export const RotationSchema = z.union([
+  z.literal(0),
+  z.literal(90),
+  z.literal(180),
+  z.literal(270),
+]);
+export type Rotation = z.infer<typeof RotationSchema>;
+
 const side = z.number().int().min(ABSOLUTE.minCanvasSidePx).max(ABSOLUTE.maxCanvasSidePx);
 
 /** Output frame in pixels. */

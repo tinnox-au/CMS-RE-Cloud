@@ -56,6 +56,7 @@ describe('operator session, CSRF and origin checks', () => {
     ['PATCH', '/api/media/:id'],
     ['DELETE', '/api/media/:id'],
     ['GET', '/api/media/:id/preview'],
+    ['GET', '/api/media/:id/thumbnail'],
     ['GET', '/api/media/:id/usage'],
     ['GET', '/api/tags'],
     ['POST', '/api/tags'],

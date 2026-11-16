@@ -712,3 +712,10 @@
     transition: none;
   }
 }
+
+/* The Playback group follows plain fields, so the kit drops its top rule and padding: restore them. */
+.tx-playlist-editor__fields + .tx-form-section {
+  margin-block-start: var(--s-5);
+  padding-block-start: var(--s-5);
+  border-block-start: 1px solid var(--line);
+}

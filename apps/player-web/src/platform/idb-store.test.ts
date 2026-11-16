@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   makeAsset,
   makeManifest,
+  makeManifestV2,
   makeRegistration,
   REGISTRATION_ID,
 } from '../core/fakes.test-support.ts';
@@ -174,6 +175,22 @@ describe('IdbStateStore (against fake-indexeddb)', () => {
     expect(await reopened.getRegistration()).toBeNull();
     expect(await reopened.getActive()).toBeNull();
     expect(await reopened.nextHeartbeatSeq(5)).toBe(5);
+    reopened.close();
+  });
+
+  it('loads a v1 active version stored by player 0.1.0, and keeps a v2 one', async () => {
+    const v1 = makeManifest([(await makeAsset(1)).asset]);
+    const store = await open();
+    await store.replaceRegistration(makeRegistration());
+    store.close();
+    const raw = await openDB(dbName);
+    await raw.put('kv', { manifest: v1, activatedAt: '2026-11-14T03:00:00.000Z' }, 'activeVersion');
+    raw.close();
+    const reopened = await open();
+    expect((await reopened.getActive())?.manifest).toEqual(v1);
+    const v2 = makeManifestV2([(await makeAsset(2)).asset], { shuffle: true });
+    expect(await reopened.activate(REGISTRATION_ID, v2, '2026-11-14T03:01:00.000Z')).toBe(true);
+    expect((await reopened.getActive())?.manifest).toEqual(v2);
     reopened.close();
   });
 

@@ -7,6 +7,7 @@ function countdown(secondsLeft: number): string {
 }
 
 /** Full-window information screens. Hidden whenever content is playing. */
+// shortcut: pairing and slate screens are not rotated (rotation arrives with a publication).
 export class Screens {
   readonly #root: HTMLElement;
   #pairing: { code: HTMLElement; expiry: HTMLElement; note: HTMLElement; shown: string } | null =

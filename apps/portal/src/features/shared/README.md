@@ -20,7 +20,7 @@ Styles are in `shared.css` in this folder (class prefix `tx-shared-`); every com
 - **Dialogs stay mounted.** Render a dialog always and toggle `open` (the kit's rule). Each opening starts fresh. `items` are read when the dialog opens.
 - The two saving dialogs call `useToast()`, so they need the `ToastProvider` of `AppShell` above them (every page has it).
 - Nothing here is a `<form>`, and Enter inside these parts never submits a form around them, so they are safe inside a page's own form.
-- Wording: an operator sees "screen", never "display"; a screen's status uses only In sync, Updating, Not reporting, Error, Waiting for player, Nothing pushed, Not paired, with the time of the last report.
+- Wording: an operator sees "screen", never "display"; a screen's status uses only In sync, Standing by, Updating, Not reporting, Error, Waiting for player, Nothing pushed, Not paired, with the time of the last report.
 
 ---
 
@@ -247,7 +247,7 @@ interface MediaThumbProps {
 <Tile name={…} media={<MediaThumb media={media} />} />
 ```
 
-The kit's `Thumb` fed from `ROUTES.mediaPreview(id)`. Ready image: `<img loading="lazy">`. Ready video: a paused, muted `<video preload="metadata">` that is given its address only once the thumbnail comes near the viewport (a list of videos does not start a request per row), is never played, has no controls and is not focusable. Processing: a working indicator, no request. Failed: a warning mark on the danger tint, no request. Decorative unless `alt` is given. The wrapper carries `data-status` (`ready`, `processing`, `failed`).
+The kit's `Thumb`. A ready image is fed from `ROUTES.mediaThumbnail(id)` (`GET /api/media/:id/thumbnail`: the worker's JPEG of at most 480 px, or the original when there is none, for example media uploaded before stage B); a video, or a cell of unknown kind, from `ROUTES.mediaPreview(id)`. `MediaPreview` on the media page stays on `/preview`. Ready image: `<img loading="lazy">`. Ready video: a paused, muted `<video preload="metadata">` that is given its address only once the thumbnail comes near the viewport (a list of videos does not start a request per row), is never played, has no controls and is not focusable. Processing: a working indicator, no request. Failed: a warning mark on the danger tint, no request. Decorative unless `alt` is given. The wrapper carries `data-status` (`ready`, `processing`, `failed`).
 
 ## PlaylistMosaic
 
@@ -374,6 +374,7 @@ A kit `StatusPill` with an icon, and the time of the last report under it (`belo
 | API summary | Label | Tone |
 |---|---|---|
 | `in_sync` (paired, not stale) | In sync | ok |
+| `standing_by` | Standing by | neutral |
 | `updating` | Updating | warn |
 | `stale` | Not reporting | warn |
 | `error` | Error | danger |
@@ -446,7 +447,7 @@ For delete dialogs (media, playlists, tags). The order is read when the dialog o
 
 | Module | Exports |
 |---|---|
-| `lib/screenStatus.ts` | `screenStatus(view, elapsedSinceFetchMs)` → `{ kind, tone, label, detail, explanation, summary, stale, reportBadge, lastReportText, lastReportAgeSeconds }`; `SCREEN_STATUS_KINDS`, `SCREEN_STATUS_LABELS`, `screenStatusKindOf(summary)` (for the counters of `api.getOverview().displays.bySummary`), `screenStatusTone(kind)`, `screenStatusGroup(kind)` → `'in_sync' \| 'pending' \| 'attention' \| 'not_paired'` (`pending`: updating, waiting for player, nothing pushed; `attention`: error, not reporting); types `ScreenStatus`, `ScreenStatusKind`, `ScreenStatusTone`, `ScreenStatusGroup` |
+| `lib/screenStatus.ts` | `screenStatus(view, elapsedSinceFetchMs)` → `{ kind, tone, label, detail, explanation, summary, stale, reportBadge, lastReportText, lastReportAgeSeconds }`; `SCREEN_STATUS_KINDS`, `SCREEN_STATUS_LABELS`, `screenStatusKindOf(summary)` (for the counters of `api.getOverview().displays.bySummary`), `screenStatusTone(kind)`, `screenStatusGroup(kind)` → `'in_sync' \| 'pending' \| 'attention' \| 'not_paired'` (`in_sync`: in sync, standing by; `pending`: updating, waiting for player, nothing pushed; `attention`: error, not reporting); types `ScreenStatus`, `ScreenStatusKind`, `ScreenStatusTone`, `ScreenStatusGroup` |
 | `lib/screenStatusPush.ts` | `presentPushState(state)` → `{ state, tone, label, detail }`, `PUSH_STATE_PRESENTATIONS`, type `PushStatePresentation` |
 | `lib/tagColours.ts` | `TAG_COLOUR_LABELS`, `tagColourLabel`, `suggestTagColour(tags)`, `sortTags`, `tagsById`, `resolveTags(tagIds, byId)`, `summariseTags(tags, max)`, `searchTags(tags, query)`, `findTagByName(tags, name)`, `tagNameProblem(name)` (message or null), `matchesTagFilter(itemTagIds, selected, mode = 'any')`, `tagCoverage`, `tagStateWithChanges`, `toggleTagChange`, `applyTagChanges`, `NO_TAG_CHANGES`, `MAX_TAGS_PER_ITEM`; types `TagSummary`, `TagCoverage`, `TagChanges` |
 | `lib/folderChoice.ts` | `LIBRARY_ROOT_LABEL`, `sortFolders`, `folderLabel(folderId, byId)`, `findFolderByName`, `folderNameProblem(name, existing?)`, `searchFolders`, `itemsToMove(items, targetFolderId)` |

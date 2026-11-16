@@ -58,6 +58,7 @@ test('the second organisation sees none of the first organisation’s objects an
     `/api/displays/${display.id}/status`,
     `/api/media/${media.id}`,
     `/api/media/${media.id}/preview`,
+    `/api/media/${media.id}/thumbnail`,
     `/api/playlists/${playlist.id}`,
   ];
   for (const path of reads) {

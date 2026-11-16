@@ -1,4 +1,4 @@
-import type { DisplayCreate, DisplayDto, DisplayPatch, FitMode } from '@tinnox/contracts';
+import type { DisplayCreate, DisplayDto, DisplayPatch, FitMode, Rotation } from '@tinnox/contracts';
 import {
   displayFormFromDto,
   type CanvasPreviewShape,
@@ -33,11 +33,17 @@ const SHAPE_FIELDS = ['width', 'height', 'useContentRect', 'defaultFit'] as cons
 const RECT_FIELDS = ['rectX', 'rectY', 'rectWidth', 'rectHeight'] as const;
 
 /**
- * True when the canvas part of the form differs from what is stored. The name and the site
- * are not part of the Canvas tab. The four rectangle fields count only while the rectangle
- * is switched on: what was typed into them before it was switched off is not a change.
+ * True when the canvas part of the form or the rotation differs from what is stored. The
+ * name and the site are not part of the Canvas tab. The four rectangle fields count only
+ * while the rectangle is switched on: what was typed into them before it was switched off
+ * is not a change.
  */
-export function canvasFormDirty(values: DisplayFormValues, display: DisplayDto): boolean {
+export function canvasFormDirty(
+  values: DisplayFormValues,
+  display: DisplayDto,
+  rotation: Rotation,
+): boolean {
+  if (rotation !== display.rotation) return true;
   const stored = displayFormFromDto(display);
   if (SHAPE_FIELDS.some((field) => values[field] !== stored[field])) return true;
   return values.useContentRect && RECT_FIELDS.some((field) => values[field] !== stored[field]);
@@ -54,10 +60,23 @@ export function canvasFormForValidation(
   return { ...values, name: display.name, siteId: display.siteId };
 }
 
-/** Body of `PATCH /api/displays/:id` for the Canvas tab: the canvas fields and nothing else. */
-export function toCanvasPatch(value: DisplayCreate): DisplayPatch {
-  return { canvas: value.canvas, contentRect: value.contentRect, defaultFit: value.defaultFit };
+/** Body of `PATCH /api/displays/:id` for the Canvas tab: the canvas fields and the rotation. */
+export function toCanvasPatch(value: DisplayCreate, rotation: Rotation): DisplayPatch {
+  return {
+    canvas: value.canvas,
+    contentRect: value.contentRect,
+    defaultFit: value.defaultFit,
+    rotation,
+  };
 }
+
+/** The options of the "Rotation" select, clockwise as the player turns the picture. */
+export const ROTATION_LABELS: Readonly<Record<Rotation, string>> = {
+  0: 'None',
+  90: '90° clockwise',
+  180: 'Upside down (180°)',
+  270: '90° counter-clockwise',
+};
 
 /** The fields of the Canvas tab in reading order, with the labels they carry on the page. */
 const CANVAS_FIELD_LABELS: readonly (readonly [DisplayFormField, string])[] = [

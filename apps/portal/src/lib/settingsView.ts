@@ -182,7 +182,7 @@ export const PLANNED_SETTINGS: readonly PlannedSetting[] = [
   {
     id: 'working-hours',
     title: 'Working hours',
-    description: 'Set the hours in which screens show content.',
+    description: 'Default hours for new screens. Set hours per screen on its Working hours tab.',
     stage: 'B',
   },
   {

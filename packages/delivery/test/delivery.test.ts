@@ -20,6 +20,9 @@ const display: DisplayTarget = {
   contentRect: null,
   defaultFit: 'contain',
   route: 'browser',
+  rotation: 0,
+  workingHours: null,
+  timeZone: 'Australia/Melbourne',
 };
 const PNG = '22222222-2222-4222-8222-000000000002';
 const MP4 = '22222222-2222-4222-8222-000000000003';
@@ -35,6 +38,8 @@ const record = (id: string, o: Partial<MediaRecord>): MediaRecord => ({
   height: 448,
   durationMs: null,
   codec: null,
+  availableFrom: null,
+  availableUntil: null,
   ...o,
 });
 const mediaById = new Map<string, MediaRecord>([
@@ -72,6 +77,7 @@ describe('domain publishing is independent of the browser route', () => {
       items: [png],
       mediaById,
       limits: DEFAULT_LIMITS,
+      playback: { transition: 'cut', shuffle: false },
       route: fake,
     });
     expect(plan.ok).toBe(true);
@@ -92,6 +98,7 @@ describe('domain publishing is independent of the browser route', () => {
       items,
       mediaById,
       limits: DEFAULT_LIMITS,
+      playback: { transition: 'cut', shuffle: false },
       route: createBrowserRoute(),
     });
     const viaFake = planPublication({
@@ -99,6 +106,7 @@ describe('domain publishing is independent of the browser route', () => {
       items,
       mediaById,
       limits: DEFAULT_LIMITS,
+      playback: { transition: 'cut', shuffle: false },
       route: createFakeStillImageRoute(),
     });
     expect(viaBrowser.ok).toBe(true);
@@ -170,6 +178,7 @@ describe('browser route', () => {
       items: [{ mediaId: HEVC, durationMs: null, fit: null }],
       mediaById,
       limits: DEFAULT_LIMITS,
+      playback: { transition: 'cut', shuffle: false },
       route,
     });
     expect(plan.ok).toBe(false);
@@ -185,6 +194,7 @@ describe('browser route', () => {
       items: [mp4],
       mediaById,
       limits: DEFAULT_LIMITS,
+      playback: { transition: 'cut', shuffle: false },
       route: small,
     });
     expect(plan.ok).toBe(false);
@@ -197,6 +207,7 @@ describe('browser route', () => {
       items: [png, mp4],
       mediaById,
       limits: DEFAULT_LIMITS,
+      playback: { transition: 'cut', shuffle: false },
       route,
     });
     if (!plan.ok) throw new Error('expected ok');

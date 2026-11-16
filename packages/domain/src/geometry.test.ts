@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { canvasToViewport, effectiveContentRect, fitRect, placeOnCanvas } from './geometry.ts';
+import {
+  canvasToViewport,
+  effectiveContentRect,
+  fitRect,
+  placeOnCanvas,
+  stageTransform,
+} from './geometry.ts';
 
 const frame = (width: number, height: number, x = 0, y = 0) => ({ x, y, width, height });
 
@@ -165,5 +171,24 @@ describe('input checking and preview scaling', () => {
     expect(v.scale).toBeCloseTo(1080 / 1344);
     expect(v.offsetY).toBeCloseTo(0);
     expect(v.offsetX).toBeCloseTo((1920 - 640 * (1080 / 1344)) / 2);
+  });
+});
+
+describe('stageTransform', () => {
+  const stage = { width: 1920, height: 1080 };
+  it('swaps the layout size for a quarter turn and maps it back onto the stage', () => {
+    expect(stageTransform(0, stage)).toEqual({ viewport: stage, prefix: '' });
+    expect(stageTransform(90, stage)).toEqual({
+      viewport: { width: 1080, height: 1920 },
+      prefix: 'translate(1920px,0) rotate(90deg)',
+    });
+    expect(stageTransform(180, stage)).toEqual({
+      viewport: stage,
+      prefix: 'translate(1920px,1080px) rotate(180deg)',
+    });
+    expect(stageTransform(270, stage)).toEqual({
+      viewport: { width: 1080, height: 1920 },
+      prefix: 'translate(0,1080px) rotate(270deg)',
+    });
   });
 });

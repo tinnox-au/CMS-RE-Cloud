@@ -243,6 +243,15 @@ describe('buildDeliveryStatusView', () => {
     expect(summary({ reported: { ...reported, playerState: 'error' } }).summary).toBe('error');
   });
 
+  it('reports standing_by when the player holds the desired publication and shows nothing', () => {
+    const idle = { ...reported, playerState: 'idle' as const, activePublicationId: null };
+    expect(summary({ reported: idle }).summary).toBe('standing_by');
+    expect(summary({ reported: { ...idle, downloadedPublicationId: ID.pubB } }).summary).toBe(
+      'updating',
+    );
+    expect(summary({ reported: idle, now: at('2026-11-14T00:20:00.000Z') }).summary).toBe('stale');
+  });
+
   it('does not present a revoked player report as the current state', () => {
     const view = summary({ activeRegistrationId: ID.regB });
     expect(view).toMatchObject({

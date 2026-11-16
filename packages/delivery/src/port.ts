@@ -1,9 +1,4 @@
-import type {
-  CapabilityProfile,
-  DeliveryRouteId,
-  HeartbeatV1,
-  ManifestV1,
-} from '@tinnox/contracts';
+import type { CapabilityProfile, DeliveryRouteId, HeartbeatV1, Manifest } from '@tinnox/contracts';
 import type { PublicationDraft, PublicationValidator, PublishIssue } from '@tinnox/domain';
 
 /**
@@ -38,7 +33,7 @@ export interface DeliveryRoute<TPrepared = unknown> extends PublicationValidator
   /** Reasons this route cannot deliver the draft; empty when it can. Must not have side effects. */
   validate(draft: PublicationDraft): readonly PublishIssue[];
   /** Converts an immutable manifest into what this route hands to its target. Must not mutate the manifest. */
-  prepare(manifest: ManifestV1): TPrepared;
+  prepare(manifest: Manifest): TPrepared;
   /** Validates and converts an untrusted status report from the target into the neutral form. */
   normalizeStatus(report: unknown): NormalizeStatusResult;
 }

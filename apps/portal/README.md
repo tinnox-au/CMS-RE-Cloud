@@ -36,7 +36,8 @@ listens on 127.0.0.1 only and proxies `/api` to the API, so the session cookie i
   screen. The push dialog sends one `Idempotency-Key` per opening and reuses it only while the
   outcome of an attempt is unknown (`src/lib/pushDialog.ts`).
 - Player status is shown exactly as the API reports it, in the words of decision P2-04 (In
-  sync, Updating, Not reporting, Error, Waiting for player, Nothing pushed, Not paired) with the
+  sync, Standing by, Updating, Not reporting, Error, Waiting for player, Nothing pushed, Not
+  paired) with the
   time of the last report (`src/lib/screenStatus.ts`). The portal never derives "healthy" on its
   own; a unit test bans the words "online" and "offline".
 - Everything an operator reads says "screen"; code, API paths and contracts say `display`

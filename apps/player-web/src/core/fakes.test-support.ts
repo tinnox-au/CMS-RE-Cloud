@@ -3,6 +3,7 @@
 import type {
   ManifestAssetV1,
   ManifestV1,
+  ManifestV2,
   MediaUrlsResponse,
   PlayerError,
 } from '@tinnox/contracts';
@@ -86,6 +87,24 @@ export function makeManifest(
   };
 }
 
+/** A v2 manifest with every option at its default and no windows, unless overridden. */
+export function makeManifestV2(
+  assets: readonly ManifestAssetV1[],
+  overrides: Partial<ManifestV2> = {},
+): ManifestV2 {
+  return {
+    ...makeManifest([]),
+    schemaVersion: 2,
+    timeZone: 'Australia/Melbourne',
+    transition: 'cut',
+    shuffle: false,
+    rotation: 0,
+    workingHours: null,
+    assets: assets.map((asset) => ({ ...asset, availableFrom: null, availableUntil: null })),
+    ...overrides,
+  };
+}
+
 export function makeRegistration(overrides: Partial<RegistrationRecord> = {}): RegistrationRecord {
   return {
     registrationId: REGISTRATION_ID,
@@ -163,7 +182,11 @@ export class MemoryStateStore implements StateStore {
     this.#guard('clearStaging');
     this.staging = null;
   }
-  async activate(registrationId: string, manifest: ManifestV1, at: string): Promise<boolean> {
+  async activate(
+    registrationId: string,
+    manifest: ManifestV1 | ManifestV2,
+    at: string,
+  ): Promise<boolean> {
     this.#guard('activate');
     if (
       this.registration === null ||

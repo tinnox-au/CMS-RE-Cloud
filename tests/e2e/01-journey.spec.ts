@@ -187,7 +187,7 @@ async function expectDashboardMatchesOverview(): Promise<{ screens: number }> {
   const by = overview.displays.bySummary;
   // The four counters of stage-a.md 3.1, as grouped in section 8.
   const expected: Record<string, number> = {
-    in_sync: by['in_sync'] ?? 0,
+    in_sync: (by['in_sync'] ?? 0) + (by['standing_by'] ?? 0),
     updating: (by['updating'] ?? 0) + (by['awaiting_player'] ?? 0) + (by['nothing_published'] ?? 0),
     attention: (by['error'] ?? 0) + (by['stale'] ?? 0),
     unpaired: by['unpaired'] ?? 0,

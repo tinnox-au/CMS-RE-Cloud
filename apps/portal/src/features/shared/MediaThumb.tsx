@@ -24,8 +24,9 @@ export interface MediaThumbProps {
 }
 
 /**
- * The thumbnail of a media item, through the authorised preview address
- * (`ROUTES.mediaPreview`, same origin, session cookie).
+ * The thumbnail of a media item, through the authorised thumbnail address of an image
+ * (`ROUTES.mediaThumbnail`) or the preview address of a video (`ROUTES.mediaPreview`), same
+ * origin, session cookie.
  *
  * - Ready image: loaded lazily by the browser.
  * - Ready video: a paused, muted `<video preload="metadata">`, so only the start of the file
@@ -96,8 +97,10 @@ export interface PreviewThumbProps {
 }
 
 /**
- * The kit's `Thumb` fed from the preview address of ready media. Anything that may be a
- * video waits until it is near the viewport before its address is given to the browser.
+ * The kit's `Thumb` fed from the thumbnail address of a ready image, or the preview address
+ * of anything that may be a video (the kit's Thumb tries video first, which a JPEG
+ * thumbnail would fail). Those wait until they are near the viewport before their address
+ * is given to the browser.
  */
 export function PreviewThumb({
   mediaId,
@@ -118,7 +121,13 @@ export function PreviewThumb({
       data-status="ready"
     >
       <Thumb
-        src={near ? ROUTES.mediaPreview(mediaId) : null}
+        src={
+          near
+            ? kind === 'image'
+              ? ROUTES.mediaThumbnail(mediaId)
+              : ROUTES.mediaPreview(mediaId)
+            : null
+        }
         kind={kind === 'image' ? 'image' : 'video'}
         size={size}
         {...(ratio === undefined ? {} : { ratio })}

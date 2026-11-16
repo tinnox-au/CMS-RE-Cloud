@@ -199,6 +199,12 @@ function StatusFacts({
                 <span>
                   <span className="tx-code">{error.code}</span> {error.message}
                 </span>
+                {error.code === 'manifest_unsupported_version' && (
+                  <span data-testid="status-error-reload-hint">
+                    This player is older than these settings. Reload the player page on the screen
+                    to update it.
+                  </span>
+                )}
                 <span className="tx-screen-detail-errors__meta">
                   <span>{formatTimestamp(error.at)}</span>
                   {error.publicationId !== null && (

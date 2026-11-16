@@ -62,6 +62,11 @@ const SUMMARY_TEXT: { readonly [K in DeliverySummary]: SummaryText } = {
     tone: 'bad',
     explanation: 'The player software reported an error state. See the delivery errors below.',
   },
+  standing_by: {
+    headline: 'Standing by',
+    tone: 'neutral',
+    explanation: 'Has the latest push; nothing in it is due to show right now.',
+  },
   in_sync: {
     headline: 'Player reports the desired publication is playing',
     tone: 'good',

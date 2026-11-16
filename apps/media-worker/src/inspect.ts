@@ -2,7 +2,8 @@
  * Inspects one quarantined file. Decides the type from the content only (the
  * worker never sees a file name or a declared type), reads image metadata with
  * sharp under a pixel limit, and asks ffprobe about video through an argument
- * array - never a shell string - with a timeout and an output cap.
+ * array - never a shell string - with a timeout and an output cap. Accepted
+ * images also yield a small JPEG thumbnail from the same decode.
  */
 import { execFile } from 'node:child_process';
 import { lstat } from 'node:fs/promises';
@@ -28,6 +29,8 @@ export type Inspection =
       readonly durationMs: number | null;
       readonly codec: string | null;
       readonly hasAudio: boolean;
+      /** JPEG, long side <= 480 px; null for video. */
+      readonly thumbnail: Buffer | null;
     }
   | {
       readonly outcome: 'rejected';
@@ -95,9 +98,16 @@ async function inspectImage(
       `${width}x${height} pixels; the limit is ${limits.maxImageSidePx} per side`,
     );
   }
-  // Decode the whole image once, streamed and scaled down, to prove the data is intact.
+  // Decode the whole image once, streamed and scaled down: proves the data is intact
+  // and gives the thumbnail. Upright as browsers show it; alpha on white for JPEG.
+  let thumbnail;
   try {
-    await sharp(path, options).resize({ width: 64, height: 64, fit: 'inside' }).raw().toBuffer();
+    thumbnail = await sharp(path, options)
+      .rotate()
+      .resize({ width: 480, height: 480, fit: 'inside', withoutEnlargement: true })
+      .flatten({ background: '#fff' })
+      .jpeg({ quality: 75 })
+      .toBuffer();
   } catch {
     return rejected('corrupt');
   }
@@ -110,6 +120,7 @@ async function inspectImage(
     durationMs: null,
     codec: null,
     hasAudio: false,
+    thumbnail,
   };
 }
 
@@ -168,6 +179,7 @@ function runFfprobe(path: string, timeoutMs: number): Promise<ProbeRun> {
   });
 }
 
+// shortcut: no video poster frames; add an ffmpeg one-frame decode when video tiles need a still.
 async function inspectVideo(path: string, limits: Limits, timeoutMs: number): Promise<Inspection> {
   const run = await runFfprobe(path, timeoutMs);
   if (run.kind === 'timeout') return rejected('inspection_timeout');
@@ -183,6 +195,7 @@ async function inspectVideo(path: string, limits: Limits, timeoutMs: number): Pr
     durationMs: verdict.durationMs,
     codec: verdict.codec,
     hasAudio: verdict.hasAudio,
+    thumbnail: null,
   };
 }
 
