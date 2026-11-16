@@ -1,5 +1,6 @@
 import { MediaPatchSchema, type MediaDto, type PlaylistDto } from '@tinnox/contracts';
 import { describe, expect, it } from 'vitest';
+import { app } from './mediaLibrary.test-support.ts';
 import {
   appendToPlaylistBody,
   changedFields,
@@ -374,11 +375,22 @@ describe('adding a media item to a playlist', () => {
     ]);
     const shuffled = { ...original, items: [...original.items].reverse() };
     const result = appendToPlaylistBody(shuffled, video(), LIMITS);
-    expect(result.ok && result.body.items.map((item) => item.mediaId)).toEqual([
-      ID(3),
-      ID(4),
-      ID(2),
-    ]);
+    expect(
+      result.ok && result.body.items.map((item) => ('mediaId' in item ? item.mediaId : null)),
+    ).toEqual([ID(3), ID(4), ID(2)]);
+  });
+
+  it('keeps an app item as an app item', () => {
+    const base = playlist([{ media: image({ id: ID(3) }), durationMs: 4_000 }]);
+    const withApp: PlaylistDto = {
+      ...base,
+      items: [
+        ...base.items,
+        { id: ID(70), position: 1, appId: app(7).id, durationMs: 20_000, app: app(7) },
+      ],
+    };
+    const result = appendToPlaylistBody(withApp, video(), LIMITS);
+    expect(result.ok && result.body.items[1]).toEqual({ appId: app(7).id, durationMs: 20_000 });
   });
 
   it('uses 10 seconds for an image without a default and no duration for a video', () => {

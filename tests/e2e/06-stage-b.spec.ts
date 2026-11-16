@@ -34,70 +34,152 @@ interface Shown {
   readonly fadeIn: boolean;
   /** The layer fading out when this one was revealed, if any. */
   readonly leaving: string | null;
+  /** performance.now() when the layer was revealed. */
+  readonly at: number;
+  /** Computed animation of the incoming and outgoing layer, and how many animations run. */
+  readonly inAnimation: string;
+  readonly inDuration: string;
+  readonly outAnimation: string | null;
+  readonly outDuration: string | null;
+  readonly running: number;
+  /** Computed visibility of the outgoing image (null when nothing is leaving). */
+  readonly outVisibility: string | null;
 }
 
-/** Starts (or restarts) a log of every item the player reveals, read from the real DOM. */
-async function startLayerLog(): Promise<void> {
-  await player.evaluate(() => {
-    const store = window as unknown as { __shown?: Shown[]; __shownObserver?: MutationObserver };
-    store.__shownObserver?.disconnect();
-    const log: Shown[] = [];
-    store.__shown = log;
+interface Removed {
+  readonly assetId: string;
+  readonly fadeOut: boolean;
+  readonly at: number;
+}
+
+interface LayerLog {
+  readonly shown: Shown[];
+  readonly removed: Removed[];
+  /** Moments with no revealed layer on the stage or with the slate on screen. */
+  readonly gaps: string[];
+}
+
+/**
+ * Starts (or restarts) a log of every item the player reveals, every layer it removes, and
+ * every moment the stage is blank or shows the slate, read from the real DOM.
+ */
+async function startLayerLog(page: Page = player): Promise<void> {
+  await page.evaluate(() => {
+    const store = window as unknown as { __log?: LayerLog; __logObserver?: MutationObserver };
+    store.__logObserver?.disconnect();
+    const log: LayerLog = { shown: [], removed: [], gaps: [] };
+    store.__log = log;
     // The presenter sets data-testid="active-layer" when it reveals a layer, and marks the
     // previous one fade-out in the same task, so both are visible to this callback.
-    store.__shownObserver = new MutationObserver((records) => {
+    store.__logObserver = new MutationObserver((records) => {
+      const at = performance.now();
       for (const record of records) {
+        for (const node of record.removedNodes) {
+          if (!(node instanceof HTMLElement) || !node.classList.contains('layer')) continue;
+          log.removed.push({
+            assetId: node.dataset['assetId'] ?? '',
+            fadeOut: node.classList.contains('fade-out'),
+            at,
+          });
+        }
+        if (record.type !== 'attributes' || record.attributeName !== 'data-testid') continue;
         const layer = record.target as HTMLElement;
         if (layer.getAttribute('data-testid') !== 'active-layer') continue;
         if (record.oldValue === 'active-layer') continue;
-        log.push({
+        const out = document.querySelector<HTMLElement>('.layer.fade-out');
+        const inStyle = getComputedStyle(layer);
+        const outStyle = out === null ? null : getComputedStyle(out);
+        const outMedia = out?.firstElementChild;
+        log.shown.push({
           assetId: layer.dataset['assetId'] ?? '',
           fadeIn: layer.classList.contains('fade-in'),
-          leaving:
-            document.querySelector<HTMLElement>('.layer.fade-out')?.dataset['assetId'] ?? null,
+          leaving: out?.dataset['assetId'] ?? null,
+          at,
+          inAnimation: inStyle.animationName,
+          inDuration: inStyle.animationDuration,
+          outAnimation: outStyle?.animationName ?? null,
+          outDuration: outStyle?.animationDuration ?? null,
+          running: document.getAnimations().filter((animation) => animation.playState === 'running')
+            .length,
+          outVisibility:
+            outMedia === null || outMedia === undefined
+              ? null
+              : getComputedStyle(outMedia).visibility,
         });
       }
+      const shown = document.querySelector('[data-testid="active-layer"]');
+      if (shown === null || shown.classList.contains('pending')) log.gaps.push(`blank at ${at}`);
+      if (document.querySelector('[data-testid="slate-display-name"]')?.checkVisibility() === true)
+        log.gaps.push(`slate at ${at}`);
     });
-    store.__shownObserver.observe(document.documentElement, {
+    store.__logObserver.observe(document.documentElement, {
       subtree: true,
+      childList: true,
       attributes: true,
-      attributeFilter: ['data-testid'],
+      attributeFilter: ['data-testid', 'class', 'hidden'],
       attributeOldValue: true,
     });
   });
 }
 
-function layerLog(): Promise<Shown[]> {
-  return player.evaluate(() => (window as unknown as { __shown?: Shown[] }).__shown ?? []);
+function fullLog(page: Page = player): Promise<LayerLog> {
+  return page.evaluate(
+    () => (window as unknown as { __log?: LayerLog }).__log ?? { shown: [], removed: [], gaps: [] },
+  );
+}
+
+async function layerLog(page: Page = player): Promise<Shown[]> {
+  return (await fullLog(page)).shown;
 }
 
 /** Waits until the log holds at least `count` items and returns it. */
-async function waitForShown(count: number, timeout = 60_000): Promise<Shown[]> {
+async function waitForShown(
+  count: number,
+  timeout = 60_000,
+  page: Page = player,
+): Promise<Shown[]> {
   await expect
-    .poll(async () => (await layerLog()).length, { timeout })
+    .poll(async () => (await layerLog(page)).length, { timeout })
     .toBeGreaterThanOrEqual(count);
-  return layerLog();
+  return layerLog(page);
+}
+
+/** SHA-256 of every asset in the player's media cache. */
+function cachedHashes(page: Page = player): Promise<string[]> {
+  return page.evaluate(async () => {
+    const hashes: string[] = [];
+    for (const name of await caches.keys()) {
+      if (!name.startsWith('tinnox-media')) continue;
+      for (const request of await (await caches.open(name)).keys()) {
+        hashes.push(new URL(request.url).pathname.split('/').pop() ?? '');
+      }
+    }
+    return hashes;
+  });
 }
 
 interface StoredManifest {
   readonly manifest: {
     readonly publicationId: string;
     readonly schemaVersion: number;
-    readonly assets: readonly { assetId: string }[];
+    readonly assets: readonly { assetId: string; sha256: string }[];
   };
 }
 
 /** Pushes a playlist to the paired screen and waits until the player has adopted it. */
-async function pushAndAdopt(playlistId: string): Promise<StoredManifest['manifest']> {
-  const { publicationId } = await operator.api.publish(playlistId, displayId);
+async function pushAndAdopt(
+  playlistId: string,
+  page: Page = player,
+  screen: string = displayId,
+): Promise<StoredManifest['manifest']> {
+  const { publicationId } = await operator.api.publish(playlistId, screen);
   await expect
     .poll(
-      async () =>
-        (await readRecord<StoredManifest>(player, 'activeVersion'))?.manifest.publicationId,
+      async () => (await readRecord<StoredManifest>(page, 'activeVersion'))?.manifest.publicationId,
       { timeout: 90_000 },
     )
     .toBe(publicationId);
-  const stored = await readRecord<StoredManifest>(player, 'activeVersion');
+  const stored = await readRecord<StoredManifest>(page, 'activeVersion');
   if (stored === null) throw new Error('the player holds no active version');
   return stored.manifest;
 }
@@ -311,6 +393,117 @@ test('availability windows: an item not yet available never shows; none availabl
   expect(new Set(both.map((item) => item.assetId))).toEqual(new Set([later.id, now.id]));
 });
 
+test('fade: both layers animate for 500 ms and the outgoing one goes about 500 ms later', async () => {
+  const playlistId = await playlistOf('fade timing', images.slice(0, 2), { transition: 'fade' });
+  await pushAndAdopt(playlistId);
+  await player.waitForTimeout(1500);
+  await startLayerLog();
+  const shown = (await waitForShown(4)).slice(0, 3);
+  const { removed } = await fullLog();
+  for (const item of shown) {
+    expect(item, JSON.stringify(item)).toMatchObject({
+      fadeIn: true,
+      inDuration: '0.5s',
+      outDuration: '0.5s',
+      outVisibility: 'visible',
+    });
+    expect(item.running).toBeGreaterThanOrEqual(1);
+    const gone = removed.find(
+      (layer) => layer.fadeOut && layer.assetId === item.leaving && layer.at >= item.at,
+    );
+    expect(gone, `the outgoing ${item.leaving} is removed`).toBeDefined();
+    const after = (gone?.at ?? 0) - item.at;
+    expect(after, 'ms from reveal to removal of the outgoing layer').toBeGreaterThanOrEqual(300);
+    expect(after).toBeLessThanOrEqual(1500);
+  }
+});
+
+test('fade across a publication switch: the new first image fades in, no gap, old media released', async () => {
+  const before = images.slice(2, 4);
+  const after = images.slice(4, 6);
+  const oldManifest = await pushAndAdopt(
+    await playlistOf('switch one', before, { transition: 'fade' }),
+  );
+  await player.waitForTimeout(1500);
+  await startLayerLog();
+  for (const item of await waitForShown(2)) {
+    expect(before.map((media) => media.id)).toContain(item.assetId);
+  }
+
+  const newManifest = await pushAndAdopt(
+    await playlistOf('switch two', after, { transition: 'fade' }),
+  );
+  const newIds = new Set(after.map((item) => item.id));
+  await expect
+    .poll(async () => (await layerLog()).some((item) => newIds.has(item.assetId)))
+    .toBe(true);
+  const log = await fullLog();
+  const first = log.shown.find((item) => newIds.has(item.assetId));
+  // The code fades here: the new manifest asks for fade and both layers are images.
+  expect(first, JSON.stringify(first)).toMatchObject({ fadeIn: true, inDuration: '0.5s' });
+  expect(before.map((item) => item.id)).toContain(first?.leaving);
+  expect(log.gaps, 'never a blank stage or the slate').toEqual([]);
+
+  const oldHashes = oldManifest.assets.map((asset) => asset.sha256);
+  const newHashes = newManifest.assets.map((asset) => asset.sha256);
+  await expect
+    .poll(
+      async () => {
+        const cached = await cachedHashes();
+        return {
+          old: oldHashes.filter((hash) => cached.includes(hash)),
+          new: newHashes.filter((hash) => cached.includes(hash)),
+        };
+      },
+      { timeout: 5_000 },
+    )
+    .toEqual({ old: [], new: newHashes });
+  await expect.poll(async () => (await fullLog()).gaps).toEqual([]);
+});
+
+test('reduced motion: a Fade playlist changes with no animation and the old image hidden', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 640, height: 360 },
+    reducedMotion: 'reduce',
+  });
+  try {
+    const page = await context.newPage();
+    const display = await operator.api.createDisplay({
+      name: `ZZ sb reduced ${runId}`,
+      canvas: { width: 1280, height: 720 },
+    });
+    await openPlayer(page);
+    expect((await operator.api.claim(display.id, await pairingCode(page))).status()).toBe(200);
+    const playlistId = await playlistOf('reduced', images.slice(0, 2), { transition: 'fade' });
+    expect((await pushAndAdopt(playlistId, page, display.id)).schemaVersion).toBe(2);
+    await expectPhase(page, 'playing');
+    await page.waitForTimeout(1500);
+    await startLayerLog(page);
+    const shown = (await waitForShown(4, 60_000, page)).slice(0, 4);
+    for (const item of shown) {
+      expect(item, JSON.stringify(item)).toMatchObject({
+        fadeIn: true,
+        inAnimation: 'none',
+        outAnimation: 'none',
+        running: 0,
+        outVisibility: 'hidden',
+      });
+      expect(item.leaving).not.toBeNull();
+      expect(item.leaving).not.toBe(item.assetId);
+    }
+    expect(new Set(shown.map((item) => item.assetId))).toEqual(
+      new Set(images.slice(0, 2).map((item) => item.id)),
+    );
+    expect((await fullLog(page)).gaps).toEqual([]);
+    await expectPhase(page, 'playing');
+    await expect(activeLayer(page)).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
 test('playlist editor: Fade and Shuffle persist, give changes waiting and can be discarded', async () => {
   const page = operator.page;
   const screen = await pushedScreen('editor');
@@ -385,7 +578,8 @@ test('media details: availability window order, a valid pair, and a half-typed d
   // Only the date part typed: the field reports '' (badInput), which must not mean "no limit".
   await until.fill('');
   await until.focus();
-  await page.keyboard.type('07042031');
+  // Day 01, month 01: a complete date in either field order (see the en-AU/en-US test).
+  await page.keyboard.type('01012031');
   expect(await until.evaluate((input: HTMLInputElement) => input.validity.badInput)).toBe(true);
   await save.click();
   await expect(
@@ -395,6 +589,49 @@ test('media details: availability window order, a valid pair, and a half-typed d
     availableFrom: '2030-06-02T09:00',
     availableUntil: '2030-06-03T09:00',
   });
+});
+
+test('media details: a half-typed date is refused in en-AU and in en-US', async ({ browser }) => {
+  const media = images[1] as MediaItem;
+  const stored = async () =>
+    (await (await operator.api.get(`/api/media/${media.id}`)).json()) as {
+      availableFrom: string | null;
+      availableUntil: string | null;
+    };
+  const saved = await stored();
+  const storageState = await operator.context.storageState();
+  for (const locale of ['en-AU', 'en-US']) {
+    const context = await browser.newContext({
+      locale,
+      storageState,
+      viewport: { width: 1280, height: 900 },
+    });
+    try {
+      const page = await context.newPage();
+      await page.goto(`${PORTAL_URL}/media/${media.id}`);
+      expect(await page.evaluate(() => navigator.language)).toBe(locale);
+      const until = page.getByLabel('Available until');
+      await expect(until).toBeVisible();
+      await until.fill('');
+      await until.focus();
+      // Only the date part, valid as day/month and as month/day.
+      await page.keyboard.type('01012031');
+      expect(
+        await until.evaluate((input: HTMLInputElement) => input.validity.badInput),
+        locale,
+      ).toBe(true);
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(
+        page
+          .getByTestId('media-detail-form')
+          .getByText('Enter a full date and time, year 1000 or later.')
+          .first(),
+      ).toBeVisible();
+      expect(await stored(), locale).toEqual(saved);
+    } finally {
+      await context.close();
+    }
+  }
 });
 
 test('screen page, Working hours: defaults, errors, keyboard, save and 24:00', async () => {

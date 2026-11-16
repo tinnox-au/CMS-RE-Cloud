@@ -2,8 +2,9 @@ import type { FitMode } from '@tinnox/contracts';
 import type { DragEvent } from 'react';
 import { mediaFailureText } from '../../../lib/mediaDetailFacts.ts';
 import { mediaDisplayName, presentMediaStatus } from '../../../lib/mediaName.ts';
-import type { DraftItem } from '../../../lib/playlistDraft.ts';
+import type { DraftItem, ItemChange } from '../../../lib/playlistDraft.ts';
 import {
+  appMetaLabel,
   FIT_CHOICES,
   fitLabel,
   itemNotReadyMessage,
@@ -24,6 +25,7 @@ import {
   VisuallyHidden,
 } from '../../../ui/index.ts';
 import { MediaThumb } from '../../shared/index.ts';
+import { APP_TYPE_ICONS } from '../../apps/appIcons.ts';
 import './playlistEditor.css';
 
 /** The controls of a tile that keep focus across a move; marked with `data-action`. */
@@ -43,7 +45,7 @@ export interface SequenceTileProps {
   readonly dragging: boolean;
   readonly onMove: (delta: -1 | 1) => void;
   readonly onRemove: () => void;
-  readonly onChange: (change: Partial<Pick<DraftItem, 'durationText' | 'fit'>>) => void;
+  readonly onChange: (change: ItemChange) => void;
   readonly onDragStart: (event: DragEvent<HTMLElement>) => void;
   readonly onDragEnd: (event: DragEvent<HTMLElement>) => void;
 }
@@ -68,12 +70,12 @@ export function SequenceTile({
   onDragStart,
   onDragEnd,
 }: SequenceTileProps) {
-  const { media } = item;
-  const name = mediaDisplayName(media);
+  const media = item.source === 'media' ? item.media : null;
+  const name = item.source === 'app' ? item.app.name : mediaDisplayName(item.media);
   const position = index + 1;
-  const notReady = itemNotReadyMessage(media);
-  const failure = media.status === 'failed' ? mediaFailureText(media) : null;
-  const status = presentMediaStatus(media.status);
+  const notReady = media === null ? null : itemNotReadyMessage(media);
+  const failure = media?.status === 'failed' ? mediaFailureText(media) : null;
+  const status = presentMediaStatus(media?.status ?? 'ready');
 
   return (
     <li
@@ -86,7 +88,8 @@ export function SequenceTile({
       )}
       data-tile=""
       data-item-key={item.key}
-      data-media-id={media.id}
+      data-media-id={media?.id}
+      data-app-id={item.source === 'app' ? item.app.id : undefined}
       data-position={position}
       data-testid="playlist-editor-item"
     >
@@ -96,7 +99,13 @@ export function SequenceTile({
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
       >
-        <MediaThumb media={media} size="fill" ratio="wide" />
+        {item.source === 'app' ? (
+          <span className="tx-playlist-editor-app-thumb">
+            <Icon icon={APP_TYPE_ICONS[item.app.content.type]} size={28} />
+          </span>
+        ) : (
+          <MediaThumb media={item.media} size="fill" ratio="wide" />
+        )}
         <span className="tx-playlist-editor-tile__position tx-num" aria-hidden="true">
           {position}
         </span>
@@ -110,7 +119,9 @@ export function SequenceTile({
           <VisuallyHidden>{`Item ${position} of ${count}: `}</VisuallyHidden>
           <span className="tx-truncate">{name}</span>
         </h3>
-        <p className="tx-playlist-editor-tile__meta tx-truncate">{libraryMetaLabel(media)}</p>
+        <p className="tx-playlist-editor-tile__meta tx-truncate">
+          {item.source === 'app' ? appMetaLabel(item.app) : libraryMetaLabel(item.media)}
+        </p>
 
         {notReady !== null && (
           <div className="tx-playlist-editor-tile__problem">
@@ -125,7 +136,7 @@ export function SequenceTile({
           </div>
         )}
 
-        {media.kind === 'image' ? (
+        {media === null || media.kind === 'image' ? (
           <Field label="Seconds on screen" error={error} className="tx-playlist-editor-tile__field">
             {(control) => (
               <Stepper
@@ -154,42 +165,44 @@ export function SequenceTile({
           </div>
         )}
 
-        <div className="tx-playlist-editor-tile__fit">
-          <span className="tx-playlist-editor-tile__label" aria-hidden="true">
-            Fit
-          </span>
-          <Menu
-            placement="bottom-start"
-            trigger={(props) => (
-              <Button
-                {...props}
-                size="sm"
-                variant="secondary"
-                trailingIcon={ChevronDown}
-                aria-label={`Fit for ${name}: ${fitLabel(item.fit)}`}
-                className="tx-playlist-editor-tile__fit-button"
-                data-testid="playlist-editor-item-fit"
-              >
-                {fitLabel(item.fit)}
-              </Button>
-            )}
-          >
-            {FIT_CHOICES.map((choice) => (
-              <MenuItem
-                key={choice.label}
-                type="radio"
-                checked={choice.value === item.fit}
-                hint={choice.hint}
-                onSelect={() => {
-                  const fit: FitMode | null = choice.value;
-                  onChange({ fit });
-                }}
-              >
-                {choice.label}
-              </MenuItem>
-            ))}
-          </Menu>
-        </div>
+        {item.source === 'media' && (
+          <div className="tx-playlist-editor-tile__fit">
+            <span className="tx-playlist-editor-tile__label" aria-hidden="true">
+              Fit
+            </span>
+            <Menu
+              placement="bottom-start"
+              trigger={(props) => (
+                <Button
+                  {...props}
+                  size="sm"
+                  variant="secondary"
+                  trailingIcon={ChevronDown}
+                  aria-label={`Fit for ${name}: ${fitLabel(item.fit)}`}
+                  className="tx-playlist-editor-tile__fit-button"
+                  data-testid="playlist-editor-item-fit"
+                >
+                  {fitLabel(item.fit)}
+                </Button>
+              )}
+            >
+              {FIT_CHOICES.map((choice) => (
+                <MenuItem
+                  key={choice.label}
+                  type="radio"
+                  checked={choice.value === item.fit}
+                  hint={choice.hint}
+                  onSelect={() => {
+                    const fit: FitMode | null = choice.value;
+                    onChange({ fit });
+                  }}
+                >
+                  {choice.label}
+                </MenuItem>
+              ))}
+            </Menu>
+          </div>
+        )}
       </div>
 
       <div className="tx-playlist-editor-tile__actions">

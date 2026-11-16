@@ -12,8 +12,11 @@ export interface CanvasFrameProps {
   readonly description?: string;
   /** Shown instead of the frame while `shape` is null. */
   readonly emptyText?: string;
-  /** The tallest the frame may be: `sm` 150 px, `md` (the default) 200 px, `lg` 176 px on a taller stage. */
-  readonly size?: 'sm' | 'md' | 'lg';
+  /**
+   * The tallest the frame may be: `sm` 150 px, `md` (the default) 200 px, `lg` 176 px on a
+   * taller stage, `xl` 360 px (the app editor's preview).
+   */
+  readonly size?: 'sm' | 'md' | 'lg' | 'xl';
   /** Drawn inside the content area. Left out, the frame shows proportions only. */
   readonly children?: ReactNode;
   readonly testId?: string;
@@ -37,6 +40,7 @@ export function CanvasFrame({
     'tx-screen-detail-stage',
     size === 'sm' && 'tx-screen-detail-stage--sm',
     size === 'lg' && 'tx-screen-detail-stage--lg',
+    size === 'xl' && 'tx-screen-detail-stage--xl',
   );
   if (shape === null) {
     return (

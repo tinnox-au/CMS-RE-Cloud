@@ -1,6 +1,6 @@
 import { DEFAULT_LIMITS, type PlaylistDto } from '@tinnox/contracts';
 import { describe, expect, it } from 'vitest';
-import { ID, media } from './mediaLibrary.test-support.ts';
+import { app, ID, media } from './mediaLibrary.test-support.ts';
 import {
   addToPlaylistBlock,
   appendedItemDurationMs,
@@ -76,6 +76,18 @@ describe('adding a file to a playlist', () => {
       ],
     });
     expect('description' in body).toBe(false);
+  });
+
+  it('sends an app item back as an app item', () => {
+    const body = playlistWithMediaAppended(
+      playlist([{ id: ID(5), position: 0, appId: ID(7), durationMs: 15_000, app: app(7) }]),
+      media(1, 'video'),
+      DEFAULT_LIMITS,
+    );
+    expect(body.items).toEqual([
+      { appId: ID(7), durationMs: 15_000 },
+      { mediaId: ID(1), durationMs: null, fit: null },
+    ]);
   });
 
   it('says why a playlist or a file cannot take part', () => {

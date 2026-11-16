@@ -3,12 +3,14 @@ import {
   DescriptionInputSchema,
   NameSchema,
   PLAYLIST_PREVIEW_COUNT,
+  type AppDto,
   type DisplayDto,
   type DisplayPatch,
   type FitMode,
   type MediaDto,
   type MediaKind,
   type PlaylistDto,
+  type PlaylistItemKind,
   type PushPlanResponse,
   type PushPlanRow,
   type WorkingHours,
@@ -336,6 +338,12 @@ export function pairingStateText(since: string | null): string {
 
 // ---------- Assigned content ----------
 
+/** The first item when it is a built-in app: drawn by the app renderer, always ready. */
+export interface AssignedFirstApp {
+  readonly app: AppDto;
+  readonly name: string;
+}
+
 export interface AssignedFirstItem {
   readonly media: Pick<MediaDto, 'id' | 'kind' | 'status'>;
   /** The media item's shown name. */
@@ -357,11 +365,11 @@ export interface AssignedContent {
   readonly summary: string;
   /** The first distinct media ids in play order, for the thumbnail mosaic. */
   readonly previewMediaIds: readonly string[];
-  /** The media kinds present, each once. */
-  readonly kinds: readonly MediaKind[];
+  /** The item kinds present, each once, apps included. */
+  readonly kinds: readonly PlaylistItemKind[];
   readonly kindById: ReadonlyMap<string, MediaKind>;
   /** The item that plays first, or null for an empty playlist. */
-  readonly first: AssignedFirstItem | null;
+  readonly first: AssignedFirstItem | AssignedFirstApp | null;
 }
 
 /** What the screen page shows of the assigned playlist, from the playlist itself. */
@@ -371,6 +379,10 @@ export function assignedContent(playlist: PlaylistDto, defaultFit: FitMode): Ass
   const previewMediaIds: string[] = [];
   let loopMs = 0;
   for (const item of items) {
+    if ('appId' in item) {
+      loopMs += item.durationMs;
+      continue;
+    }
     const length = item.media.kind === 'video' ? item.media.durationMs : item.durationMs;
     loopMs += length ?? 0;
     if (!kindById.has(item.mediaId)) {
@@ -378,8 +390,8 @@ export function assignedContent(playlist: PlaylistDto, defaultFit: FitMode): Ass
       if (previewMediaIds.length < PLAYLIST_PREVIEW_COUNT) previewMediaIds.push(item.mediaId);
     }
   }
-  const kinds = (['image', 'video'] as const).filter((kind) =>
-    items.some((item) => item.media.kind === kind),
+  const kinds = (['image', 'video', 'app'] as const).filter((kind) =>
+    items.some((item) => ('appId' in item ? 'app' : item.media.kind) === kind),
   );
   const head = items[0];
   return {
@@ -392,12 +404,14 @@ export function assignedContent(playlist: PlaylistDto, defaultFit: FitMode): Ass
     first:
       head === undefined
         ? null
-        : {
-            media: { id: head.media.id, kind: head.media.kind, status: head.media.status },
-            name: head.media.name,
-            fit: head.fit ?? defaultFit,
-            fitFromItem: head.fit !== null,
-          },
+        : 'appId' in head
+          ? { app: head.app, name: head.app.name }
+          : {
+              media: { id: head.media.id, kind: head.media.kind, status: head.media.status },
+              name: head.media.name,
+              fit: head.fit ?? defaultFit,
+              fitFromItem: head.fit !== null,
+            },
   };
 }
 
@@ -499,7 +513,7 @@ export function previewStateOf(
   if (!assigned) return 'nothing_assigned';
   if (content === 'loading' || content === 'unavailable') return content;
   if (content.first === null) return 'empty_playlist';
-  if (content.first.media.status === 'ready') return 'ready';
+  if ('app' in content.first || content.first.media.status === 'ready') return 'ready';
   return content.first.media.status;
 }
 
@@ -537,6 +551,10 @@ function capitalise(text: string): string {
 /** The sentence that must stay next to every preview and status on the page. */
 export const PREVIEW_DISCLAIMER =
   'A mock-up drawn from the library file. It is not a picture of the physical screen.';
+
+/** The disclaimer when the first item is an app: there is no library file. */
+export const APP_PREVIEW_DISCLAIMER =
+  'A mock-up drawn by the code the player uses for apps. It is not a picture of the physical screen.';
 
 export const STATUS_DISCLAIMER =
   'Player status is reported by player software. It is not proof of what a physical screen shows.';

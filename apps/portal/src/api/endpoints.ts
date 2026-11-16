@@ -1,4 +1,6 @@
 import {
+  AppDtoSchema,
+  AppListResponseSchema,
   AuditListResponseSchema,
   DeliveryStatusListResponseSchema,
   DeliveryStatusViewSchema,
@@ -25,6 +27,9 @@ import {
   SiteListResponseSchema,
   TagDtoSchema,
   TagListResponseSchema,
+  type AppCreate,
+  type AppDto,
+  type AppPatch,
   type AuditCategory,
   type AuditListResponse,
   type AuditResult,
@@ -108,6 +113,14 @@ export interface Endpoints {
   renameFolder(id: string, name: string): Promise<FolderDto>;
   /** The media in the folder moves to the root of the library. */
   deleteFolder(id: string): Promise<void>;
+
+  listApps(signal?: AbortSignal): Promise<AppDto[]>;
+  getApp(id: string, signal?: AbortSignal): Promise<AppDto>;
+  createApp(input: AppCreate): Promise<AppDto>;
+  /** `content.type` must be the app's own type. */
+  patchApp(id: string, patch: AppPatch): Promise<AppDto>;
+  /** 409 `app_in_use` while a live playlist contains the app. */
+  deleteApp(id: string): Promise<void>;
 
   listPlaylists(signal?: AbortSignal): Promise<PlaylistSummaryDto[]>;
   createPlaylist(name: string): Promise<{ id: string }>;
@@ -239,6 +252,22 @@ export function createEndpoints(client: ApiClient): Endpoints {
     },
     deleteFolder(id) {
       return client.requestNoContent({ method: 'DELETE', path: ROUTES.folder(id) });
+    },
+
+    async listApps(signal) {
+      return (await client.request(get(ROUTES.apps, signal), AppListResponseSchema)).items;
+    },
+    getApp(id, signal) {
+      return client.request(get(ROUTES.app(id), signal), AppDtoSchema);
+    },
+    createApp(input) {
+      return client.request({ method: 'POST', path: ROUTES.apps, body: input }, AppDtoSchema);
+    },
+    patchApp(id, patch) {
+      return client.request({ method: 'PATCH', path: ROUTES.app(id), body: patch }, AppDtoSchema);
+    },
+    deleteApp(id) {
+      return client.requestNoContent({ method: 'DELETE', path: ROUTES.app(id) });
     },
 
     async listPlaylists(signal) {

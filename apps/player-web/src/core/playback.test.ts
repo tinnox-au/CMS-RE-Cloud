@@ -1,7 +1,18 @@
-import type { ManifestAssetV1, Manifest } from '@tinnox/contracts';
+import {
+  isMediaItem,
+  type ManifestAssetV1,
+  type Manifest,
+  type ManifestV1,
+} from '@tinnox/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlayerFault } from './errors.ts';
-import { makeAsset, makeManifest, makeManifestV2 } from './fakes.test-support.ts';
+import {
+  makeAppItem,
+  makeAsset,
+  makeManifest,
+  makeManifestV2,
+  makeManifestV3,
+} from './fakes.test-support.ts';
 import {
   holdTimeMs,
   nextStep,
@@ -16,7 +27,7 @@ import { sleep } from './timing.ts';
 
 async function manifestOf(
   ...specs: { kind?: 'image' | 'video'; durationMs: number }[]
-): Promise<Manifest> {
+): Promise<ManifestV1> {
   const assets: ManifestAssetV1[] = [];
   for (const [i, spec] of specs.entries()) assets.push((await makeAsset(100 + i, spec)).asset);
   return makeManifest(assets);
@@ -151,13 +162,17 @@ describe('item timing', () => {
     const { asset } = await makeAsset(1, { kind: 'video', durationMs: 10_000 });
     expect(holdTimeMs(asset)).toBe(17_500);
   });
+
+  it('holds an app for exactly its duration', () => {
+    expect(holdTimeMs(makeAppItem(12_000))).toBe(12_000);
+  });
 });
 
 interface Stage {
   presenter: Presenter;
   shown: string[];
   clears: number;
-  /** assetId → how the item behaves. */
+  /** assetId (appId for an app) → how the item behaves. */
   behaviour: Map<string, 'ok' | 'fail_to_show' | 'video_ends' | 'video_errors' | 'video_stalls'>;
 }
 
@@ -168,12 +183,12 @@ function stage(videoPlayMs = 4_000): Stage {
     behaviour: new Map(),
     presenter: {
       show: async (asset): Promise<ShownItem> => {
-        const mode =
-          s.behaviour.get(asset.assetId) ?? (asset.kind === 'video' ? 'video_ends' : 'ok');
+        const id = isMediaItem(asset) ? asset.assetId : asset.appId;
+        const mode = s.behaviour.get(id) ?? (asset.kind === 'video' ? 'video_ends' : 'ok');
         if (mode === 'fail_to_show')
           throw new PlayerFault('decode_failed', 'injected: cannot show');
-        s.shown.push(asset.assetId);
-        if (asset.kind === 'image') return { finished: null };
+        s.shown.push(id);
+        if (asset.kind !== 'video') return { finished: null };
         if (mode === 'video_stalls') return { finished: new Promise<void>(() => undefined) };
         const finished =
           mode === 'video_errors'
@@ -424,6 +439,27 @@ describe('PlaybackLoop', () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(started()).toEqual([0, 1, 0]);
     expect(events.filter((e) => e.type === 'version_adopted')).toHaveLength(1);
+  });
+
+  it('holds an app like an image, between media items, and reports its failure without an assetId', async () => {
+    vi.setSystemTime(NOW);
+    const [first, last] = await images(2);
+    const app = makeAppItem(2_000);
+    active = makeManifestV3([first!, app, last!]);
+    const s = stage();
+    loop(s).start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(started()).toEqual([0, 1]);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(started()).toEqual([0, 1]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(started()).toEqual([0, 1, 2]);
+
+    s.behaviour.set(app.appId, 'fail_to_show');
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(events.find((e) => e.type === 'item_failed')).toMatchObject({
+      error: { assetId: null },
+    });
   });
 
   it('stops when aborted', async () => {

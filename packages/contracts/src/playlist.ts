@@ -1,6 +1,8 @@
 import { z } from 'zod';
+import { AppDtoSchema } from './app.ts';
 import { FitModeSchema } from './canvas.ts';
 import {
+  AppIdSchema,
   DisplayIdSchema,
   MediaIdSchema,
   PlaylistIdSchema,
@@ -10,26 +12,42 @@ import {
 } from './ids.ts';
 import { ABSOLUTE } from './limits.ts';
 import { ManifestSchema, TransitionSchema } from './manifest.ts';
-import { MEDIA_KINDS, MediaDtoSchema, MediaKindSchema } from './media.ts';
+import { MediaDtoSchema } from './media.ts';
 import { DescriptionInputSchema, DescriptionSchema, NameSchema } from './text.ts';
 
 /**
- * One entry of a one-level playlist.
+ * A media entry of a one-level playlist.
  * - `durationMs`: required for images; must be null for video (natural duration is used).
  * - `fit`: null means "use the display's default fit at publish time".
  * The kind-dependent rules are enforced by `validatePlaylist` in @tinnox/domain,
  * which has the media records; this schema only bounds the values.
  */
-export const PlaylistItemInputSchema = z
+export const PlaylistMediaItemInputSchema = z
   .object({
     mediaId: MediaIdSchema,
     durationMs: z.number().int().positive().max(ABSOLUTE.maxItemDurationMs).nullable(),
     fit: FitModeSchema.nullable(),
   })
   .strict();
+export type PlaylistMediaItemInput = z.infer<typeof PlaylistMediaItemInputSchema>;
+
+/** An app entry: always a time on screen, never a fit. `validatePlaylist` checks the range. */
+export const PlaylistAppItemInputSchema = z
+  .object({
+    appId: AppIdSchema,
+    durationMs: z.number().int().positive().max(ABSOLUTE.maxItemDurationMs),
+  })
+  .strict();
+export type PlaylistAppItemInput = z.infer<typeof PlaylistAppItemInputSchema>;
+
+/** One entry of a one-level playlist: a media item or an app. */
+export const PlaylistItemInputSchema = z.union([
+  PlaylistMediaItemInputSchema,
+  PlaylistAppItemInputSchema,
+]);
 export type PlaylistItemInput = z.infer<typeof PlaylistItemInputSchema>;
 
-export const PlaylistItemDtoSchema = z
+export const PlaylistMediaItemDtoSchema = z
   .object({
     id: PlaylistItemIdSchema,
     position: z.number().int().nonnegative(),
@@ -40,7 +58,30 @@ export const PlaylistItemDtoSchema = z
     media: MediaDtoSchema,
   })
   .strict();
+export type PlaylistMediaItemDto = z.infer<typeof PlaylistMediaItemDtoSchema>;
+
+export const PlaylistAppItemDtoSchema = z
+  .object({
+    id: PlaylistItemIdSchema,
+    position: z.number().int().nonnegative(),
+    appId: AppIdSchema,
+    durationMs: z.number().int().positive(),
+    /** Current app record. */
+    app: AppDtoSchema,
+  })
+  .strict();
+export type PlaylistAppItemDto = z.infer<typeof PlaylistAppItemDtoSchema>;
+
+export const PlaylistItemDtoSchema = z.union([
+  PlaylistMediaItemDtoSchema,
+  PlaylistAppItemDtoSchema,
+]);
 export type PlaylistItemDto = z.infer<typeof PlaylistItemDtoSchema>;
+
+/** What a playlist can hold: the media kinds, then apps. */
+export const PLAYLIST_ITEM_KINDS = ['image', 'video', 'app'] as const;
+export const PlaylistItemKindSchema = z.enum(PLAYLIST_ITEM_KINDS);
+export type PlaylistItemKind = z.infer<typeof PlaylistItemKindSchema>;
 
 /** How many media ids a playlist summary carries for its thumbnail mosaic. */
 export const PLAYLIST_PREVIEW_COUNT = 4;
@@ -53,8 +94,8 @@ export const PlaylistSummaryDtoSchema = z
     description: DescriptionSchema.nullable(),
     itemCount: z.number().int().nonnegative(),
     /**
-     * Length of one loop: each image's time on screen plus each video's natural
-     * length. An item with no length yet (an image without a duration, a video
+     * Length of one loop: each image's and app's time on screen plus each video's
+     * natural length. An item with no length yet (an image without a duration, a video
      * still being checked) counts as zero.
      */
     totalDurationMs: z
@@ -62,8 +103,8 @@ export const PlaylistSummaryDtoSchema = z
       .int()
       .nonnegative()
       .max(ABSOLUTE.maxPlaylistItems * ABSOLUTE.maxItemDurationMs),
-    /** The media kinds present, each once, in the order of `MEDIA_KINDS`. */
-    kinds: z.array(MediaKindSchema).max(MEDIA_KINDS.length),
+    /** The item kinds present, each once, in the order of `PLAYLIST_ITEM_KINDS`. */
+    kinds: z.array(PlaylistItemKindSchema).max(PLAYLIST_ITEM_KINDS.length),
     /** The first distinct media ids in play order, for the thumbnail mosaic. */
     previewMediaIds: z.array(MediaIdSchema).max(PLAYLIST_PREVIEW_COUNT),
     /** How many displays have this playlist assigned. */
@@ -162,6 +203,7 @@ export const PUBLISH_REJECTION_CODES = [
   'playlist_empty',
   'too_many_items',
   'media_missing',
+  'app_missing',
   'media_not_ready',
   'media_failed',
   'duration_required',

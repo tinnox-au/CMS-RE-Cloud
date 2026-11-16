@@ -1019,10 +1019,14 @@ Routes are declared in `App.tsx` with the `page(path, load, render)` helper: eac
 | `/settings` | `features/settings/SettingsPage.tsx` | `SettingsPage` |
 | `/settings/tags` | `features/settings/TagsPage.tsx` | `TagsPage` |
 | `/audit` | `features/audit/AuditPage.tsx` | `AuditPage` |
-| `/media/audio`, `/media/documents`, `/media/web-pages`, `/apps`, `/layouts`, `/schedules`, `/users` | `features/planned/PlannedPage.tsx` | `PlannedPage({ section })` |
+| `/apps` | `features/apps/AppsPage.tsx` | `AppsPage` (list, type filter, create dialog) |
+| `/apps/:id` | `features/apps/AppEditorPage.tsx` | `AppEditorPage` (`AppEditor`: preview, settings, delete) |
+| `/media/audio`, `/media/documents`, `/media/web-pages`, `/layouts`, `/schedules`, `/users` | `features/planned/PlannedPage.tsx` | `PlannedPage({ section })` |
 | (provider, no route) | `features/push/PushContext.tsx` | `PushContext`, `PushProvider`, `usePush` |
 | `/styleguide` | `features/styleguide/StyleguidePage.tsx` | default export, development builds only |
 
 Parts several pages share (tags, folders, thumbnails, pickers, status pills, the leave guard) are in `features/shared/` and documented in `features/shared/README.md`.
+
+Notes for the Apps pages: an app is drawn in the portal by `features/apps/AppPreview.tsx`, which mounts `renderApp` from `@tinnox/app-render` (the player's renderer) inside a `CanvasFrame` (`features/displays/detail/CanvasFrame.tsx`; sizes `sm` 150 px, `md` 200 px, `lg` 176 px, `xl` 360 px for the app editor's preview). The preview uses this computer's time zone and says so for Clock, Date and Countdown. The screen page's assigned-content preview uses `AppPreview` too when the first playlist item is an app.
 
 Notes for the screen pages: the feature folder and the component names keep the code's word, `display` (`features/displays/`, `DisplaysPage`); the routes, the `h1`s and every label say "screen". The selected tab of the screen page is kept in the address as `?tab=`, with `canvas` for the canvas form.

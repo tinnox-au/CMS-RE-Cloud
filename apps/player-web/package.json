@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p sw/tsconfig.json"
   },
   "dependencies": {
+    "@tinnox/app-render": "*",
     "@tinnox/contracts": "*",
     "@tinnox/domain": "*",
     "idb": "8.0.4",

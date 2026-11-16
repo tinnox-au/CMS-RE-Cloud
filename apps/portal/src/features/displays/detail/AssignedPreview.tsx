@@ -1,5 +1,7 @@
 import type { DisplayDto } from '@tinnox/contracts';
+import { isTimeBased, previewZoneNote } from '../../../lib/apps.ts';
 import {
+  APP_PREVIEW_DISCLAIMER,
   PREVIEW_DISCLAIMER,
   previewCaption,
   previewStateOf,
@@ -15,6 +17,7 @@ import {
 } from '../../../ui/icons.ts';
 import { Icon, Spinner } from '../../../ui/index.ts';
 import { MediaThumb } from '../../shared/index.ts';
+import { AppPreview } from '../../apps/AppPreview.tsx';
 import { CanvasFrame } from './CanvasFrame.tsx';
 import type { AssignedPlaylistState } from './useAssignedPlaylist.ts';
 
@@ -34,8 +37,8 @@ export interface AssignedPreviewProps {
 
 /**
  * The first item of the assigned playlist, drawn inside a frame in the shape of the canvas
- * with the content rectangle where content goes. It is a mock-up made from the library file,
- * never a picture of the physical screen, and says so.
+ * with the content rectangle where content goes. It is a mock-up made from the library file (or,
+ * for an app, by the player's renderer), never a picture of the physical screen, and says so.
  */
 export function AssignedPreview({ display, assigned }: AssignedPreviewProps) {
   const content =
@@ -52,6 +55,7 @@ export function AssignedPreview({ display, assigned }: AssignedPreviewProps) {
     first === null ? null : first.name,
   );
   const shape = shapeOfDisplay(display);
+  const app = first !== null && 'app' in first ? first.app : null;
 
   return (
     <figure className="tx-screen-detail-summary__part tx-screen-detail-preview">
@@ -59,7 +63,14 @@ export function AssignedPreview({ display, assigned }: AssignedPreviewProps) {
         <h2 className="tx-h2" id="screen-detail-preview-title">
           Assigned content preview
         </h2>
-        <p className="tx-screen-detail-note">{PREVIEW_DISCLAIMER}</p>
+        <p className="tx-screen-detail-note">
+          {app === null ? PREVIEW_DISCLAIMER : APP_PREVIEW_DISCLAIMER}
+        </p>
+        {app !== null && isTimeBased(app.content.type) && (
+          <p className="tx-screen-detail-note">
+            {previewZoneNote(Intl.DateTimeFormat().resolvedOptions().timeZone)}
+          </p>
+        )}
       </div>
       <CanvasFrame
         shape={shape}
@@ -67,7 +78,11 @@ export function AssignedPreview({ display, assigned }: AssignedPreviewProps) {
         testId="screen-detail-preview"
       >
         {state === 'ready' ? (
-          first !== null && <MediaThumb media={first.media} size="fill" fit={first.fit} noBadge />
+          first === null ? null : 'app' in first ? (
+            <AppPreview content={first.app.content} />
+          ) : (
+            <MediaThumb media={first.media} size="fill" fit={first.fit} noBadge />
+          )
         ) : state === 'loading' || state === 'processing' ? (
           <span className="tx-screen-detail-frame__mark">
             <Spinner />

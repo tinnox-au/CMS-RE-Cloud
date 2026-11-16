@@ -1,5 +1,6 @@
 import {
   PlaylistReplaceSchema,
+  type AppDto,
   type FitMode,
   type Limits,
   type MediaDto,
@@ -8,8 +9,10 @@ import {
   type PlaylistReplace,
 } from '@tinnox/contracts';
 import { durationFieldText, parseImageDuration } from './duration.ts';
+import { mediaDisplayName } from './mediaName.ts';
 
-export interface DraftItem {
+export interface DraftMediaItem {
+  readonly source: 'media';
   /** Stable key for rendering; not sent to the API. */
   readonly key: string;
   readonly media: MediaDto;
@@ -17,6 +20,25 @@ export interface DraftItem {
   readonly durationText: string;
   /** Null means "use the display's default fit when publishing". */
   readonly fit: FitMode | null;
+}
+
+/** A built-in app: shown for its duration (the image rule), never fitted. */
+export interface DraftAppItem {
+  readonly source: 'app';
+  readonly key: string;
+  readonly app: AppDto;
+  readonly durationText: string;
+}
+
+export type DraftItem = DraftMediaItem | DraftAppItem;
+
+/** The id of the media item or app an item shows. */
+export function itemRefId(item: DraftItem): string {
+  return item.source === 'app' ? item.app.id : item.media.id;
+}
+
+export function itemName(item: DraftItem): string {
+  return item.source === 'app' ? item.app.name : mediaDisplayName(item.media);
 }
 
 export interface PlaylistDraft {
@@ -30,27 +52,43 @@ export function draftFromPlaylist(playlist: PlaylistDto): PlaylistDraft {
   const ordered = [...playlist.items].sort((a, b) => a.position - b.position);
   return {
     name: playlist.name,
-    items: ordered.map((item) => ({
-      key: item.id,
-      media: item.media,
-      durationText:
-        item.media.kind === 'image' && item.durationMs !== null
-          ? durationFieldText(item.durationMs)
-          : item.media.kind === 'image'
-            ? DEFAULT_IMAGE_SECONDS
-            : '',
-      fit: item.fit,
-    })),
+    items: ordered.map((item): DraftItem =>
+      'appId' in item
+        ? {
+            source: 'app',
+            key: item.id,
+            app: item.app,
+            durationText: durationFieldText(item.durationMs),
+          }
+        : {
+            source: 'media',
+            key: item.id,
+            media: item.media,
+            durationText:
+              item.media.kind === 'image' && item.durationMs !== null
+                ? durationFieldText(item.durationMs)
+                : item.media.kind === 'image'
+                  ? DEFAULT_IMAGE_SECONDS
+                  : '',
+            fit: item.fit,
+          },
+    ),
   };
 }
 
 export function appendMedia(draft: PlaylistDraft, media: MediaDto, key: string): PlaylistDraft {
   const item: DraftItem = {
+    source: 'media',
     key,
     media,
     durationText: media.kind === 'image' ? DEFAULT_IMAGE_SECONDS : '',
     fit: null,
   };
+  return { ...draft, items: [...draft.items, item] };
+}
+
+export function appendApp(draft: PlaylistDraft, app: AppDto, key: string): PlaylistDraft {
+  const item: DraftItem = { source: 'app', key, app, durationText: DEFAULT_IMAGE_SECONDS };
   return { ...draft, items: [...draft.items, item] };
 }
 
@@ -72,14 +110,28 @@ export function removeItem(draft: PlaylistDraft, key: string): PlaylistDraft {
   return { ...draft, items: draft.items.filter((item) => item.key !== key) };
 }
 
-export function updateItem(
-  draft: PlaylistDraft,
-  key: string,
-  change: Partial<Pick<DraftItem, 'durationText' | 'fit'>>,
-): PlaylistDraft {
+/** A change to one item; an app has no fit, so `fit` is ignored for it. */
+export interface ItemChange {
+  readonly durationText?: string;
+  readonly fit?: FitMode | null;
+}
+
+export function updateItem(draft: PlaylistDraft, key: string, change: ItemChange): PlaylistDraft {
   return {
     ...draft,
-    items: draft.items.map((item) => (item.key === key ? { ...item, ...change } : item)),
+    items: draft.items.map((item): DraftItem => {
+      if (item.key !== key) return item;
+      if (item.source === 'app') {
+        return change.durationText === undefined
+          ? item
+          : { ...item, durationText: change.durationText };
+      }
+      return {
+        ...item,
+        durationText: change.durationText ?? item.durationText,
+        fit: change.fit === undefined ? item.fit : change.fit,
+      };
+    }),
   };
 }
 
@@ -87,11 +139,11 @@ export function updateItem(
 export function draftSignature(draft: PlaylistDraft): string {
   return JSON.stringify([
     draft.name.trim(),
-    draft.items.map((item) => [
-      item.media.id,
-      item.media.kind === 'image' ? item.durationText.trim() : null,
-      item.fit,
-    ]),
+    draft.items.map((item) =>
+      item.source === 'app'
+        ? ['app', item.app.id, item.durationText.trim()]
+        : [item.media.id, item.media.kind === 'image' ? item.durationText.trim() : null, item.fit],
+    ),
   ]);
 }
 
@@ -126,7 +178,7 @@ export function validateDraft(draft: PlaylistDraft, limits: DraftLimits): DraftR
     form = `A playlist can hold at most ${limits.maxPlaylistItems} items.`;
   }
   for (const item of draft.items) {
-    if (item.media.kind === 'video') {
+    if (item.source === 'media' && item.media.kind === 'video') {
       items.push({ mediaId: item.media.id, durationMs: null, fit: item.fit });
       continue;
     }
@@ -135,7 +187,11 @@ export function validateDraft(draft: PlaylistDraft, limits: DraftLimits): DraftR
       itemErrors[item.key] = duration.message;
       continue;
     }
-    items.push({ mediaId: item.media.id, durationMs: duration.ms, fit: item.fit });
+    items.push(
+      item.source === 'app'
+        ? { appId: item.app.id, durationMs: duration.ms }
+        : { mediaId: item.media.id, durationMs: duration.ms, fit: item.fit },
+    );
   }
   if (name !== null || form !== null || Object.keys(itemErrors).length > 0) {
     return { ok: false, errors: { name, form, items: itemErrors } };
@@ -156,7 +212,7 @@ export function validateDraft(draft: PlaylistDraft, limits: DraftLimits): DraftR
 export function draftLoopMs(draft: PlaylistDraft, limits: DraftLimits): number | null {
   let total = 0;
   for (const item of draft.items) {
-    if (item.media.kind === 'video') {
+    if (item.source === 'media' && item.media.kind === 'video') {
       if (item.media.durationMs === null) return null;
       total += item.media.durationMs;
     } else {

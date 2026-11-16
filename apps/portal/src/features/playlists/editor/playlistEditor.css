@@ -719,3 +719,13 @@
   padding-block-start: var(--s-5);
   border-block-start: 1px solid var(--line);
 }
+
+/* An app has no picture: its type icon on a neutral tile in the shape of a thumbnail. */
+.tx-playlist-editor-app-thumb {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-sm);
+  background: var(--neutral-bg);
+  color: var(--link);
+}

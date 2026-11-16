@@ -50,6 +50,29 @@ export function clearableLabelSchema(max: number, what: string) {
     .nullable();
 }
 
+const WELL_FORMED = /^(?:[^\ud800-\udfff]|[\ud800-\udbff][\udc00-\udfff])*$/;
+
+/**
+ * Operator text inside a built-in app's settings: trimmed, at most `max` characters, no control
+ * or text-direction characters (line feeds only when `multiLine`). An empty optional text stays
+ * `''`: settings values are strings and booleans only (see app.ts).
+ */
+export function appTextSchema(
+  max: number,
+  what: string,
+  { required = false, multiLine = false }: { required?: boolean; multiLine?: boolean } = {},
+) {
+  const trimmed = z.string().trim();
+  return (
+    (required ? trimmed.min(1, `${what} is required`) : trimmed)
+      .max(max)
+      .regex(multiLine ? MULTI_LINE : SINGLE_LINE, `${what} must not contain control characters`)
+      .regex(NO_DIRECTION_CONTROLS, `${what} must not contain text-direction characters`)
+      // A lone surrogate cannot be encoded as UTF-8, so the QR encoder would throw on the screen.
+      .regex(WELL_FORMED, `${what} contains a broken character`)
+  );
+}
+
 /** Name of a display, a playlist or a media item as sent by a client. */
 export const NameSchema = labelSchema(ABSOLUTE.maxNameLength, 'name');
 

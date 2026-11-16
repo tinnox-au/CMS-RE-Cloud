@@ -8,10 +8,12 @@ import {
   type PushState,
 } from '@tinnox/contracts';
 import { describe, expect, it } from 'vitest';
-import { removeItem, updateItem } from './playlistDraft.ts';
+import { app } from './mediaLibrary.test-support.ts';
+import { itemRefId, removeItem, updateItem } from './playlistDraft.ts';
 import {
   addedAnnouncement,
-  addMedia,
+  addEntry,
+  appMetaLabel,
   ALL_FOLDERS,
   assignConfirmLabel,
   assignedMessage,
@@ -25,6 +27,7 @@ import {
   edgeScrollSpeed,
   editorDraftFromPlaylist,
   editorIsDirty,
+  filterApps,
   filterLibrary,
   FIT_CHOICES,
   fitLabel,
@@ -141,6 +144,14 @@ function draft(change: Partial<PlaylistDto> = {}): EditorDraft {
 
 const keys = (value: EditorDraft) => value.items.map((item) => item.key);
 
+const addMedia = (
+  value: EditorDraft,
+  item: MediaDto,
+  key: string,
+  limits: Parameters<typeof addEntry>[3],
+  slot?: number,
+) => addEntry(value, { kind: 'media', media: item }, key, limits, slot);
+
 /* ---------- draft, dirty check, keys ---------- */
 
 describe('playlist editor draft', () => {
@@ -216,9 +227,21 @@ describe('playlist editor draft', () => {
       transition: 'cut',
       shuffle: false,
       items: [
-        { key: 'local-a', media: media(1, 'image'), durationText: '8', fit: null },
-        { key: 'local-b', media: media(2, 'video'), durationText: '', fit: 'cover' },
-        { key: 'local-c', media: media(3, 'image'), durationText: '5.0', fit: 'contain' },
+        { source: 'media', key: 'local-a', media: media(1, 'image'), durationText: '8', fit: null },
+        {
+          source: 'media',
+          key: 'local-b',
+          media: media(2, 'video'),
+          durationText: '',
+          fit: 'cover',
+        },
+        {
+          source: 'media',
+          key: 'local-c',
+          media: media(3, 'image'),
+          durationText: '5.0',
+          fit: 'contain',
+        },
       ],
     };
     const after = carryItemKeys(draft(), before);
@@ -235,8 +258,8 @@ describe('playlist editor draft', () => {
       transition: 'cut',
       shuffle: false,
       items: [
-        { key: 'local-a', media: media(4, 'image'), durationText: '8', fit: null },
-        { key: 'local-b', media: media(2, 'video'), durationText: '', fit: null },
+        { source: 'media', key: 'local-a', media: media(4, 'image'), durationText: '8', fit: null },
+        { source: 'media', key: 'local-b', media: media(2, 'video'), durationText: '', fit: null },
       ],
     };
     expect(keys(carryItemKeys(draft(), before))).toEqual([ID(5), 'local-b', ID(7)]);
@@ -249,8 +272,8 @@ describe('playlist editor draft', () => {
       transition: 'cut',
       shuffle: false,
       items: [
-        { key: 'same', media: media(1, 'image'), durationText: '8', fit: null },
-        { key: 'same', media: media(2, 'video'), durationText: '', fit: null },
+        { source: 'media', key: 'same', media: media(1, 'image'), durationText: '8', fit: null },
+        { source: 'media', key: 'same', media: media(2, 'video'), durationText: '', fit: null },
       ],
     };
     const after = carryItemKeys(draft(), twice);
@@ -470,12 +493,7 @@ describe('adding media to the sequence', () => {
 
   it('allows the same media twice', () => {
     const result = addMedia(draft(), media(1, 'image'), 'again', DEFAULT_LIMITS);
-    expect(result.ok && result.draft.items.map((item) => item.media.id)).toEqual([
-      ID(1),
-      ID(2),
-      ID(3),
-      ID(1),
-    ]);
+    expect(result.ok && result.draft.items.map(itemRefId)).toEqual([ID(1), ID(2), ID(3), ID(1)]);
   });
 
   it('refuses media that is not ready', () => {
@@ -626,7 +644,7 @@ describe('sequence wording', () => {
 
   it('states the duration rule from the configured limits', () => {
     expect(durationRuleText(DEFAULT_LIMITS)).toBe(
-      'Images stay on screen for 1 to 3600 seconds each. Videos play muted for their own length.',
+      'Images stay on screen for 1 to 3600 seconds each, and so do apps. Videos play muted for their own length.',
     );
     expect(durationStepperBounds(DEFAULT_LIMITS)).toEqual({ min: 1, max: 3600 });
     expect(
@@ -647,12 +665,61 @@ describe('sequence wording', () => {
 
   it('shows an item with the media record the library holds now', () => {
     const [item] = draft().items;
-    if (item === undefined) throw new Error('no item');
+    if (item?.source !== 'media') throw new Error('no item');
     const renamed = media(1, 'image', { name: 'Renamed' });
-    expect(withCurrentMedia(item, new Map([[ID(1), renamed]])).media.name).toBe('Renamed');
+    expect(withCurrentMedia(item, new Map([[ID(1), renamed]]))).toMatchObject({
+      media: { name: 'Renamed' },
+    });
     expect(withCurrentMedia(item, new Map([[ID(1), renamed]])).key).toBe(item.key);
     expect(withCurrentMedia(item, new Map())).toBe(item);
     expect(withCurrentMedia(item, new Map([[ID(1), item.media]]))).toBe(item);
+  });
+
+  it('adds an app with 10 seconds and counts it as in the playlist', () => {
+    const result = addEntry(draft(), { kind: 'app', app: app(8) }, 'k', DEFAULT_LIMITS, 1);
+    expect(result.ok && result.draft.items[1]).toEqual({
+      source: 'app',
+      key: 'k',
+      app: app(8),
+      durationText: '10',
+    });
+    expect(result.ok && usageInDraft(result.draft).get(app(8).id)).toBe(1);
+    const full = addEntry(draft(), { kind: 'app', app: app(8) }, 'k', {
+      ...DEFAULT_LIMITS,
+      maxPlaylistItems: 3,
+    });
+    expect(full).toEqual({ ok: false, reason: 'full' });
+  });
+
+  it('lists apps after media only without a folder or tag filter, and alone under Apps', () => {
+    const apps = [app(1, { name: 'Lobby clock' }), app(2, { name: 'Sale countdown' })];
+    expect(filterApps(apps, NO_LIBRARY_FILTERS)).toEqual(apps);
+    expect(filterApps(apps, { ...NO_LIBRARY_FILTERS, query: 'sale' })).toEqual([apps[1]]);
+    expect(filterApps(apps, { ...NO_LIBRARY_FILTERS, kind: 'image' })).toEqual([]);
+    const inFolder: LibraryFilters = { ...NO_LIBRARY_FILTERS, folder: ROOT_FOLDER };
+    expect(filterApps(apps, inFolder)).toEqual([]);
+    expect(filterApps(apps, { ...inFolder, kind: 'app' })).toEqual(apps);
+    expect(filterLibrary([media(1, 'image')], { ...NO_LIBRARY_FILTERS, kind: 'app' })).toEqual([]);
+    expect(appMetaLabel(apps[0] ?? app(1))).toBe('Clock');
+    expect(libraryCountLabel(2, 5, true, 'item')).toBe('2 of 5 items');
+  });
+
+  it('keeps the rendering key of an app that stays in place, never across a media item', () => {
+    const saved = playlist({
+      items: [{ id: ID(5), position: 0, appId: app(1).id, durationMs: 10_000, app: app(1) }],
+    });
+    const local: EditorDraft = {
+      ...editorDraftFromPlaylist(saved),
+      items: [{ source: 'app', key: 'mine', app: app(1), durationText: '10' }],
+    };
+    expect(keys(carryItemKeys(editorDraftFromPlaylist(saved), local))).toEqual(['mine']);
+    const media1: EditorDraft = {
+      ...local,
+      items: [
+        { source: 'media', key: 'mine', media: media(1, 'image'), durationText: '10', fit: null },
+      ],
+    };
+    expect(keys(carryItemKeys(editorDraftFromPlaylist(saved), media1))).toEqual([ID(5)]);
   });
 
   it('announces what happened to which item and where it is now', () => {

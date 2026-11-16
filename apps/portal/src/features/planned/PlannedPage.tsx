@@ -2,7 +2,6 @@ import { Page } from '../../shell/Page.tsx';
 import { EmptyState, type IconComponent } from '../../ui/index.ts';
 import {
   AudioLines,
-  Blocks,
   CalendarDays,
   FileText,
   Globe,
@@ -12,7 +11,7 @@ import {
 
 /** The sections that are in the navigation but not built yet. */
 export type PlannedSection =
-  'audio' | 'documents' | 'web-pages' | 'apps' | 'layouts' | 'schedules' | 'users';
+  'audio' | 'documents' | 'web-pages' | 'layouts' | 'schedules' | 'users';
 
 interface PlannedContent {
   /** The page's `h1`, as in docs/portal-v2/stage-a.md, section 1. */
@@ -42,12 +41,6 @@ const PLANNED: { readonly [K in PlannedSection]: PlannedContent } = {
     icon: Globe,
     stage: 'C',
     text: 'Web pages to show on screens will be listed here in stage C, after a written security review, shown in a sandboxed frame, and switched off for each organisation until it is turned on.',
-  },
-  apps: {
-    title: 'Apps',
-    icon: Blocks,
-    stage: 'B',
-    text: 'Built-in apps that need no outside data (a clock, the date, a countdown, a ticker and a QR code) will be set up here in stage B.',
   },
   layouts: {
     title: 'Layouts',

@@ -520,7 +520,7 @@ describe('playlists', () => {
       summary({ totalDurationMs: -1 }),
       summary({ totalDurationMs: 1.5 }),
       summary({ totalDurationMs: ABSOLUTE.maxPlaylistItems * ABSOLUTE.maxItemDurationMs + 1 }),
-      summary({ kinds: ['image', 'video', 'image'] }),
+      summary({ kinds: ['image', 'video', 'app', 'image'] }),
       summary({ kinds: ['audio'] }),
       summary({ previewMediaIds: [U(1), U(2), U(3), U(4), U(5)] }),
       summary({ previewMediaIds: ['https://example.invalid/a.png'] }),
@@ -529,6 +529,7 @@ describe('playlists', () => {
     ];
     bad.forEach((b, i) => expect(ok(PlaylistSummaryDtoSchema, b), `case ${i}`).toBe(false));
     expect(MEDIA_KINDS).toHaveLength(2);
+    expect(ok(PlaylistSummaryDtoSchema, summary({ kinds: ['image', 'video', 'app'] }))).toBe(true);
   });
 
   it('carries the description in the full playlist', () => {
@@ -550,6 +551,30 @@ describe('playlists', () => {
     expect(ok(PlaylistDuplicateResponseSchema, dto)).toBe(true);
     const { description: _removed, ...without } = dto;
     expect(ok(PlaylistDtoSchema, without)).toBe(false);
+    // An app item carries the current app record, and no fit.
+    const app = {
+      id: U(60),
+      name: 'Lobby clock',
+      description: null,
+      content: {
+        type: 'clock',
+        settings: {
+          hourCycle: '12',
+          showSeconds: false,
+          textColour: '#ffffff',
+          backgroundColour: '#000000',
+        },
+      },
+      usageCount: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    const appItem = { id: U(51), position: 1, appId: U(60), durationMs: 10_000, app };
+    expect(ok(PlaylistDtoSchema, { ...dto, items: [...dto.items, appItem] })).toBe(true);
+    expect(ok(PlaylistDtoSchema, { ...dto, items: [{ ...appItem, fit: null }] })).toBe(false);
+    expect(ok(PlaylistDtoSchema, { ...dto, items: [{ ...appItem, durationMs: null }] })).toBe(
+      false,
+    );
     // An item must carry a complete media record, stage A fields included.
     const { usageCount: _gone, ...oldMedia } = mediaDto();
     expect(ok(PlaylistDtoSchema, { ...dto, items: [{ ...dto.items[0], media: oldMedia }] })).toBe(
@@ -956,6 +981,18 @@ describe('errors and routes', () => {
     expect(
       ok(ApiErrorSchema, apiError('playlist_in_use', 'The playlist is assigned to 2 displays.')),
     ).toBe(true);
+  });
+
+  it('has the codes, audit actions and routes of built-in apps', () => {
+    expect(API_ERROR_CODES).toContain('app_in_use');
+    for (const action of ['app.create', 'app.update', 'app.delete'] as const) {
+      expect(AUDIT_ACTIONS).toContain(action);
+      expect(auditCategoryOf(action)).toBe('app');
+    }
+    expect(AUDIT_CATEGORIES).toContain('app');
+    expect(ROUTES.apps).toBe('/api/apps');
+    expect(ROUTES.appPattern).toBe('/api/apps/:id');
+    expect(ROUTES.app('../x')).toBe('/api/apps/..%2Fx');
   });
 
   it('builds every stage A path and percent-encodes its parameter', () => {

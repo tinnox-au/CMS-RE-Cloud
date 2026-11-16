@@ -339,6 +339,14 @@ describe('audit actor and object', () => {
       '/settings/tags?scope=display',
     );
     expect(auditTargetPath({ kind: 'folder', id: ID(5) })).toBe(`/media?folder=${ID(5)}`);
+    expect(auditTargetPath({ kind: 'app', id: ID(6) })).toBe(`/apps/${ID(6)}`);
+  });
+
+  it('labels app events and points at the app', () => {
+    const created = event({ action: 'app.create', objectType: 'app', objectId: ID(6) });
+    expect(auditActionLabel(created)).toBe('App created');
+    expect(auditTargets(created).primary).toEqual({ kind: 'app', id: ID(6) });
+    expect(AUDIT_CATEGORY_LABELS.app).toBe('Apps');
   });
 
   it('resolves an object against the lists that were read', () => {

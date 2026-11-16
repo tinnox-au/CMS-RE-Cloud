@@ -71,8 +71,8 @@ test('upload failures are shown with a reason the operator can act on', async ()
   const playlist = await operator.api.createPlaylist(`E2E details ${runId}`);
   await page.goto(`${PORTAL_URL}/playlists/${playlist.id}`);
   const library = page.getByTestId('playlist-editor-library');
-  await expect(library.getByRole('heading', { level: 2, name: 'Add ready media' })).toBeVisible();
-  await library.getByRole('searchbox', { name: 'Search media' }).fill(hevc);
+  await expect(library.getByRole('heading', { level: 2, name: 'Add media or apps' })).toBeVisible();
+  await library.getByRole('searchbox', { name: 'Search media and apps' }).fill(hevc);
   await expect(library.getByRole('button', { name: `Add ${hevc}` })).toHaveCount(0);
 });
 

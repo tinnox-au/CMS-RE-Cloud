@@ -18,6 +18,8 @@ export interface TagFilterProps {
   /** Default `shared-tag-filter`. */
   readonly testId?: string;
   readonly className?: string;
+  /** The chips stay visible but cannot be pressed (the filter does not apply right now). */
+  readonly disabled?: boolean;
 }
 
 /**
@@ -36,6 +38,7 @@ export function TagFilter({
   max = 6,
   testId = 'shared-tag-filter',
   className,
+  disabled = false,
 }: TagFilterProps) {
   if (tags.status === 'loading') {
     return (
@@ -79,6 +82,7 @@ export function TagFilter({
           key={tag.id}
           colour={tag.colour}
           selected={selected.has(tag.id)}
+          disabled={disabled}
           onToggle={() => {
             toggle(tag.id);
           }}
@@ -90,7 +94,13 @@ export function TagFilter({
         <Menu
           label="More tags"
           trigger={(props) => (
-            <Button {...props} size="sm" variant="ghost" trailingIcon={ChevronDown}>
+            <Button
+              {...props}
+              size="sm"
+              variant="ghost"
+              trailingIcon={ChevronDown}
+              disabled={disabled}
+            >
               More tags ({overflow.length})
             </Button>
           )}

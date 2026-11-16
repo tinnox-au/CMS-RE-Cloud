@@ -104,6 +104,7 @@ interface TagFilterProps {
   max?: number; // chips before the rest move into a "More tags" menu; default 6
   testId?: string; // default 'shared-tag-filter'
   className?: string;
+  disabled?: boolean; // chips shown but not pressable (the playlist library's Apps chip)
 }
 ```
 
@@ -254,7 +255,7 @@ The kit's `Thumb`. A ready image is fed from `ROUTES.mediaThumbnail(id)` (`GET /
 ```ts
 interface PlaylistMosaicProps {
   mediaIds: readonly string[]; // PlaylistSummaryDto.previewMediaIds (the first four are used)
-  kinds?: readonly MediaKind[]; // PlaylistSummaryDto.kinds
+  kinds?: readonly PlaylistItemKind[]; // PlaylistSummaryDto.kinds; `app` is ignored (an app has no thumbnail)
   kindOf?: (mediaId: string) => MediaKind | undefined; // where the page knows the kind of each item
   size?: 'sm' | 'md' | 'lg' | 'fill'; // 44 px square, 72 px, 128 px, container width (default); 16:9 but sm
   className?: string;
@@ -266,7 +267,7 @@ interface PlaylistMosaicProps {
   media={<PlaylistMosaic size="sm" mediaIds={playlist.previewMediaIds} kinds={playlist.kinds} />} />
 ```
 
-One thumbnail fills the tile, two share it side by side, three put the first beside two stacked ones, four make a grid; none shows a playlist placeholder. Decorative (`aria-hidden`). A summary does not say which preview is an image and which a video: when `kinds` holds one kind, every cell is requested as that kind; in a mixed playlist without `kindOf`, a cell is tried as a video first and as an image second (two requests for an image), so pass `kindOf` where the media list is at hand.
+One thumbnail fills the tile, two share it side by side, three put the first beside two stacked ones, four make a grid; none (an empty or app-only playlist) shows a playlist placeholder. Decorative (`aria-hidden`). A summary does not say which preview is an image and which a video: when `kinds` holds one kind, every cell is requested as that kind; in a mixed playlist without `kindOf`, a cell is tried as a video first and as an image second (two requests for an image), so pass `kindOf` where the media list is at hand.
 
 ## PlaylistPickerDialog
 

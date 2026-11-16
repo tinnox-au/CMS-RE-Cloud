@@ -12,6 +12,7 @@ import {
   ManifestSchema,
   PushPlanResponseSchema,
   PushResponseSchema,
+  isMediaItem,
   type DisplayDto,
   type Manifest,
   type PushPlanResponse,
@@ -22,8 +23,11 @@ import { withOrg } from '@tinnox/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MANIFEST_BATCH_SIZE } from '../src/publishing.ts';
 import {
+  CLOCK,
+  appItem,
   assignPlaylist,
   auditEvents,
+  createApp,
   createDisplay,
   createOrg,
   createPlaylist,
@@ -428,6 +432,44 @@ describe('assign, then push', () => {
       expect(await publications(orgA, displayId)).toHaveLength(1);
     });
 
+    it('sees an app settings edit as a change, pushes it once, and offers a push back when the app is removed', async () => {
+      const app = await createApp(alice, CLOCK, 'Push clock');
+      const display = await createDisplay(alice, orgA, 'Clock display');
+      const playlistId = await createPlaylist(alice, 'Clock loop', [
+        appItem(app.id),
+        imageItem(imageA),
+      ]);
+      await assignPlaylist(alice, display.id, playlistId);
+      const state = async (): Promise<string> => (await planRow(alice, display.id)).state;
+      expect(await state()).toBe('never_pushed');
+      await pushed(alice, [display.id]);
+      expect((await publications(orgA, display.id))[0]?.manifest.schemaVersion).toBe(3);
+      expect(await state()).toBe('up_to_date');
+
+      const settings = { ...CLOCK.settings, showSeconds: false };
+      const edit = await alice.fetch(`/api/apps/${app.id}`, {
+        method: 'PATCH',
+        json: { content: { type: 'clock', settings } },
+      });
+      expect(edit.status).toBe(200);
+      expect(await state()).toBe('changes');
+      const [result] = await pushed(alice, [display.id]);
+      expect(result?.outcome).toBe('published');
+      expect(await state()).toBe('up_to_date');
+      const latest = (await publications(orgA, display.id)).at(-1)?.manifest;
+      expect(latest?.assets[0]).toMatchObject({ kind: 'app', content: { settings } });
+      // Pushing again changes nothing.
+      expect((await pushed(alice, [display.id]))[0]?.outcome).toBe('unchanged');
+      expect(await publications(orgA, display.id)).toHaveLength(2);
+
+      // Without the app the draft is v1 again: a change, then up to date.
+      expect((await savePlaylist(alice, playlistId, [imageItem(imageA)])).status).toBe(200);
+      expect(await state()).toBe('changes');
+      await pushed(alice, [display.id]);
+      expect((await publications(orgA, display.id)).at(-1)?.manifest.schemaVersion).toBe(1);
+      expect(await state()).toBe('up_to_date');
+    });
+
     it('sees rotation, working hours, transition and a media window as changes', async () => {
       const image = (await readyImage(t, alice)).id;
       const { displayId, playlistId } = await assigned(alice, orgA, [image], 'Playback options');
@@ -626,7 +668,9 @@ describe('assign, then push', () => {
         muted: true,
       });
       expect(
-        stored[0]?.manifest.assets.map((asset) => [asset.assetId, asset.durationMs, asset.fit]),
+        stored[0]?.manifest.assets
+          .filter(isMediaItem)
+          .map((asset) => [asset.assetId, asset.durationMs, asset.fit]),
       ).toEqual([
         [imageA, 4000, 'cover'],
         [imageB, 9000, 'contain'],
@@ -1029,7 +1073,9 @@ describe('assign, then push', () => {
       expect(waited).toBe(true);
       expect(results[0]?.outcome).toBe('published');
       const [publication] = await publications(orgA, displayId);
-      expect(publication?.manifest.assets.map((asset) => asset.assetId)).toEqual([imageB, imageA]);
+      expect(
+        publication?.manifest.assets.filter(isMediaItem).map((asset) => asset.assetId),
+      ).toEqual([imageB, imageA]);
       expect(publication?.manifest.assets.map((asset) => asset.durationMs)).toEqual([7000, 4000]);
     });
   });

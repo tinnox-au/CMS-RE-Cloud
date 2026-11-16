@@ -37,6 +37,7 @@ describe('organisation isolation through the API', () => {
     folderId: string;
     mediaTagId: string;
     displayTagId: string;
+    appId: string;
     player: PairedPlayer;
   }
   let a: World;
@@ -50,7 +51,7 @@ describe('organisation isolation through the API', () => {
   /**
    * One of everything an organisation can own: a display with a paired player, ready
    * media in a folder, a playlist published and so assigned to the display, and a tag
-   * of each scope put on the media item and on the display.
+   * of each scope put on the media item and on the display, and an app.
    */
   async function world(operator: Operator, org: TestOrg): Promise<World> {
     const display = await createDisplay(operator, org, 'Isolation display');
@@ -73,6 +74,23 @@ describe('organisation isolation through the API', () => {
       json: { tagIds: [displayTagId] },
     });
     if (filed.status !== 200 || tagged.status !== 200) throw new Error('arranging failed');
+    const appId = await created(
+      await operator.fetch('/api/apps', {
+        method: 'POST',
+        json: {
+          name: 'Isolation clock',
+          content: {
+            type: 'clock',
+            settings: {
+              hourCycle: '12',
+              showSeconds: false,
+              textColour: '#ffffff',
+              backgroundColour: '#000000',
+            },
+          },
+        },
+      }),
+    );
     return {
       displayId: display.id,
       mediaId: media.id,
@@ -81,6 +99,7 @@ describe('organisation isolation through the API', () => {
       folderId,
       mediaTagId,
       displayTagId,
+      appId,
       player,
     };
   }
@@ -112,7 +131,12 @@ describe('organisation isolation through the API', () => {
 
   it('answers every read of another organisation’s object like an unknown id', async () => {
     const unknown = randomUUID();
-    const paths = (ids: { displayId: string; mediaId: string; playlistId: string }): string[] => [
+    const paths = (ids: {
+      displayId: string;
+      mediaId: string;
+      playlistId: string;
+      appId: string;
+    }): string[] => [
       `/api/displays/${ids.displayId}`,
       `/api/displays/${ids.displayId}/status`,
       `/api/media/${ids.mediaId}`,
@@ -120,9 +144,15 @@ describe('organisation isolation through the API', () => {
       `/api/media/${ids.mediaId}/thumbnail`,
       `/api/media/${ids.mediaId}/usage`,
       `/api/playlists/${ids.playlistId}`,
+      `/api/apps/${ids.appId}`,
     ];
     const foreign = paths(a);
-    const missing = paths({ displayId: unknown, mediaId: unknown, playlistId: unknown });
+    const missing = paths({
+      displayId: unknown,
+      mediaId: unknown,
+      playlistId: unknown,
+      appId: unknown,
+    });
     for (let i = 0; i < foreign.length; i += 1) {
       const real = await bob.fetch(foreign[i] ?? '');
       const none = await bob.fetch(missing[i] ?? '');
@@ -149,6 +179,7 @@ describe('organisation isolation through the API', () => {
       '/api/tags?scope=media',
       '/api/tags?scope=display',
       '/api/folders',
+      '/api/apps',
       '/api/playlists',
       '/api/push',
       '/api/overview',
@@ -169,6 +200,7 @@ describe('organisation isolation through the API', () => {
         a.folderId,
         a.mediaTagId,
         a.displayTagId,
+        a.appId,
         a.player.registrationId,
       ]) {
         expect(text, `${path} leaks ${id}`).not.toContain(id);
@@ -179,7 +211,13 @@ describe('organisation isolation through the API', () => {
     for (const operator of [alice, bob]) {
       const json = async <T>(path: string): Promise<T> =>
         (await (await operator.fetch(path)).json()) as T;
-      for (const path of ['/api/displays', '/api/displays/status', '/api/media', '/api/push']) {
+      for (const path of [
+        '/api/displays',
+        '/api/displays/status',
+        '/api/media',
+        '/api/push',
+        '/api/apps',
+      ]) {
         expect((await json<{ items: unknown[] }>(path)).items, path).toHaveLength(1);
       }
       expect((await json<{ items: unknown[] }>('/api/tags')).items).toHaveLength(2);
@@ -208,6 +246,7 @@ describe('organisation isolation through the API', () => {
       media: await (await alice.fetch(`/api/media/${a.mediaId}`)).text(),
       tags: await (await alice.fetch('/api/tags')).text(),
       folders: await (await alice.fetch('/api/folders')).text(),
+      apps: await (await alice.fetch('/api/apps')).text(),
       push: await (await alice.fetch('/api/push')).text(),
       status: JSON.stringify({
         ...((await (await alice.fetch(`/api/displays/${a.displayId}/status`)).json()) as object),
@@ -238,6 +277,11 @@ describe('organisation isolation through the API', () => {
         bob.fetch(`/api/folders/${a.folderId}`, { method: 'PATCH', json: { name: 'taken' } }),
       ],
       ['DELETE folder', bob.fetch(`/api/folders/${a.folderId}`, { method: 'DELETE' })],
+      [
+        'PATCH app',
+        bob.fetch(`/api/apps/${a.appId}`, { method: 'PATCH', json: { name: 'taken' } }),
+      ],
+      ['DELETE app', bob.fetch(`/api/apps/${a.appId}`, { method: 'DELETE' })],
       ['DELETE playlist', bob.fetch(`/api/playlists/${a.playlistId}`, { method: 'DELETE' })],
       [
         'duplicate playlist',
@@ -336,6 +380,13 @@ describe('organisation isolation through the API', () => {
       items: { mediaId: string }[];
     };
     expect(own.items.map((item) => item.mediaId)).not.toContain(a.mediaId);
+    // So is putting A's app into B's own playlist: to B it does not exist.
+    const smuggleApp = await bob.fetch(`/api/playlists/${b.playlistId}`, {
+      method: 'PUT',
+      json: { name: 'mine', items: [{ appId: a.appId, durationMs: 5000 }] },
+    });
+    expect(smuggleApp.status).toBe(400);
+    expect(JSON.stringify(await smuggleApp.json())).toContain('app_missing');
     // Creating a display on A's site is refused.
     const onForeignSite = await bob.fetch('/api/displays', {
       method: 'POST',

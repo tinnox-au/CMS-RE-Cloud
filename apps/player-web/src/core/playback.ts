@@ -1,7 +1,8 @@
 import {
+  isMediaItem,
   manifestV2Facts,
-  type ManifestAssetV1,
   type Manifest,
+  type ManifestItem,
   type PlayerError,
 } from '@tinnox/contracts';
 import { AbortedError, PlayerFault, toPlayerError } from './errors.ts';
@@ -99,14 +100,14 @@ export function videoWatchdogMs(durationMs: number): number {
 }
 
 /** How long an item is held before the next boundary, when nothing goes wrong. */
-export function holdTimeMs(asset: ManifestAssetV1): number {
-  return asset.kind === 'video' ? videoWatchdogMs(asset.durationMs) : asset.durationMs;
+export function holdTimeMs(item: ManifestItem): number {
+  return item.kind === 'video' ? videoWatchdogMs(item.durationMs) : item.durationMs;
 }
 
 export interface ShownItem {
   /**
    * Video only: resolves when the video reaches its natural end, rejects with a
-   * PlayerFault when playback breaks. Null for images.
+   * PlayerFault when playback breaks. Null for images and apps.
    */
   readonly finished: Promise<void> | null;
 }
@@ -114,10 +115,10 @@ export interface ShownItem {
 /** Puts things on screen. The DOM implementation lives in ui/presenter.ts. */
 export interface Presenter {
   /**
-   * Prepares the asset off screen, then swaps it in. Resolves once it is visible.
+   * Prepares the item off screen, then swaps it in. Resolves once it is visible.
    * Rejects with a PlayerFault; the previous item stays visible in that case.
    */
-  show(asset: ManifestAssetV1, manifest: Manifest, signal: AbortSignal): Promise<ShownItem>;
+  show(item: ManifestItem, manifest: Manifest, signal: AbortSignal): Promise<ShownItem>;
   /** Removes all content from the screen. */
   clear(): void;
 }
@@ -255,7 +256,12 @@ export class PlaybackLoop {
         consecutiveFailures += 1;
         this.#deps.onEvent({
           type: 'item_failed',
-          error: this.#error(err, publicationId, asset?.assetId ?? null, 'playback_error'),
+          error: this.#error(
+            err,
+            publicationId,
+            asset !== undefined && isMediaItem(asset) ? asset.assetId : null,
+            'playback_error',
+          ),
         });
         // Counted against what may be shown now, so windows cannot hide a broken publication.
         if (consecutiveFailures >= step.playable) {
@@ -272,11 +278,11 @@ export class PlaybackLoop {
   }
 
   /** Keeps the item on screen for its time. Throws a PlayerFault when a video breaks or stalls. */
-  async #hold(asset: ManifestAssetV1, shown: ShownItem): Promise<void> {
+  async #hold(asset: ManifestItem, shown: ShownItem): Promise<void> {
     const { sleep, signal } = this.#deps;
     if (shown.finished === null) {
-      // A still image has no timeline of its own, so a freshly activated version may
-      // end its hold early (wake). A video is always allowed to finish.
+      // A still image or an app has no timeline of its own, so a freshly activated version
+      // may end its hold early (wake). A video is always allowed to finish.
       const wake = new AbortController();
       this.#wake = wake;
       try {
@@ -300,9 +306,7 @@ export class PlaybackLoop {
         throw new PlayerFault(
           'playback_error',
           'video did not finish in the expected time; skipped',
-          {
-            assetId: asset.assetId,
-          },
+          { assetId: isMediaItem(asset) ? asset.assetId : null },
         );
       }
     } finally {

@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import { resolveApiOrigin, SECURITY_HEADERS, shellPlugin } from './build/shell-plugin.mjs';
 
@@ -8,6 +9,15 @@ export default defineConfig(({ mode }) => {
   const apiOrigin = resolveApiOrigin(mode);
   return {
     plugins: [shellPlugin({ apiOrigin })],
+    // Every `zod` import goes through src/zodJitless.ts (no `new Function` probe, see there).
+    resolve: {
+      alias: [
+        {
+          find: /^zod$/,
+          replacement: fileURLToPath(new URL('./src/zodJitless.ts', import.meta.url)),
+        },
+      ],
+    },
     define: { __API_ORIGIN__: JSON.stringify(apiOrigin) },
     server: { host: '127.0.0.1', port: 5174, strictPort: true, headers: { ...SECURITY_HEADERS } },
     preview: { host: '127.0.0.1', port: 5174, strictPort: true, headers: { ...SECURITY_HEADERS } },

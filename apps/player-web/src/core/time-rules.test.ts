@@ -1,6 +1,12 @@
 import type { WorkingHours } from '@tinnox/contracts';
 import { describe, expect, it } from 'vitest';
-import { makeAsset, makeManifest, makeManifestV2 } from './fakes.test-support.ts';
+import {
+  makeAppItem,
+  makeAsset,
+  makeManifest,
+  makeManifestV2,
+  makeManifestV3,
+} from './fakes.test-support.ts';
 import { localWallClock, playableIndexes } from './time-rules.ts';
 
 const at = (iso: string): number => Date.parse(iso);
@@ -64,6 +70,16 @@ describe('playableIndexes', () => {
     expect(playableIndexes(m, at('2026-11-16T01:59:00Z'))).toEqual([0, 2]);
     expect(playableIndexes(m, at('2026-11-16T02:00:00Z'))).toEqual([0, 1, 2]);
     expect(playableIndexes(m, at('2026-11-16T03:00:00Z'))).toEqual([0, 1]);
+  });
+
+  it('lets apps ignore windows but obey working hours', async () => {
+    const [image] = await threeImages();
+    const m = makeManifestV3([image!, makeAppItem()], { workingHours: sundayEvening });
+    m.assets[0] = { ...image!, availableFrom: '2026-12-01T00:00', availableUntil: null };
+    // Sunday 23:59 local: open; the image waits for its window, the app plays.
+    expect(playableIndexes(m, at('2026-11-22T12:59:00Z'))).toEqual([1]);
+    // Monday 00:00 local: closed for both.
+    expect(playableIndexes(m, at('2026-11-22T13:00:00Z'))).toEqual([]);
   });
 
   it('fails open when the clock is well behind the publication', async () => {

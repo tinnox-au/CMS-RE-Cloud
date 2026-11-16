@@ -53,6 +53,8 @@ export interface TestOrg {
   mediaTagId: string;
   /** A tag of scope `display`, put on the display. */
   displayTagId: string;
+  /** A Clock app, used by no playlist. */
+  appId: string;
 }
 
 export const hash = (): Buffer => randomBytes(32);
@@ -64,8 +66,8 @@ export function pairingCode(): string {
 
 /**
  * Creates a complete organisation as the migrator: site, member, display, ready media in a
- * folder, playlist (assigned to the display), publication, audit row, and one tag of each
- * scope put on the media item and on the display. Every tenant table that the runtime role
+ * folder, playlist (assigned to the display), publication, audit row, one tag of each
+ * scope put on the media item and on the display, and one app. Every tenant table that the runtime role
  * writes directly gets exactly one row, except `tag`, which gets two.
  */
 export async function createOrg(migrator: pg.Client, name: string): Promise<TestOrg> {
@@ -81,6 +83,7 @@ export async function createOrg(migrator: pg.Client, name: string): Promise<Test
     folderId: randomUUID(),
     mediaTagId: randomUUID(),
     displayTagId: randomUUID(),
+    appId: randomUUID(),
   };
   const manifest = {
     schemaVersion: 1,
@@ -145,6 +148,20 @@ export async function createOrg(migrator: pg.Client, name: string): Promise<Test
     await migrator.query(
       'INSERT INTO display_tag (display_id, tag_id, org_id) VALUES ($1, $2, $3)',
       [o.displayId, o.displayTagId, o.orgId],
+    );
+    await migrator.query(
+      "INSERT INTO app (id, org_id, type, name, settings) VALUES ($1, $2, 'clock', $3, $4)",
+      [
+        o.appId,
+        o.orgId,
+        `${name} clock`,
+        JSON.stringify({
+          hourCycle: '12',
+          showSeconds: false,
+          textColour: '#ffffff',
+          backgroundColour: '#000000',
+        }),
+      ],
     );
     await migrator.query('INSERT INTO playlist (id, org_id, name) VALUES ($1, $2, $3)', [
       o.playlistId,

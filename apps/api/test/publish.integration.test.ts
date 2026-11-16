@@ -2,8 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { withOrg } from '@tinnox/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  CLOCK,
+  appItem,
+  createApp,
   createDisplay,
   createOrg,
+  createPlaylist,
+  imageItem,
   pairPlayer,
   pngBytes,
   publishImages,
@@ -142,6 +147,62 @@ describe('publishing', () => {
     const served = await fetch(`${t.url}/player/manifest`, { headers: player.headers });
     expect(served.status).toBe(200);
     expect(((await served.json()) as { manifest: unknown }).manifest).toEqual(v2);
+  });
+
+  it('writes manifest v3 for a playlist with an app, with file rows for media positions only', async () => {
+    const display = await createDisplay(alice, orgA);
+    const image = await readyImage(t, alice);
+    const app = await createApp(alice);
+    const playlistId = await createPlaylist(alice, 'With clock', [
+      appItem(app.id, 12),
+      imageItem(image.id, 4),
+    ]);
+    const response = await alice.fetch(`/api/playlists/${playlistId}/publish`, {
+      method: 'POST',
+      json: { displayId: display.id },
+      headers: { 'idempotency-key': randomUUID() },
+    });
+    expect(response.status).toBe(201);
+    const { publicationId, manifest } = (await response.json()) as {
+      publicationId: string;
+      manifest: Record<string, unknown>;
+    };
+    expect(manifest).toMatchObject({
+      schemaVersion: 3,
+      timeZone: 'Australia/Melbourne',
+      assets: [
+        { kind: 'app', appId: app.id, durationMs: 12_000, content: CLOCK },
+        { assetId: image.id, kind: 'image', durationMs: 4000 },
+      ],
+    });
+    const rows = await withOrg(t.pool, orgA.orgId, async (tx) => {
+      const { rows } = await tx.query<{ position: number; media_id: string }>(
+        'SELECT position, media_id FROM publication_asset WHERE publication_id = $1',
+        [publicationId],
+      );
+      return rows;
+    });
+    expect(rows).toEqual([{ position: 1, media_id: image.id }]);
+
+    // The settings are a copy: changing the app leaves the publication as it was.
+    await alice.fetch(`/api/apps/${app.id}`, {
+      method: 'PATCH',
+      json: { content: { type: 'clock', settings: { ...CLOCK.settings, hourCycle: '12' } } },
+    });
+    const player = await pairPlayer(t, alice, display.id);
+    const served = await fetch(`${t.url}/player/manifest`, { headers: player.headers });
+    expect(served.status).toBe(200);
+    expect(((await served.json()) as { manifest: unknown }).manifest).toEqual(manifest);
+
+    // Media URLs are only ever for files: an app id is not an asset of the publication.
+    const urls = (assetIds: string[]): Promise<Response> =>
+      fetch(`${t.url}/player/media-urls`, {
+        method: 'POST',
+        headers: { ...player.headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ publicationId, assetIds }),
+      });
+    expect((await urls([image.id])).status).toBe(200);
+    expect((await urls([app.id])).status).toBe(404);
   });
 
   it('keeps a published snapshot unchanged when the playlist and the display are edited', async () => {

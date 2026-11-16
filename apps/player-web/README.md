@@ -195,6 +195,10 @@ The rules are checked at item boundaries, so an item can run past an edge by its
 length; with nothing playable the loop looks again every `idleRecheckMs`. Diagnostics show
 "Time zone", "Local time there", "Clock offset" and "Rotation".
 
+The same corrected clock drives the Clock, Date and Countdown apps (manifest v3). The
+offset is kept only in memory: while the page runs offline the last offset is used, and
+after a reload without network the device clock is used until the first heartbeat reply.
+
 ### Renderer
 
 The stage is the window, black. The publication canvas is scaled to fit and centred
@@ -225,6 +229,17 @@ counter and nothing else.
 - Rotation (v2): 90 and 270 swap the viewport's width and height, and the canvas is
   turned with a CSS transform (`stageTransform` from `@tinnox/domain`). The canvas keeps
   its size. Pairing and slate screens are not rotated.
+- Apps (v3, since `player-web/0.3.0`): `renderApp` from `@tinnox/app-render` (the code
+  the portal preview uses) draws the app into a layer marked `data-kind="app"` and
+  `data-app-type`. Before mounting, the presenter lays out and shows the canvas, because
+  the renderer sizes itself from its box and a hidden canvas has none; if the app then
+  fails, the previous geometry is restored. The layer is revealed after the first fit,
+  within 15 s, or the item fails with `playback_error` "app could not be drawn". An app is
+  held for `durationMs` like an image, always cuts, and needs no download; a publication
+  of apps only activates without calling `/player/media-urls`. Times use the manifest's
+  `timeZone` (the device zone when the browser does not know it). With
+  `prefers-reduced-motion: reduce`, read when the app is drawn, a ticker stands still. The
+  renderer uses `textContent`, CSSOM and the Web Animations API only, and fetches nothing.
 - An item that cannot be shown (missing from the cache, decode failure, autoplay blocked,
   media error during playback) is reported and skipped after a 500 ms pause.
 - If every playable item of the publication fails in a row (items hidden by a window do
@@ -342,7 +357,13 @@ media-src 'self' blob:; connect-src 'self' <API origin>; worker-src 'self';
 manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'
 ```
 
-No inline script or style. A `<meta>` policy cannot set `frame-ancestors`; a production
+No inline script or style. `vite.config.ts` maps every bare `zod` import to
+`src/zodJitless.ts`, as the portal does, which sets zod's `jitless` option before any
+schema is built: otherwise zod probes `new Function` once (code generation for faster
+parsing), and the policy, which has no `'unsafe-eval'`, reports that probe as a
+violation. Parsing is the same without it.
+
+A `<meta>` policy cannot set `frame-ancestors`; a production
 host should send the policy as a response header and add `frame-ancestors 'none'`.
 
 ## What the player assumes about the API
@@ -391,9 +412,11 @@ fakes for the state store, the asset store, the API and the presenter, plus
 - time rules (`core/time-rules.test.ts`, fixed instants in Australia/Melbourne): a
   daylight-saving day, `24:00`, a closed day, a window edge, fail-open on a clock behind
   the publication and on an unknown zone;
-- manifest v2 accepted and version 3 refused in sync; a stored v1 record loads from
-  IndexedDB. Test data: `makeManifest` in `core/fakes.test-support.ts` builds v1 and
-  `makeManifestV2` builds v2;
+- manifest v2 and v3 accepted and version 4 refused in sync; a stored v1 record loads
+  from IndexedDB. Test data: `makeManifest` in `core/fakes.test-support.ts` builds v1,
+  `makeManifestV2` builds v2 and `makeManifestV3` builds v3;
+- apps: the hold time is `durationMs`, apps ignore windows and obey working hours, and a
+  publication of apps only activates with no media request;
 - heartbeat contents, sequence numbers across reloads, no queue while offline;
 - the HTTP client (headers, no credential on other origins, status mapping) and the
   IndexedDB store (atomic activation, registration replacement, revocation).
@@ -403,7 +426,7 @@ layer swap, object URL release), the decode probes, `CacheAssetStore`, the Web L
 BroadcastChannel guard, the service worker, and `app.ts` (wiring, reset, revocation
 cleanup). These belong to the Playwright end-to-end tests in `tests/`. Stable hooks for
 them: `html[data-player-phase]`, and `data-testid` values `pairing-code`,
-`slate-display-name`, `slate-detail`, `canvas`, `content`, `active-layer`,
+`slate-display-name`, `slate-detail`, `canvas`, `content`, `active-layer` (with `data-kind` and, for an app, `data-app-type`),
 `revoked-title`, `reset-player`, `diagnostics`, `diagnostics-reset`.
 
 **Checked once by hand, not by a repository test** (2026-11-14, headless Google Chrome

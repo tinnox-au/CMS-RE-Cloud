@@ -1,4 +1,4 @@
-import type { Limits, MediaDto, MediaListResponse } from '@tinnox/contracts';
+import type { AppDto, Limits, MediaListResponse } from '@tinnox/contracts';
 import { useId, useMemo, useState, type RefObject } from 'react';
 import { Link } from 'react-router-dom';
 import type { LoadResult } from '../../../hooks/useLoad.ts';
@@ -6,11 +6,14 @@ import { LIBRARY_ROOT_LABEL } from '../../../lib/folderChoice.ts';
 import { mediaDisplayName } from '../../../lib/mediaName.ts';
 import {
   ALL_FOLDERS,
+  appMetaLabel,
   capacityMessage,
+  filterApps,
   filterLibrary,
   libraryCountLabel,
   libraryFiltersActive,
   libraryMetaLabel,
+  mediaOnlyFilters,
   NO_LIBRARY_FILTERS,
   notReadyNote,
   readyMedia,
@@ -20,6 +23,7 @@ import {
   usageLabel,
   type EditorDraft,
   type KindFilter,
+  type LibraryEntry,
   type LibraryFilters,
 } from '../../../lib/playlistEditor.ts';
 import { pruneSelection } from '../../../lib/selection.ts';
@@ -41,6 +45,7 @@ import {
   SkeletonGroup,
 } from '../../../ui/index.ts';
 import { MediaThumb, TagFilter, useFolders, useTags } from '../../shared/index.ts';
+import { APP_TYPE_ICONS } from '../../apps/appIcons.ts';
 import { MEDIA_DRAG_TYPE, type DragSource } from './dragSource.ts';
 import './playlistEditor.css';
 
@@ -56,24 +61,29 @@ const KIND_CHOICES: readonly { readonly value: KindFilter; readonly label: strin
   { value: 'all', label: 'All' },
   { value: 'image', label: 'Images' },
   { value: 'video', label: 'Videos' },
+  { value: 'app', label: 'Apps' },
 ];
+
+const NO_APPS: readonly AppDto[] = [];
 
 export interface LibraryCardProps {
   readonly media: LoadResult<MediaListResponse>;
+  readonly apps: LoadResult<AppDto[]>;
   readonly draft: EditorDraft;
   readonly limits: DraftLimits;
   readonly dragSource: RefObject<DragSource | null>;
   /** Appends the item to the sequence; returns where it went, or null when refused. */
-  readonly onAdd: (media: MediaDto) => number | null;
+  readonly onAdd: (entry: LibraryEntry) => number | null;
 }
 
 /**
- * The ready media of the library, to add to the sequence: search, kind, folder and tag
- * filters over a grid of cards. A card is one button: pressing it (or Enter or Space)
- * appends the file to the sequence; dragging it onto the filmstrip puts it where it is
- * dropped. Only ready media is listed; the files that are not ready are counted.
+ * The ready media of the library and the apps, to add to the sequence: search, kind, folder
+ * and tag filters over a grid of cards. A card is one button: pressing it (or Enter or Space)
+ * appends the file or app to the sequence; dragging it onto the filmstrip puts it where it
+ * is dropped. Only ready media is listed; the files that are not ready are counted. Apps have
+ * no folder or tag, so "All" lists them after the media only while neither filter is on.
  */
-export function LibraryCard({ media, draft, limits, dragSource, onAdd }: LibraryCardProps) {
+export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: LibraryCardProps) {
   const tags = useTags('media');
   const folders = useFolders();
   const [filters, setFilters] = useState<LibraryFilters>(NO_LIBRARY_FILTERS);
@@ -95,6 +105,16 @@ export function LibraryCard({ media, draft, limits, dragSource, onAdd }: Library
   );
   const effective = useMemo(() => ({ ...filters, tags: tagFilter }), [filters, tagFilter]);
   const matches = useMemo(() => filterLibrary(ready, effective), [ready, effective]);
+  const appList = apps.state.status === 'ready' ? apps.state.data : NO_APPS;
+  const appMatches = useMemo(() => filterApps(appList, effective), [appList, effective]);
+  const entries = useMemo<readonly LibraryEntry[]>(
+    () => [
+      ...matches.map((item) => ({ kind: 'media' as const, media: item })),
+      ...appMatches.map((app) => ({ kind: 'app' as const, app })),
+    ],
+    [matches, appMatches],
+  );
+  const appsOnly = filters.kind === 'app';
   const usage = useMemo(() => usageInDraft(draft), [draft]);
   const filtered = libraryFiltersActive(effective);
   const full = remainingCapacity(draft, limits) === 0;
@@ -116,15 +136,16 @@ export function LibraryCard({ media, draft, limits, dragSource, onAdd }: Library
     >
       <CardHeader
         id="tx-playlist-editor-library"
-        title="Add ready media"
+        title="Add media or apps"
         size="title"
-        description="Choose a file to add it at the end, or drag it to a place in the sequence."
+        description="Choose a file or an app to add it at the end, or drag it to a place in the sequence."
         actions={
           <IconButton
             icon={RefreshCw}
             label="Refresh library"
             onClick={() => {
               media.reload();
+              apps.reload();
               tags.reload();
               folders.reload();
             }}
@@ -135,7 +156,7 @@ export function LibraryCard({ media, draft, limits, dragSource, onAdd }: Library
 
       <div className="tx-playlist-editor-library__filters">
         <SearchField
-          label="Search media"
+          label="Search media and apps"
           value={filters.query}
           onChange={(query) => {
             setFilter({ query });
@@ -160,7 +181,7 @@ export function LibraryCard({ media, draft, limits, dragSource, onAdd }: Library
           size="sm"
           aria-label="Folder"
           value={filters.folder}
-          disabled={folders.status === 'loading'}
+          disabled={folders.status === 'loading' || appsOnly}
           onChange={(event) => {
             setFilter({ folder: event.target.value });
           }}
@@ -178,6 +199,7 @@ export function LibraryCard({ media, draft, limits, dragSource, onAdd }: Library
         </Select>
         <TagFilter
           tags={tags}
+          disabled={appsOnly}
           selected={tagFilter}
           onChange={(next) => {
             setFilter({ tags: next });
@@ -222,6 +244,14 @@ export function LibraryCard({ media, draft, limits, dragSource, onAdd }: Library
         />
       )}
 
+      {apps.state.status === 'error' && (
+        <ErrorNotice
+          error={apps.state.error}
+          title="Apps could not be loaded"
+          onRetry={apps.reload}
+        />
+      )}
+
       {media.state.status === 'ready' && (
         <>
           {media.state.refreshError !== null && (
@@ -237,27 +267,33 @@ export function LibraryCard({ media, draft, limits, dragSource, onAdd }: Library
             aria-live="polite"
             data-testid="playlist-editor-library-count"
           >
-            {libraryCountLabel(matches.length, ready.length, filtered)}
+            {libraryCountLabel(
+              entries.length,
+              ready.length + appList.length,
+              filtered,
+              appList.length > 0 ? 'item' : 'file',
+            )}
           </p>
 
-          {ready.length === 0 ? (
+          {ready.length === 0 && appList.length === 0 ? (
             <EmptyState
               variant="inline"
               icon={Images}
-              title="No ready media"
+              title="No ready media or apps"
               action={
                 <ButtonLink to="/media" icon={Plus}>
                   Open the media library
                 </ButtonLink>
               }
             >
-              Upload files in the media library. They can be added here once they are ready.
+              Upload files in the media library, or create an app under Apps. They can be added here
+              once they are ready.
             </EmptyState>
-          ) : matches.length === 0 ? (
+          ) : entries.length === 0 ? (
             <EmptyState
               variant="inline"
               icon={SearchX}
-              title="No media matches"
+              title="Nothing matches"
               action={
                 <Button
                   onClick={() => {
@@ -274,10 +310,71 @@ export function LibraryCard({ media, draft, limits, dragSource, onAdd }: Library
           ) : (
             <>
               <p id={hintId} className="tx-visually-hidden">
-                Adds the file at the end of the sequence.
+                Adds it at the end of the sequence.
               </p>
-              <ul className="tx-playlist-editor__library-grid" aria-label="Ready media">
-                {matches.slice(0, shown).map((item) => {
+              {mediaOnlyFilters(effective) && filters.kind === 'all' && appList.length > 0 && (
+                <p className="tx-small tx-muted">
+                  Apps have no folder or tags, so they are not listed while those filters are on.
+                </p>
+              )}
+              <ul className="tx-playlist-editor__library-grid" aria-label="Ready media and apps">
+                {entries.slice(0, shown).map((entry) => {
+                  if (entry.kind === 'app') {
+                    const { app } = entry;
+                    const used = usageLabel(usage.get(app.id) ?? 0);
+                    const metaId = `${hintId}-${app.id}`;
+                    return (
+                      <li key={app.id}>
+                        <button
+                          type="button"
+                          className="tx-playlist-editor-media"
+                          draggable={!full}
+                          aria-disabled={full || undefined}
+                          aria-label={`Add ${app.name}`}
+                          aria-describedby={`${metaId} ${hintId}`}
+                          data-app-id={app.id}
+                          data-testid="playlist-editor-library-app"
+                          onClick={() => {
+                            if (!full) onAdd(entry);
+                          }}
+                          onDragStart={(event) => {
+                            dragSource.current = entry;
+                            event.dataTransfer.effectAllowed = 'copy';
+                            event.dataTransfer.setData(MEDIA_DRAG_TYPE, app.id);
+                            event.dataTransfer.setData('text/plain', app.name);
+                          }}
+                          onDragEnd={() => {
+                            dragSource.current = null;
+                          }}
+                        >
+                          <span className="tx-playlist-editor-media__thumb">
+                            <span className="tx-playlist-editor-app-thumb">
+                              <Icon icon={APP_TYPE_ICONS[app.content.type]} size={28} />
+                            </span>
+                            <span className="tx-playlist-editor-media__add" aria-hidden="true">
+                              <Icon icon={Plus} size={16} />
+                            </span>
+                          </span>
+                          <span className="tx-playlist-editor-media__name tx-truncate">
+                            {app.name}
+                          </span>
+                          <span id={metaId} className="tx-playlist-editor-media__details">
+                            <span className="tx-playlist-editor-media__meta">
+                              {appMetaLabel(app)}
+                            </span>
+                            {used !== null && (
+                              <span className="tx-playlist-editor-media__used">
+                                <Icon icon={Check} size={14} />
+                                <span className="tx-visually-hidden">, </span>
+                                {used}
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  }
+                  const item = entry.media;
                   const name = mediaDisplayName(item);
                   const used = usageLabel(usage.get(item.id) ?? 0);
                   const metaId = `${hintId}-${item.id}`;
@@ -293,10 +390,10 @@ export function LibraryCard({ media, draft, limits, dragSource, onAdd }: Library
                         data-media-id={item.id}
                         data-testid="playlist-editor-library-item"
                         onClick={() => {
-                          if (!full) onAdd(item);
+                          if (!full) onAdd(entry);
                         }}
                         onDragStart={(event) => {
-                          dragSource.current = { kind: 'media', media: item };
+                          dragSource.current = entry;
                           event.dataTransfer.effectAllowed = 'copy';
                           event.dataTransfer.setData(MEDIA_DRAG_TYPE, item.id);
                           event.dataTransfer.setData('text/plain', name);
@@ -329,7 +426,7 @@ export function LibraryCard({ media, draft, limits, dragSource, onAdd }: Library
                   );
                 })}
               </ul>
-              {matches.length > shown && (
+              {entries.length > shown && (
                 <div className="tx-cluster tx-playlist-editor-library__more">
                   <Button
                     onClick={() => {
@@ -340,7 +437,7 @@ export function LibraryCard({ media, draft, limits, dragSource, onAdd }: Library
                     Show more
                   </Button>
                   <span className="tx-small tx-muted">
-                    Showing {Math.min(shown, matches.length)} of {matches.length}
+                    Showing {Math.min(shown, entries.length)} of {entries.length}
                   </span>
                 </div>
               )}

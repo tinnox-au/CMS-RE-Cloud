@@ -135,3 +135,12 @@ Three reviewers examined the integrated prototype. Their findings and the fixes 
 | T2, T4 | `publication_asset` rows can be added only in the transaction that created their publication and only as the manifest lists them, so an application bug cannot widen what a player may download from an existing publication. |
 | T9 | A player whose IndexedDB connection is closed by another context or by the browser now reloads instead of playing stale content without updates, and opens a database left at a newer version by a later build instead of stopping with a fatal screen. Unit-tested against fake-indexeddb, not in a real browser. Player errors are dropped once a successful sync cycle has resolved them, so the portal no longer lists old delivery errors next to an in-sync summary (E2E 11). |
 
+## 10. Stage B, slice 2: built-in apps (2026-11-16)
+
+Apps (Clock, Date, Countdown, Ticker, QR code, Text) are drawn by `packages/app-render`, in the player and in the portal preview. Spec: `docs/portal-v2/stage-b.md`, slice 2.
+
+| Threat | Change |
+|---|---|
+| T5 | Operator text in app settings (ticker text, labels, QR content and caption, heading, message) is validated by strict contracts (length, no control or text-direction characters, no lone surrogates) and drawn with `textContent` only; styles go through CSSOM `setProperty`, motion through the Web Animations API. A build check (`packages/app-render/src/build-checks.test.ts`) fails on `innerHTML`, `outerHTML`, `insertAdjacentHTML`, style attributes, `cssText`, `fetch(`, `XMLHttpRequest` and dynamic `import(`, and the browser ESLint rules apply to the package. Nothing is fetched: an app renders from the publication, the player's clock and the site's time zone. Residual: a QR code can encode any text, including a link to any site; what it points to is the operator's responsibility, and neither the portal nor the player checks it. |
+| T13 | New run-time dependency `uqr` 0.1.3 (MIT, no dependencies), pinned exactly in `packages/app-render/package.json` with its lockfile integrity. It encodes QR codes in the player and in the portal (both bundle it; no network use). Residual: it is little maintained (no release between Aug 2023 and Apr 2026); `npm audit` covers only published advisories. |
+| T2 | The new `app` table has forced row-level security and a tenant policy, organisation-scoped foreign keys from `playlist_item`, and no `UPDATE` grant on `type`, `org_id` or `id`. Publications hold a copy of the settings, so deleting an app never changes a publication. |

@@ -394,12 +394,16 @@ export function appendToPlaylistBody(
     };
   }
   const ordered = [...playlist.items].sort((a, b) => a.position - b.position);
-  const items: PlaylistItemInput[] = ordered.map((item) => ({
-    mediaId: item.mediaId,
-    durationMs:
-      item.media.kind === 'image' ? (item.durationMs ?? STANDARD_IMAGE_DURATION_MS) : null,
-    fit: item.fit,
-  }));
+  const items: PlaylistItemInput[] = ordered.map((item) =>
+    'appId' in item
+      ? { appId: item.appId, durationMs: item.durationMs }
+      : {
+          mediaId: item.mediaId,
+          durationMs:
+            item.media.kind === 'image' ? (item.durationMs ?? STANDARD_IMAGE_DURATION_MS) : null,
+          fit: item.fit,
+        },
+  );
   items.push({
     mediaId: media.id,
     durationMs:

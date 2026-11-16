@@ -44,7 +44,6 @@ describe('navigation data', () => {
       '/media/audio',
       '/media/documents',
       '/media/web-pages',
-      '/apps',
       '/layouts',
       '/schedules',
     ]);
@@ -135,9 +134,9 @@ describe('activeGroupId', () => {
 describe('navItemName', () => {
   it('says when an entry is planned', () => {
     const links = sidebarLinks();
-    const apps = links.find((link) => link.id === 'apps');
+    const layouts = links.find((link) => link.id === 'layouts');
     const playlists = links.find((link) => link.id === 'playlists');
-    expect(apps === undefined ? '' : navItemName(apps)).toBe('Apps (planned)');
+    expect(layouts === undefined ? '' : navItemName(layouts)).toBe('Layouts (planned)');
     expect(playlists === undefined ? '' : navItemName(playlists)).toBe('Playlists');
   });
 });

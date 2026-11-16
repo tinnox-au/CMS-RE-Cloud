@@ -1,5 +1,5 @@
-import { DEFAULT_LIMITS, type HeartbeatV1, type Limits } from '@tinnox/contracts';
-import type { DisplayTarget, MediaRecord, PlaybackOptions } from './types.ts';
+import { DEFAULT_LIMITS, type AppContent, type HeartbeatV1, type Limits } from '@tinnox/contracts';
+import type { AppRecord, DisplayTarget, MediaRecord, PlaybackOptions } from './types.ts';
 
 export const limits: Limits = DEFAULT_LIMITS;
 
@@ -15,6 +15,8 @@ export const ID = {
   processing: '22222222-2222-4222-8222-000000000004',
   failed: '22222222-2222-4222-8222-000000000005',
   hevc: '22222222-2222-4222-8222-000000000006',
+  clock: '55555555-5555-4555-8555-000000000001',
+  ticker: '55555555-5555-4555-8555-000000000002',
   pubA: '33333333-3333-4333-8333-00000000000a',
   pubB: '33333333-3333-4333-8333-00000000000b',
   regA: '44444444-4444-4444-8444-00000000000a',
@@ -90,6 +92,34 @@ export function library(): Map<string, MediaRecord> {
       width: 1920,
       height: 1080,
     }),
+  ];
+  return new Map(records.map((r) => [r.id, r]));
+}
+
+export const clockContent: AppContent = {
+  type: 'clock',
+  settings: {
+    hourCycle: '12',
+    showSeconds: false,
+    textColour: '#ffffff',
+    backgroundColour: '#000000',
+  },
+};
+
+export const tickerContent = {
+  type: 'ticker',
+  settings: {
+    text: 'Doors open at nine',
+    speed: 'medium',
+    textColour: '#ffffff',
+    backgroundColour: '#1d1d1f',
+  },
+} satisfies AppContent;
+
+export function apps(): Map<string, AppRecord> {
+  const records: AppRecord[] = [
+    { id: ID.clock, content: clockContent },
+    { id: ID.ticker, content: tickerContent },
   ];
   return new Map(records.map((r) => [r.id, r]));
 }

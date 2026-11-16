@@ -16,6 +16,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { ApiRequestError, createApiClient, type FetchLike } from './client.ts';
 import { createEndpoints, type Endpoints } from './endpoints.ts';
+import { app } from '../lib/mediaLibrary.test-support.ts';
 
 const ORG = '11111111-1111-4111-8111-111111111111';
 const DISPLAY = '22222222-2222-4222-8222-222222222222';
@@ -126,6 +127,7 @@ const summary: PlaylistSummaryDto = {
 
 const tag: TagDto = { id: TAG, scope: 'media', name: 'Campaign', colour: 'teal', usageCount: 1 };
 const folder: FolderDto = { id: FOLDER, name: 'Posters', itemCount: 1 };
+const clock = app(7);
 
 const pushPlan: PushPlanResponse = {
   items: [
@@ -281,6 +283,8 @@ describe('endpoints: reads', () => {
       [`${ROUTES.tags}?scope=media`, { items: [tag] }, (api) => api.listTags('media'), [tag]],
       [`${ROUTES.tags}?scope=display`, { items: [] }, (api) => api.listTags('display'), []],
       [ROUTES.folders, { items: [folder] }, (api) => api.listFolders(signal), [folder]],
+      [ROUTES.apps, { items: [clock] }, (api) => api.listApps(signal), [clock]],
+      [ROUTES.app(clock.id), clock, (api) => api.getApp(clock.id, signal), clock],
       [ROUTES.playlists, { items: [summary] }, (api) => api.listPlaylists(signal), [summary]],
       [ROUTES.playlist(PLAYLIST), playlist, (api) => api.getPlaylist(PLAYLIST, signal), playlist],
       [ROUTES.push, pushPlan, (api) => api.getPushPlan(signal), pushPlan],
@@ -399,6 +403,22 @@ describe('endpoints: changes', () => {
         { ...folder, name: 'Menus' },
       ],
       [
+        'POST',
+        ROUTES.apps,
+        { name: clock.name, content: clock.content },
+        clock,
+        (api) => api.createApp({ name: clock.name, content: clock.content }),
+        clock,
+      ],
+      [
+        'PATCH',
+        ROUTES.app(clock.id),
+        { name: 'Lobby clock' },
+        { ...clock, name: 'Lobby clock' },
+        (api) => api.patchApp(clock.id, { name: 'Lobby clock' }),
+        { ...clock, name: 'Lobby clock' },
+      ],
+      [
         'PUT',
         ROUTES.playlist(PLAYLIST),
         { name: 'Reception loop', description: null, items: [] },
@@ -441,6 +461,7 @@ describe('endpoints: changes', () => {
       [ROUTES.mediaItem(MEDIA), (api) => api.deleteMedia(MEDIA)],
       [ROUTES.tag(TAG), (api) => api.deleteTag(TAG)],
       [ROUTES.folder(FOLDER), (api) => api.deleteFolder(FOLDER)],
+      [ROUTES.app(clock.id), (api) => api.deleteApp(clock.id)],
       [ROUTES.playlist(PLAYLIST), (api) => api.deletePlaylist(PLAYLIST)],
     ];
     for (const [path, call] of cases) {

@@ -1,4 +1,5 @@
 import type {
+  AppContent,
   Canvas,
   CapabilityProfile,
   DeliveryRouteId,
@@ -43,10 +44,27 @@ export interface MediaRecord {
   readonly availableUntil: string | null;
 }
 
-export interface DraftItem {
+/** The facts about an app that publishing needs. */
+export interface AppRecord {
+  readonly id: string;
+  readonly content: AppContent;
+}
+
+export interface DraftMediaItem {
   readonly mediaId: string;
   readonly durationMs: number | null;
   readonly fit: FitMode | null;
+}
+
+export interface DraftAppItem {
+  readonly appId: string;
+  readonly durationMs: number;
+}
+
+export type DraftItem = DraftMediaItem | DraftAppItem;
+
+export function isAppDraftItem(item: DraftItem): item is DraftAppItem {
+  return 'appId' in item;
 }
 
 /** One problem found while validating or publishing. `index` is the playlist position, or null for a whole-playlist problem. */
@@ -57,8 +75,8 @@ export interface PublishIssue {
   readonly message: string;
 }
 
-/** A fully resolved playlist entry: everything a route needs to judge and deliver it. */
-export interface ResolvedItem {
+/** A fully resolved media entry: everything a route needs to judge and deliver it. */
+export interface ResolvedMediaItem {
   readonly assetId: string;
   readonly kind: MediaKind;
   readonly mediaType: MediaMimeType;
@@ -72,6 +90,16 @@ export interface ResolvedItem {
   readonly availableFrom: string | null;
   readonly availableUntil: string | null;
 }
+
+/** A resolved app entry: a copy of the app's content, so the publication never refers back to the row. */
+export interface ResolvedAppItem {
+  readonly kind: 'app';
+  readonly appId: string;
+  readonly durationMs: number;
+  readonly content: AppContent;
+}
+
+export type ResolvedItem = ResolvedMediaItem | ResolvedAppItem;
 
 /** Playlist options carried into a publication. */
 export interface PlaybackOptions {

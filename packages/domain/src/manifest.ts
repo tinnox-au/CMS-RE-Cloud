@@ -1,12 +1,15 @@
 import {
+  isMediaItem,
   MANIFEST_SCHEMA_VERSION,
   MANIFEST_SCHEMA_VERSION_V2,
+  MANIFEST_SCHEMA_VERSION_V3,
   ManifestSchema,
   type Limits,
   type Manifest,
 } from '@tinnox/contracts';
 import { buildPublicationDraft } from './playlist.ts';
 import type {
+  AppRecord,
   DisplayTarget,
   DraftItem,
   MediaRecord,
@@ -14,6 +17,7 @@ import type {
   PublicationDraft,
   PublicationValidator,
   PublishIssue,
+  ResolvedMediaItem,
 } from './types.ts';
 
 export interface ManifestIdentity {
@@ -29,18 +33,42 @@ export function needsV2(draft: PublicationDraft): boolean {
     draft.shuffle ||
     draft.rotation !== 0 ||
     draft.workingHours !== null ||
-    draft.items.some((item) => item.availableFrom !== null || item.availableUntil !== null)
+    draft.items.some(
+      (item) =>
+        item.kind !== 'app' && (item.availableFrom !== null || item.availableUntil !== null),
+    )
   );
 }
 
+/** The oldest manifest version that carries the draft: 3 with an app, 2 with a v2 option, else 1. */
+export function manifestVersionFor(draft: PublicationDraft): 1 | 2 | 3 {
+  if (draft.items.some((item) => item.kind === 'app')) return MANIFEST_SCHEMA_VERSION_V3;
+  return needsV2(draft) ? MANIFEST_SCHEMA_VERSION_V2 : MANIFEST_SCHEMA_VERSION;
+}
+
+function v1Asset(item: ResolvedMediaItem) {
+  return {
+    assetId: item.assetId,
+    mediaType: item.mediaType,
+    kind: item.kind,
+    bytes: item.bytes,
+    sha256: item.sha256,
+    durationMs: item.durationMs,
+    fit: item.fit,
+    width: item.width,
+    height: item.height,
+  };
+}
+
 /**
- * Turns a validated draft into the immutable manifest document: version 1 when
- * the draft needs nothing more, so unchanged screens keep the same kind of
- * document. The result is checked against its schema; a failure here is a
- * programming error.
+ * Turns a validated draft into the immutable manifest document, in the oldest
+ * version that carries it (`manifestVersionFor`), so unchanged screens keep the
+ * same kind of document. The result is checked against its schema; a failure
+ * here is a programming error.
  */
 export function buildManifest(draft: PublicationDraft, identity: ManifestIdentity): Manifest {
-  const v1 = {
+  const version = manifestVersionFor(draft);
+  const header = {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
     publicationId: identity.publicationId,
     displayId: draft.displayId,
@@ -48,36 +76,36 @@ export function buildManifest(draft: PublicationDraft, identity: ManifestIdentit
     canvas: { width: draft.canvas.width, height: draft.canvas.height },
     contentRect: draft.contentRect === null ? null : { ...draft.contentRect },
     muted: true,
-    assets: draft.items.map((item) => ({
-      assetId: item.assetId,
-      mediaType: item.mediaType,
-      kind: item.kind,
-      bytes: item.bytes,
-      sha256: item.sha256,
-      durationMs: item.durationMs,
-      fit: item.fit,
-      width: item.width,
-      height: item.height,
-    })),
   };
   // shortcut: no per-player version negotiation; a v1 player keeps old content when v2 is needed. Add a schemaVersion signal on GET /player/manifest when a non-browser route ships.
-  let candidate: unknown = v1;
-  if (needsV2(draft)) {
+  let candidate: unknown;
+  if (version === MANIFEST_SCHEMA_VERSION) {
+    // Version 1 has no app items: manifestVersionFor gives 3 whenever there is one.
+    candidate = {
+      ...header,
+      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      assets: draft.items.flatMap((item) => (item.kind === 'app' ? [] : [v1Asset(item)])),
+    };
+  } else {
     // shortcut: site.timezone is seed-only and length-checked; an invalid zone throws here. Validate at site write when sites become editable.
     new Intl.DateTimeFormat('en', { timeZone: draft.timeZone });
     candidate = {
-      ...v1,
-      schemaVersion: MANIFEST_SCHEMA_VERSION_V2,
+      ...header,
+      schemaVersion: version,
       timeZone: draft.timeZone,
       transition: draft.transition,
       shuffle: draft.shuffle,
       rotation: draft.rotation,
       workingHours: draft.workingHours,
-      assets: v1.assets.map((asset, index) => ({
-        ...asset,
-        availableFrom: draft.items[index]?.availableFrom ?? null,
-        availableUntil: draft.items[index]?.availableUntil ?? null,
-      })),
+      assets: draft.items.map((item) =>
+        item.kind === 'app'
+          ? { kind: 'app', appId: item.appId, durationMs: item.durationMs, content: item.content }
+          : {
+              ...v1Asset(item),
+              availableFrom: item.availableFrom,
+              availableUntil: item.availableUntil,
+            },
+      ),
     };
   }
   // The discriminated union checks the candidate against the schema of its version.
@@ -95,6 +123,7 @@ export interface PlanPublicationInput {
   readonly display: DisplayTarget;
   readonly items: readonly DraftItem[];
   readonly mediaById: ReadonlyMap<string, MediaRecord>;
+  readonly appsById: ReadonlyMap<string, AppRecord>;
   readonly limits: Limits;
   /** The playlist's playback options. */
   readonly playback: PlaybackOptions;
@@ -117,6 +146,7 @@ export function planPublication(input: PlanPublicationInput): PlanPublicationRes
     input.display,
     input.items,
     input.mediaById,
+    input.appsById,
     input.limits,
     input.playback,
   );
@@ -126,16 +156,16 @@ export function planPublication(input: PlanPublicationInput): PlanPublicationRes
   return { ok: true, draft: built.draft };
 }
 
-/** Distinct asset ids of a manifest, in first-use order. */
+/** Distinct asset ids of a manifest's media items, in first-use order. */
 export function manifestAssetIds(manifest: Manifest): string[] {
-  return [...new Set(manifest.assets.map((a) => a.assetId))];
+  return [...new Set(manifest.assets.filter(isMediaItem).map((a) => a.assetId))];
 }
 
 /** Total bytes a player must store for a manifest (each distinct asset once). */
 export function manifestStorageBytes(manifest: Manifest): number {
   const seen = new Set<string>();
   let total = 0;
-  for (const asset of manifest.assets) {
+  for (const asset of manifest.assets.filter(isMediaItem)) {
     if (seen.has(asset.sha256)) continue;
     seen.add(asset.sha256);
     total += asset.bytes;

@@ -89,7 +89,7 @@ export const PRIMARY_NAV: readonly NavItem[] = [
       },
     ],
   },
-  { kind: 'link', id: 'apps', label: 'Apps', to: '/apps', icon: Blocks, planned: true },
+  { kind: 'link', id: 'apps', label: 'Apps', to: '/apps', icon: Blocks },
   { kind: 'link', id: 'playlists', label: 'Playlists', to: '/playlists', icon: ListVideo },
   {
     kind: 'link',

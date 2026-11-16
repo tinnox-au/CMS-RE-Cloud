@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AppContentSchema } from './app.ts';
 import {
   CanvasSchema,
   contentRectProblem,
@@ -9,6 +10,7 @@ import {
 } from './canvas.ts';
 import { WorkingHoursSchema, type WorkingHours } from './display.ts';
 import {
+  AppIdSchema,
   DisplayIdSchema,
   LocalDateTimeSchema,
   MediaIdSchema,
@@ -22,6 +24,7 @@ import { MediaKindSchema, MediaMimeTypeSchema } from './media.ts';
 
 export const MANIFEST_SCHEMA_VERSION = 1;
 export const MANIFEST_SCHEMA_VERSION_V2 = 2;
+export const MANIFEST_SCHEMA_VERSION_V3 = 3;
 
 export const ManifestAssetV1Schema = z
   .object({
@@ -55,9 +58,16 @@ const manifestV1Object = z
   })
   .strict();
 
-/** Checks shared by every manifest version (zod refuses `.extend()` on a refined object). */
+/**
+ * Checks shared by every manifest version (zod refuses `.extend()` on a refined object).
+ * Repeated assets are checked over media items only: an app item has no assetId.
+ */
 function checkManifestBody(
-  m: Pick<ManifestV1, 'canvas' | 'contentRect' | 'assets'>,
+  m: {
+    canvas: ManifestV1['canvas'];
+    contentRect: ManifestV1['contentRect'];
+    assets: ManifestItem[];
+  },
   ctx: z.RefinementCtx,
 ): void {
   if (m.contentRect !== null) {
@@ -66,6 +76,7 @@ function checkManifestBody(
   }
   const seen = new Map<string, ManifestAssetV1>();
   m.assets.forEach((asset, index) => {
+    if (!isMediaItem(asset)) return;
     const first = seen.get(asset.assetId);
     if (first === undefined) {
       seen.set(asset.assetId, asset);
@@ -101,11 +112,29 @@ export const ManifestAssetV2Schema = ManifestAssetV1Schema.extend({
 }).strict();
 export type ManifestAssetV2 = z.infer<typeof ManifestAssetV2Schema>;
 
-/**
- * Manifest version 2: version 1 plus playback options and time rules. Written
- * only when a draft needs one of them. Every field is required.
- */
-export const ManifestV2Schema = manifestV1Object
+/** Checks of version 2 and later: the common body plus window order on media items. */
+function checkManifestV2Body(
+  m: Pick<ManifestV3, 'canvas' | 'contentRect' | 'assets'>,
+  ctx: z.RefinementCtx,
+): void {
+  checkManifestBody(m, ctx);
+  m.assets.forEach((asset, index) => {
+    if (
+      isMediaItem(asset) &&
+      asset.availableFrom !== null &&
+      asset.availableUntil !== null &&
+      asset.availableFrom >= asset.availableUntil
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['assets', index, 'availableUntil'],
+        message: 'availableUntil must be after availableFrom',
+      });
+    }
+  });
+}
+
+const manifestV2Object = manifestV1Object
   .extend({
     schemaVersion: z.literal(MANIFEST_SCHEMA_VERSION_V2),
     /** Zone of the screen's site; working hours and windows are read in it. */
@@ -117,28 +146,58 @@ export const ManifestV2Schema = manifestV1Object
     workingHours: WorkingHoursSchema.nullable(),
     assets: z.array(ManifestAssetV2Schema).min(1).max(ABSOLUTE.maxPlaylistItems),
   })
-  .strict()
-  .superRefine((m, ctx) => {
-    checkManifestBody(m, ctx);
-    m.assets.forEach((asset, index) => {
-      if (
-        asset.availableFrom !== null &&
-        asset.availableUntil !== null &&
-        asset.availableFrom >= asset.availableUntil
-      ) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['assets', index, 'availableUntil'],
-          message: 'availableUntil must be after availableFrom',
-        });
-      }
-    });
-  });
+  .strict();
+
+/**
+ * Manifest version 2: version 1 plus playback options and time rules. Written
+ * only when a draft needs one of them. Every field is required. Frozen: a
+ * released player parses it strictly.
+ */
+export const ManifestV2Schema = manifestV2Object.superRefine(checkManifestV2Body);
 export type ManifestV2 = z.infer<typeof ManifestV2Schema>;
+
+/**
+ * A built-in app in the play list. Carries a copy of the app's content, not a
+ * reference, so the player needs nothing else. No `assetId` on purpose: an app
+ * is not media and never gets a download URL.
+ */
+export const ManifestAppItemSchema = z
+  .object({
+    kind: z.literal('app'),
+    appId: AppIdSchema,
+    durationMs: z.number().int().positive().max(ABSOLUTE.maxItemDurationMs),
+    content: AppContentSchema,
+  })
+  .strict();
+export type ManifestAppItem = z.infer<typeof ManifestAppItemSchema>;
+
+export const ManifestItemV3Schema = z.union([ManifestAssetV2Schema, ManifestAppItemSchema]);
+export type ManifestItemV3 = z.infer<typeof ManifestItemV3Schema>;
+
+/**
+ * Manifest version 3: version 2 plus app items. Written only when a draft holds
+ * an app. Frozen once player 0.3.0 is released; the next addition is version 4.
+ */
+export const ManifestV3Schema = manifestV2Object
+  .extend({
+    schemaVersion: z.literal(MANIFEST_SCHEMA_VERSION_V3),
+    assets: z.array(ManifestItemV3Schema).min(1).max(ABSOLUTE.maxPlaylistItems),
+  })
+  .strict()
+  .superRefine(checkManifestV2Body);
+export type ManifestV3 = z.infer<typeof ManifestV3Schema>;
+
+export type ManifestItem = ManifestAssetV1 | ManifestAssetV2 | ManifestAppItem;
+
+/** True for an image or video item, false for an app item. */
+export function isMediaItem(item: ManifestItem): item is ManifestAssetV1 | ManifestAssetV2 {
+  return item.kind !== 'app';
+}
 
 export const ManifestSchema = z.discriminatedUnion('schemaVersion', [
   ManifestV1Schema,
   ManifestV2Schema,
+  ManifestV3Schema,
 ]);
 export type Manifest = z.infer<typeof ManifestSchema>;
 
@@ -175,7 +234,7 @@ export function parseManifest(
   if (!version.success) {
     return { ok: false, reason: 'malformed', message: 'manifest has no numeric schemaVersion' };
   }
-  let schema: typeof ManifestV1Schema | typeof ManifestV2Schema;
+  let schema: typeof ManifestV1Schema | typeof ManifestV2Schema | typeof ManifestV3Schema;
   switch (version.data.schemaVersion) {
     case MANIFEST_SCHEMA_VERSION:
       schema = ManifestV1Schema;
@@ -183,11 +242,14 @@ export function parseManifest(
     case MANIFEST_SCHEMA_VERSION_V2:
       schema = ManifestV2Schema;
       break;
+    case MANIFEST_SCHEMA_VERSION_V3:
+      schema = ManifestV3Schema;
+      break;
     default:
       return {
         ok: false,
         reason: 'unsupported_version',
-        message: `manifest schemaVersion ${version.data.schemaVersion} is not supported (expected ${MANIFEST_SCHEMA_VERSION} or ${MANIFEST_SCHEMA_VERSION_V2})`,
+        message: `manifest schemaVersion ${version.data.schemaVersion} is not supported (expected ${MANIFEST_SCHEMA_VERSION}, ${MANIFEST_SCHEMA_VERSION_V2} or ${MANIFEST_SCHEMA_VERSION_V3})`,
       };
   }
   const parsed = schema.safeParse(input);

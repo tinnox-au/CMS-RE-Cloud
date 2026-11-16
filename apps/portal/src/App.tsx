@@ -55,6 +55,8 @@ function page<M>(
 const dashboard = () => import('./features/dashboard/DashboardPage.tsx');
 const mediaLibrary = () => import('./features/media/MediaLibraryPage.tsx');
 const mediaDetail = () => import('./features/media/MediaDetailPage.tsx');
+const appsPage = () => import('./features/apps/AppsPage.tsx');
+const appEditor = () => import('./features/apps/AppEditorPage.tsx');
 const playlists = () => import('./features/playlists/PlaylistsPage.tsx');
 const playlistEditor = () => import('./features/playlists/PlaylistEditorPage.tsx');
 const displays = () => import('./features/displays/DisplaysPage.tsx');
@@ -117,7 +119,12 @@ const router = createBrowserRouter([
         </PerObject>
       )),
 
-      page('apps', planned, (m) => <m.PlannedPage section="apps" />),
+      page('apps', appsPage, (m) => <m.AppsPage />),
+      page('apps/:id', appEditor, (m) => (
+        <PerObject>
+          <m.AppEditorPage />
+        </PerObject>
+      )),
       page('layouts', planned, (m) => <m.PlannedPage section="layouts" />),
       page('schedules', planned, (m) => <m.PlannedPage section="schedules" />),
       page('users', planned, (m) => <m.PlannedPage section="users" />),

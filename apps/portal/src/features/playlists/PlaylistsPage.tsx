@@ -75,7 +75,9 @@ interface PlaylistsData {
 async function loadPlaylists(signal: AbortSignal): Promise<PlaylistsData> {
   const playlists = await api.listPlaylists(signal);
   const mixed = playlists.some(
-    (playlist) => playlist.kinds.length > 1 && playlist.previewMediaIds.length > 0,
+    (playlist) =>
+      playlist.kinds.filter((kind) => kind !== 'app').length > 1 &&
+      playlist.previewMediaIds.length > 0,
   );
   if (!mixed) return { playlists, kindById: null };
   try {

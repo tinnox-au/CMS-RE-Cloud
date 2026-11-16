@@ -39,6 +39,7 @@ export const AUDIT_CATEGORY_LABELS: { readonly [K in AuditCategory]: string } = 
   media: 'Media',
   tag: 'Tags',
   folder: 'Folders',
+  app: 'Apps',
   playlist: 'Playlists',
   publication: 'Pushes to screens',
   security: 'Security',
@@ -114,6 +115,7 @@ const CATEGORY_SUBJECTS: { readonly [K in AuditCategory]: string } = {
   media: 'Media',
   tag: 'Tag',
   folder: 'Folder',
+  app: 'App',
   playlist: 'Playlist',
   publication: 'Push',
   security: 'Security',
@@ -252,6 +254,7 @@ const OBJECT_TYPE_LABELS: Readonly<Record<string, string>> = {
   playlist: 'Playlist',
   tag: 'Tag',
   folder: 'Folder',
+  app: 'App',
   publication: 'Publication',
   player_registration: 'Player',
   pairing: 'Pairing',
@@ -276,7 +279,7 @@ export function shortAuditId(id: string): string {
 }
 
 /** The kinds of object the portal can name, and for most of them open. */
-export type AuditTargetKind = 'display' | 'media' | 'playlist' | 'tag' | 'folder';
+export type AuditTargetKind = 'display' | 'media' | 'playlist' | 'tag' | 'folder' | 'app';
 
 export interface AuditTarget {
   readonly kind: AuditTargetKind;
@@ -284,7 +287,14 @@ export interface AuditTarget {
   readonly id: string;
 }
 
-const TARGET_KINDS: readonly AuditTargetKind[] = ['display', 'media', 'playlist', 'tag', 'folder'];
+const TARGET_KINDS: readonly AuditTargetKind[] = [
+  'display',
+  'media',
+  'playlist',
+  'tag',
+  'folder',
+  'app',
+];
 
 const TARGET_LABELS: { readonly [K in AuditTargetKind]: string } = {
   display: 'Screen',
@@ -292,6 +302,7 @@ const TARGET_LABELS: { readonly [K in AuditTargetKind]: string } = {
   playlist: 'Playlist',
   tag: 'Tag',
   folder: 'Folder',
+  app: 'App',
 };
 
 export function auditTargetLabel(kind: AuditTargetKind): string {
@@ -393,6 +404,8 @@ export function auditTargetPath(
     case 'folder':
       // A folder has no page of its own: the media library filtered on it.
       return `/media?folder=${id}`;
+    case 'app':
+      return `/apps/${id}`;
   }
 }
 
@@ -403,6 +416,7 @@ export interface AuditNames {
   readonly playlist: ReadonlyMap<string, string> | null;
   readonly tag: ReadonlyMap<string, string> | null;
   readonly folder: ReadonlyMap<string, string> | null;
+  readonly app: ReadonlyMap<string, string> | null;
   readonly tagScopes: ReadonlyMap<string, TagScope> | null;
 }
 
@@ -412,6 +426,7 @@ export const NO_AUDIT_NAMES: AuditNames = {
   playlist: null,
   tag: null,
   folder: null,
+  app: null,
   tagScopes: null,
 };
 

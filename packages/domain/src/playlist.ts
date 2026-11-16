@@ -1,5 +1,7 @@
 import type { Limits } from '@tinnox/contracts';
+import { isAppDraftItem } from './types.ts';
 import type {
+  AppRecord,
   DisplayTarget,
   DraftItem,
   MediaRecord,
@@ -22,12 +24,13 @@ function seconds(ms: number): string {
 }
 
 /**
- * Checks a one-level playlist against the media records and configured limits.
+ * Checks a one-level playlist against the media and app records and configured limits.
  * Returns every problem found, in playlist order; an empty array means valid.
  */
 export function validatePlaylist(
   items: readonly DraftItem[],
   mediaById: ReadonlyMap<string, MediaRecord>,
+  appsById: ReadonlyMap<string, AppRecord>,
   limits: Limits,
   options: ValidatePlaylistOptions,
 ): PublishIssue[] {
@@ -50,6 +53,25 @@ export function validatePlaylist(
 
   items.forEach((item, index) => {
     const n = index + 1;
+    if (isAppDraftItem(item)) {
+      if (!appsById.has(item.appId)) {
+        issues.push({
+          index,
+          code: 'app_missing',
+          message: `Item ${n} refers to an app that does not exist or was deleted.`,
+        });
+      } else if (
+        item.durationMs < limits.minImageItemDurationMs ||
+        item.durationMs > limits.maxImageItemDurationMs
+      ) {
+        issues.push({
+          index,
+          code: 'duration_out_of_range',
+          message: `Item ${n} has a duration of ${seconds(item.durationMs)}; apps must be shown for ${seconds(limits.minImageItemDurationMs)} to ${seconds(limits.maxImageItemDurationMs)}.`,
+        });
+      }
+      return;
+    }
     const media = mediaById.get(item.mediaId);
     if (media === undefined) {
       issues.push({
@@ -110,22 +132,42 @@ export type DraftResult =
   | { readonly ok: false; readonly issues: readonly PublishIssue[] };
 
 /**
- * Resolves a playlist against ready media and a target display into a
+ * Resolves a playlist against ready media, apps and a target display into a
  * vendor-neutral publication draft. Fails with the full list of problems.
  */
 export function buildPublicationDraft(
   display: DisplayTarget,
   items: readonly DraftItem[],
   mediaById: ReadonlyMap<string, MediaRecord>,
+  appsById: ReadonlyMap<string, AppRecord>,
   limits: Limits,
   playback: PlaybackOptions,
 ): DraftResult {
-  const issues = validatePlaylist(items, mediaById, limits, { mode: 'publish' });
+  const issues = validatePlaylist(items, mediaById, appsById, limits, { mode: 'publish' });
   if (issues.length > 0) return { ok: false, issues };
 
   const resolved: ResolvedItem[] = [];
   const late: PublishIssue[] = [];
   items.forEach((item, index) => {
+    if (isAppDraftItem(item)) {
+      const app = appsById.get(item.appId);
+      // validatePlaylist guarantees presence; the guard keeps positions honest if it ever does not.
+      if (app === undefined) {
+        late.push({
+          index,
+          code: 'app_missing',
+          message: `Item ${index + 1} refers to an app that does not exist or was deleted.`,
+        });
+        return;
+      }
+      resolved.push({
+        kind: 'app',
+        appId: app.id,
+        durationMs: item.durationMs,
+        content: app.content,
+      });
+      return;
+    }
     const media = mediaById.get(item.mediaId);
     // validatePlaylist guarantees presence and readiness; these checks guard against
     // a "ready" row with missing inspection data, which must never reach a manifest.

@@ -1,9 +1,11 @@
 // In-memory stand-ins for the browser storage and the player API, with failure injection.
 // Used only by unit tests.
 import type {
+  ManifestAppItem,
   ManifestAssetV1,
   ManifestV1,
   ManifestV2,
+  ManifestV3,
   MediaUrlsResponse,
   PlayerError,
 } from '@tinnox/contracts';
@@ -101,6 +103,39 @@ export function makeManifestV2(
     rotation: 0,
     workingHours: null,
     assets: assets.map((asset) => ({ ...asset, availableFrom: null, availableUntil: null })),
+    ...overrides,
+  };
+}
+
+/** A Clock app item (12-hour, white on black). */
+export function makeAppItem(durationMs = 10_000): ManifestAppItem {
+  return {
+    kind: 'app',
+    appId: crypto.randomUUID(),
+    durationMs,
+    content: {
+      type: 'clock',
+      settings: {
+        hourCycle: '12',
+        showSeconds: false,
+        textColour: '#ffffff',
+        backgroundColour: '#000000',
+      },
+    },
+  };
+}
+
+/** A v3 manifest (v2 defaults plus app items); media items get no windows. */
+export function makeManifestV3(
+  items: readonly (ManifestAssetV1 | ManifestAppItem)[],
+  overrides: Partial<ManifestV3> = {},
+): ManifestV3 {
+  return {
+    ...makeManifestV2([]),
+    schemaVersion: 3,
+    assets: items.map((item) =>
+      item.kind === 'app' ? item : { ...item, availableFrom: null, availableUntil: null },
+    ),
     ...overrides,
   };
 }

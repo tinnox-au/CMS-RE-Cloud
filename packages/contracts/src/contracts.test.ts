@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   ABSOLUTE,
+  APP_TEXT_LIMITS,
+  AppContentSchema,
+  AppCreateSchema,
+  AppPatchSchema,
+  ClockSettingsSchema,
+  CountdownSettingsSchema,
+  DateSettingsSchema,
+  QrSettingsSchema,
+  TextSettingsSchema,
+  TickerSettingsSchema,
+  ManifestV3Schema,
+  PlaylistItemInputSchema,
   CanvasSpecSchema,
   DEFAULT_LIMITS,
   DisplayCreateSchema,
@@ -160,10 +172,10 @@ describe('manifest v1', () => {
     expect(parseManifest(manifest())).toMatchObject({ ok: true });
   });
   it('distinguishes an unsupported version from a malformed document', () => {
-    expect(parseManifest(manifest({ schemaVersion: 3 }))).toMatchObject({
+    expect(parseManifest(manifest({ schemaVersion: 4 }))).toMatchObject({
       ok: false,
       reason: 'unsupported_version',
-      message: 'manifest schemaVersion 3 is not supported (expected 1 or 2)',
+      message: 'manifest schemaVersion 4 is not supported (expected 1, 2 or 3)',
     });
     expect(parseManifest({ hello: 'world' })).toMatchObject({ ok: false, reason: 'malformed' });
     expect(parseManifest('<html>')).toMatchObject({ ok: false, reason: 'malformed' });
@@ -273,6 +285,166 @@ describe('manifest v2', () => {
     expect(
       parseManifest(manifest({ assets: [asset({ availableFrom: null, availableUntil: null })] }))
         .ok,
+    ).toBe(false);
+  });
+});
+
+describe('built-in apps', () => {
+  const style = { textColour: '#ffffff', backgroundColour: '#000000' };
+  const SETTINGS = {
+    clock: { hourCycle: '24', showSeconds: true, ...style },
+    date: { format: 'long', ...style },
+    countdown: {
+      target: '2026-12-25T09:00',
+      label: 'Until the party',
+      finishedText: 'Happy holidays',
+      showSeconds: false,
+      ...style,
+    },
+    ticker: { text: 'Doors open at nine', speed: 'slow', ...style },
+    qr: { content: 'https://example.invalid/menu', caption: '', ...style },
+    text: { heading: 'Welcome', body: 'Line one\nLine two', ...style },
+  } as const;
+  const SCHEMAS = {
+    clock: ClockSettingsSchema,
+    date: DateSettingsSchema,
+    countdown: CountdownSettingsSchema,
+    ticker: TickerSettingsSchema,
+    qr: QrSettingsSchema,
+    text: TextSettingsSchema,
+  } as const;
+  const appItem = (o: Record<string, unknown> = {}) => ({
+    kind: 'app',
+    appId: U(60),
+    durationMs: 10_000,
+    content: { type: 'clock', settings: SETTINGS.clock },
+    ...o,
+  });
+
+  it('accepts every app with valid settings, and only with all of them', () => {
+    for (const type of Object.keys(SCHEMAS) as (keyof typeof SCHEMAS)[]) {
+      expect(ok(SCHEMAS[type], SETTINGS[type]), type).toBe(true);
+      expect(ok(AppContentSchema, { type, settings: SETTINGS[type] }), type).toBe(true);
+      expect(ok(SCHEMAS[type], { ...SETTINGS[type], extra: true }), `${type} extra`).toBe(false);
+      expect(ok(SCHEMAS[type], { ...SETTINGS[type], textColour: '#FFFFFF' }), `${type} upper`).toBe(
+        false,
+      );
+      expect(ok(SCHEMAS[type], { ...SETTINGS[type], backgroundColour: '#fff' }), type).toBe(false);
+      const { textColour: _gone, ...missing } = SETTINGS[type];
+      expect(ok(SCHEMAS[type], missing), `${type} missing`).toBe(false);
+    }
+  });
+
+  it('refuses a lone surrogate, which a QR code cannot hold', () => {
+    const settings = { caption: '', textColour: '#ffffff', backgroundColour: '#000000' };
+    expect(QrSettingsSchema.safeParse({ ...settings, content: 'a\ud800b' }).success).toBe(false);
+    expect(
+      QrSettingsSchema.safeParse({ ...settings, content: 'caf\u00e9 \ud83d\ude00' }).success,
+    ).toBe(true);
+  });
+
+  it('bounds every text field and refuses control and direction characters', () => {
+    const fields = [
+      [CountdownSettingsSchema, SETTINGS.countdown, 'label', APP_TEXT_LIMITS.countdownLabel],
+      [CountdownSettingsSchema, SETTINGS.countdown, 'finishedText', APP_TEXT_LIMITS.finishedText],
+      [TickerSettingsSchema, SETTINGS.ticker, 'text', APP_TEXT_LIMITS.tickerText],
+      [QrSettingsSchema, SETTINGS.qr, 'content', APP_TEXT_LIMITS.qrContent],
+      [QrSettingsSchema, SETTINGS.qr, 'caption', APP_TEXT_LIMITS.qrCaption],
+      [TextSettingsSchema, SETTINGS.text, 'heading', APP_TEXT_LIMITS.heading],
+      [TextSettingsSchema, SETTINGS.text, 'body', APP_TEXT_LIMITS.body],
+    ] as const;
+    for (const [schema, base, field, max] of fields) {
+      const at = (value: string) => schema.safeParse({ ...base, [field]: value });
+      expect(at('x'.repeat(max)).success, `${field} at max`).toBe(true);
+      expect(at('x'.repeat(max + 1)).success, `${field} over max`).toBe(false);
+      expect(at('a\u0007b').success, `${field} control`).toBe(false);
+      expect(at('a\u202eb').success, `${field} direction`).toBe(false);
+      expect(at('a\u2028b').success, `${field} separator`).toBe(false);
+    }
+    // Trimmed; a line feed only in the Text message.
+    expect(TickerSettingsSchema.parse({ ...SETTINGS.ticker, text: '  hi  ' }).text).toBe('hi');
+    expect(ok(TickerSettingsSchema, { ...SETTINGS.ticker, text: 'a\nb' })).toBe(false);
+    expect(ok(TextSettingsSchema, { ...SETTINGS.text, heading: 'a\nb' })).toBe(false);
+    // Required text, optional text stays ''.
+    expect(ok(TickerSettingsSchema, { ...SETTINGS.ticker, text: '   ' })).toBe(false);
+    expect(ok(QrSettingsSchema, { ...SETTINGS.qr, content: '' })).toBe(false);
+    expect(ok(CountdownSettingsSchema, { ...SETTINGS.countdown, finishedText: '' })).toBe(false);
+    expect(CountdownSettingsSchema.parse({ ...SETTINGS.countdown, label: ' ' }).label).toBe('');
+    expect(ok(CountdownSettingsSchema, { ...SETTINGS.countdown, target: '2026-02-30T09:00' })).toBe(
+      false,
+    );
+    expect(ok(ClockSettingsSchema, { ...SETTINGS.clock, hourCycle: '23' })).toBe(false);
+    expect(ok(DateSettingsSchema, { ...SETTINGS.date, format: 'iso' })).toBe(false);
+    expect(ok(TickerSettingsSchema, { ...SETTINGS.ticker, speed: 'warp' })).toBe(false);
+  });
+
+  it('refuses a Text app with neither heading nor message', () => {
+    expect(ok(TextSettingsSchema, { ...SETTINGS.text, heading: '' })).toBe(true);
+    expect(ok(TextSettingsSchema, { ...SETTINGS.text, body: '' })).toBe(true);
+    const both = TextSettingsSchema.safeParse({ ...SETTINGS.text, heading: ' ', body: '' });
+    expect(both.success).toBe(false);
+    expect(both.error?.issues[0]).toMatchObject({
+      path: ['heading'],
+      message: 'enter a heading or a message',
+    });
+  });
+
+  it('refuses a type with the settings of another', () => {
+    expect(ok(AppContentSchema, { type: 'date', settings: SETTINGS.clock })).toBe(false);
+    expect(ok(AppContentSchema, { type: 'weather', settings: SETTINGS.clock })).toBe(false);
+    expect(ok(AppContentSchema, { type: 'clock', settings: SETTINGS.clock, extra: 1 })).toBe(false);
+  });
+
+  it('creates with content and patches at least one field', () => {
+    const content = { type: 'qr', settings: SETTINGS.qr };
+    expect(AppCreateSchema.parse({ name: ' Menu ', content })).toEqual({ name: 'Menu', content });
+    expect(ok(AppCreateSchema, { name: 'Menu' })).toBe(false);
+    expect(ok(AppPatchSchema, { content })).toBe(true);
+    expect(ok(AppPatchSchema, {})).toBe(false);
+    expect(ok(AppPatchSchema, { type: 'clock' })).toBe(false);
+  });
+
+  it('accepts a v3 manifest with media and app items', () => {
+    const v3 = manifest({
+      schemaVersion: 3,
+      timeZone: 'Australia/Melbourne',
+      transition: 'cut',
+      shuffle: false,
+      rotation: 0,
+      workingHours: null,
+      assets: [appItem(), asset({ availableFrom: null, availableUntil: null })],
+    });
+    expect(ok(ManifestV3Schema, v3)).toBe(true);
+    expect(parseManifest(v3)).toMatchObject({ ok: true, manifest: { schemaVersion: 3 } });
+    expect(manifestV2Facts(ManifestSchema.parse(v3)).timeZone).toBe('Australia/Melbourne');
+    expect(ok(ManifestV3Schema, { ...v3, assets: [appItem()] })).toBe(true);
+    // An app item never names an asset, and carries nothing extra.
+    expect(ok(ManifestV3Schema, { ...v3, assets: [appItem({ assetId: U(1) })] })).toBe(false);
+    expect(ok(ManifestV3Schema, { ...v3, assets: [appItem({ fit: 'contain' })] })).toBe(false);
+    expect(ok(ManifestV3Schema, { ...v3, assets: [appItem({ durationMs: 0 })] })).toBe(false);
+    expect(ok(ManifestV3Schema, { ...v3, extra: true })).toBe(false);
+    // Window order and repeated assets are still checked on media items.
+    expect(
+      ok(ManifestV3Schema, {
+        ...v3,
+        assets: [
+          appItem(),
+          asset({ availableFrom: '2026-12-02T09:00', availableUntil: '2026-12-01T09:00' }),
+        ],
+      }),
+    ).toBe(false);
+    // v2 is frozen: a released 0.2.0 player must refuse an app item rather than misread it.
+    expect(ok(ManifestV2Schema, { ...v3, schemaVersion: 2 })).toBe(false);
+  });
+
+  it('takes a playlist item as media or as an app, never a mix', () => {
+    expect(ok(PlaylistItemInputSchema, { mediaId: U(1), durationMs: null, fit: null })).toBe(true);
+    expect(ok(PlaylistItemInputSchema, { appId: U(60), durationMs: 5000 })).toBe(true);
+    expect(ok(PlaylistItemInputSchema, { appId: U(60), durationMs: 5000, fit: null })).toBe(false);
+    expect(ok(PlaylistItemInputSchema, { appId: U(60), durationMs: null })).toBe(false);
+    expect(ok(PlaylistItemInputSchema, { appId: U(60) })).toBe(false);
+    expect(
+      ok(PlaylistItemInputSchema, { mediaId: U(1), appId: U(60), durationMs: 5000, fit: null }),
     ).toBe(false);
   });
 });

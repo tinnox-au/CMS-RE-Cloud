@@ -4,7 +4,12 @@
  * It is not exported from the package, is not registered anywhere, and does
  * not represent NovaStar, Huidu or any other real controller.
  */
-import { CapabilityProfileSchema, type CapabilityProfile, type Manifest } from '@tinnox/contracts';
+import {
+  CapabilityProfileSchema,
+  isMediaItem,
+  type CapabilityProfile,
+  type Manifest,
+} from '@tinnox/contracts';
 import { checkCapabilities, type PublicationDraft, type PublishIssue } from '@tinnox/domain';
 import type { DeliveryRoute, NormalizeStatusResult } from '../src/port.ts';
 
@@ -44,7 +49,7 @@ export function createFakeStillImageRoute(): DeliveryRoute<FakePrepared> & {
       prepared.push(manifest);
       return {
         kind: 'fake-package',
-        lines: manifest.assets.map((a) => `${a.sha256} ${a.durationMs}`),
+        lines: manifest.assets.filter(isMediaItem).map((a) => `${a.sha256} ${a.durationMs}`),
       };
     },
     normalizeStatus: (): NormalizeStatusResult => ({

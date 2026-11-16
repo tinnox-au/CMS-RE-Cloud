@@ -13,6 +13,7 @@
 import {
   ABSOLUTE,
   isPushPending,
+  type AppDto,
   type FitMode,
   type Limits,
   type MediaDto,
@@ -26,12 +27,16 @@ import {
 import { durationFieldText } from './duration.ts';
 import { countLabel, matchesSearch } from './listView.ts';
 import { formatClock, mediaDetailsLabel, mediaDisplayName, mediaKindLabel } from './mediaName.ts';
+import { APP_TYPE_LABELS } from './apps.ts';
 import {
+  appendApp,
   appendMedia,
   DEFAULT_IMAGE_SECONDS,
   draftFromPlaylist,
   draftLoopMs,
   isDirty,
+  itemName,
+  itemRefId,
   moveItem,
   updateItem,
   validateDraft,
@@ -84,7 +89,12 @@ export function carryItemKeys(next: EditorDraft, previous: PlaylistDraft): Edito
   const used = new Set<string>();
   const items = next.items.map((item, index) => {
     const before = previous.items[index];
-    if (before === undefined || before.media.id !== item.media.id || used.has(before.key)) {
+    if (
+      before === undefined ||
+      before.source !== item.source ||
+      itemRefId(before) !== itemRefId(item) ||
+      used.has(before.key)
+    ) {
       return item;
     }
     used.add(before.key);
@@ -267,7 +277,7 @@ export function listProblems(draft: EditorDraft, errors: EditorErrors): readonly
     if (message === undefined) return;
     problems.push({
       id: `item:${item.key}`,
-      label: `Item ${index + 1}, ${mediaDisplayName(item.media)}`,
+      label: `Item ${index + 1}, ${itemName(item)}`,
       message,
       target: { kind: 'item', key: item.key },
     });
@@ -303,23 +313,37 @@ export type AddResult =
   | { readonly ok: true; readonly draft: EditorDraft; readonly index: number }
   | { readonly ok: false; readonly reason: 'full' | 'not_ready' };
 
+/** What the library offers to add: a ready media item or an app. */
+export type LibraryEntry =
+  | { readonly kind: 'media'; readonly media: MediaDto }
+  | { readonly kind: 'app'; readonly app: AppDto };
+
+export function entryName(entry: LibraryEntry): string {
+  return entry.kind === 'app' ? entry.app.name : mediaDisplayName(entry.media);
+}
+
 /**
- * Adds a media item to the draft: at the end, or at `slot` (0 puts it first; the number of
- * items puts it last). Only ready media can be added, and never past the item limit.
+ * Adds a media item or an app to the draft: at the end, or at `slot` (0 puts it first; the
+ * number of items puts it last). Only ready media can be added, and never past the item limit.
  */
-export function addMedia(
+export function addEntry(
   draft: EditorDraft,
-  media: MediaDto,
+  entry: LibraryEntry,
   key: string,
   limits: DraftLimits,
   slot?: number,
 ): AddResult {
-  if (media.status !== 'ready') return { ok: false, reason: 'not_ready' };
+  if (entry.kind === 'media' && entry.media.status !== 'ready') {
+    return { ok: false, reason: 'not_ready' };
+  }
   if (remainingCapacity(draft, limits) === 0) return { ok: false, reason: 'full' };
   const end = draft.items.length;
-  const appended = updateItem(appendMedia(draft, media, key), key, {
-    durationText: initialDurationText(media),
-  });
+  const appended =
+    entry.kind === 'app'
+      ? appendApp(draft, entry.app, key)
+      : updateItem(appendMedia(draft, entry.media, key), key, {
+          durationText: initialDurationText(entry.media),
+        });
   const index =
     slot === undefined || !Number.isInteger(slot) ? end : Math.min(end, Math.max(0, slot));
   const moved = moveItem(appended, end, index - end);
@@ -447,7 +471,7 @@ export function durationRuleText(
 ): string {
   return `Images stay on screen for ${secondsText(limits.minImageItemDurationMs)} to ${secondsText(
     limits.maxImageItemDurationMs,
-  )} seconds each. Videos play muted for their own length.`;
+  )} seconds each, and so do apps. Videos play muted for their own length.`;
 }
 
 /** Bounds of the seconds stepper, in whole seconds inside the configured limits. */
@@ -470,6 +494,7 @@ export function withCurrentMedia(
   item: DraftItem,
   mediaById: ReadonlyMap<string, MediaDto>,
 ): DraftItem {
+  if (item.source === 'app') return item;
   const current = mediaById.get(item.media.id);
   return current === undefined || current === item.media ? item : { ...item, media: current };
 }
@@ -495,7 +520,7 @@ export function keptAnnouncement(name: string, position: number): string {
 // ---------------------------------------------------------------------------
 // The library
 
-export type KindFilter = 'all' | MediaKind;
+export type KindFilter = 'all' | MediaKind | 'app';
 
 /** Folder filter values that are not folder ids. */
 export const ALL_FOLDERS = 'all';
@@ -555,10 +580,35 @@ export function filterLibrary(
   });
 }
 
-/** "12 files", or "4 of 12 files" while a search or filter is on. */
-export function libraryCountLabel(shown: number, total: number, filtered: boolean): string {
-  if (!filtered || shown === total) return countLabel(total, 'file');
-  return `${shown} of ${countLabel(total, 'file')}`;
+/** True when the folder or tag filter is on: apps have neither, so none is listed then. */
+export function mediaOnlyFilters(filters: LibraryFilters): boolean {
+  return filters.folder !== ALL_FOLDERS || filters.tags.size > 0;
+}
+
+/**
+ * The apps that pass the search and filters, in the order given. "All" lists them only when
+ * no folder or tag filter is on; "Apps" ignores those filters (the page disables them).
+ */
+export function filterApps(apps: readonly AppDto[], filters: LibraryFilters): readonly AppDto[] {
+  if (filters.kind === 'image' || filters.kind === 'video') return [];
+  if (filters.kind === 'all' && mediaOnlyFilters(filters)) return [];
+  return apps.filter((app) => matchesSearch([app.name], filters.query));
+}
+
+/** The line under an app card's name: its type. */
+export function appMetaLabel(app: Pick<AppDto, 'content'>): string {
+  return APP_TYPE_LABELS[app.content.type];
+}
+
+/** "12 files", or "4 of 12 files" while a search or filter is on; "items" once apps are listed too. */
+export function libraryCountLabel(
+  shown: number,
+  total: number,
+  filtered: boolean,
+  noun: 'file' | 'item' = 'file',
+): string {
+  if (!filtered || shown === total) return countLabel(total, noun);
+  return `${shown} of ${countLabel(total, noun)}`;
 }
 
 /** The line under a library card's name: "Image · 1920 × 1080 px", "Video · 1280 × 720 px · 0:12". */
@@ -571,10 +621,13 @@ export function libraryMetaLabel(
     : `${mediaKindLabel(media.kind)} · ${details}`;
 }
 
-/** How often each media item already sits in the draft, by media id. */
+/** How often each media item or app already sits in the draft, by its id. */
 export function usageInDraft(draft: PlaylistDraft): ReadonlyMap<string, number> {
   const counts = new Map<string, number>();
-  for (const item of draft.items) counts.set(item.media.id, (counts.get(item.media.id) ?? 0) + 1);
+  for (const item of draft.items) {
+    const id = itemRefId(item);
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
   return counts;
 }
 

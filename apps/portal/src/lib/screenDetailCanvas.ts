@@ -27,8 +27,6 @@ export const CANVAS_PRESETS: readonly CanvasPreset[] = [
   { label: 'Tall column 640 × 1344', width: '640', height: '1344' },
 ];
 
-type CanvasSource = Pick<DisplayDto, 'canvas' | 'contentRect' | 'defaultFit'>;
-
 const SHAPE_FIELDS = ['width', 'height', 'useContentRect', 'defaultFit'] as const;
 const RECT_FIELDS = ['rectX', 'rectY', 'rectWidth', 'rectHeight'] as const;
 
@@ -130,7 +128,9 @@ export function contentRectLabel(rect: DisplayDto['contentRect']): string {
     : `${rect.width} × ${rect.height} px at (${rect.x}, ${rect.y})`;
 }
 
-export function shapeOfDisplay(display: CanvasSource): CanvasPreviewShape {
+export function shapeOfDisplay(
+  display: Pick<DisplayDto, 'canvas' | 'contentRect'>,
+): CanvasPreviewShape {
   return {
     canvas: display.canvas,
     contentRect: display.contentRect,

@@ -3,7 +3,7 @@
  * (`GET /api/push`), `POST /api/push` and the dashboard numbers.
  *
  * There is one way to build a publication: load the display, the playlist's
- * items and their media, run `planPublication` against the display's delivery
+ * items and their media and apps, run `planPublication` against the display's delivery
  * route, and hand the resulting draft to `createPublication`. Deciding whether
  * a display has changes waiting (portal v2 decision P2-05: assign, then push)
  * runs the same plan and compares its draft with the manifest of the display's
@@ -12,6 +12,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import {
+  AppContentSchema,
   HEADERS,
   IdempotencyKeySchema,
   ManifestSchema,
@@ -24,12 +25,15 @@ import {
   type Rotation,
   type Transition,
   type WorkingHours,
+  isMediaItem,
 } from '@tinnox/contracts';
 import { auditScoped, type Tx } from '@tinnox/db';
 import {
   buildManifest,
   decidePushState,
+  isAppDraftItem,
   planPublication,
+  type AppRecord,
   type DraftItem,
   type MediaRecord,
   type PlanPublicationResult,
@@ -233,19 +237,25 @@ export async function loadPlaylistDrafts(
   for (const row of playlists.rows) itemsByPlaylist.set(row.id, []);
   const items = await tx.query<{
     playlist_id: string;
-    media_id: string;
+    media_id: string | null;
+    app_id: string | null;
     duration_ms: number | null;
     fit: FitMode | null;
   }>(
-    `SELECT playlist_id, media_id, duration_ms, fit FROM playlist_item
+    `SELECT playlist_id, media_id, app_id, duration_ms, fit FROM playlist_item
      WHERE org_id = app_org_id() AND playlist_id = ANY($1::uuid[])
      ORDER BY playlist_id, position`,
     [[...itemsByPlaylist.keys()]],
   );
   for (const row of items.rows) {
+    // The database guarantees exactly one source, and a duration for an app (migration 0007).
     itemsByPlaylist
       .get(row.playlist_id)
-      ?.push({ mediaId: row.media_id, durationMs: row.duration_ms, fit: row.fit });
+      ?.push(
+        row.app_id !== null
+          ? { appId: row.app_id, durationMs: row.duration_ms ?? 0 }
+          : { mediaId: row.media_id ?? '', durationMs: row.duration_ms, fit: row.fit },
+      );
   }
   for (const row of playlists.rows) {
     drafts.set(row.id, {
@@ -314,12 +324,50 @@ export async function loadMediaRecords(
   return byId;
 }
 
+/** The media ids and the app ids of draft items, each list for its loader. */
+export function itemRefs(items: readonly DraftItem[]): { mediaIds: string[]; appIds: string[] } {
+  const mediaIds: string[] = [];
+  const appIds: string[] = [];
+  for (const item of items) {
+    if (isAppDraftItem(item)) appIds.push(item.appId);
+    else mediaIds.push(item.mediaId);
+  }
+  return { mediaIds, appIds };
+}
+
+/**
+ * The apps the playlist rules need, keyed by id. A row whose stored settings no
+ * longer parse is left out, so it surfaces as `app_missing` on that playlist
+ * rather than failing the whole push plan. With `lock`, the rows cannot be
+ * deleted until the transaction ends.
+ */
+export async function loadAppRecords(
+  tx: Tx,
+  ids: readonly string[],
+  lock: boolean,
+): Promise<Map<string, AppRecord>> {
+  const byId = new Map<string, AppRecord>();
+  if (ids.length === 0) return byId;
+  const { rows } = await tx.query<{ id: string; type: string; settings: unknown }>(
+    `SELECT id, type, settings FROM app
+     WHERE org_id = app_org_id() AND id = ANY($1::uuid[])
+     ${lock ? 'FOR KEY SHARE' : ''}`,
+    [[...new Set(ids)]],
+  );
+  for (const row of rows) {
+    const content = AppContentSchema.safeParse({ type: row.type, settings: row.settings });
+    if (content.success) byId.set(row.id, { id: row.id, content: content.data });
+  }
+  return byId;
+}
+
 /** The publishing rule (D12, D15): the domain rule plus the target route's capability profile. */
 export function planDraft(
   ctx: AppContext,
   display: DisplayPlanRow,
   playlist: PlaylistDraft,
   mediaById: ReadonlyMap<string, MediaRecord>,
+  appsById: ReadonlyMap<string, AppRecord>,
 ): PlanPublicationResult {
   return planPublication({
     display: {
@@ -334,6 +382,7 @@ export function planDraft(
     },
     items: playlist.items,
     mediaById,
+    appsById,
     limits: ctx.config.limits,
     playback: { transition: playlist.transition, shuffle: playlist.shuffle },
     route: ctx.delivery.get(display.route),
@@ -381,8 +430,8 @@ async function loadCurrentPublications(
  * Decides, for each display, what a push would do now: nothing is assigned, the
  * assigned playlist cannot be published (blocked), the display has no
  * publication yet, the publication that would be built differs from the current
- * one, or equals it. Two round trips for the playlists and one for their media,
- * whatever the number of displays, then one for every `MANIFEST_BATCH_SIZE`
+ * one, or equals it. Two round trips for the playlists, one for their media and
+ * one for their apps, whatever the number of displays, then one for every `MANIFEST_BATCH_SIZE`
  * displays to compare with what they were last given.
  *
  * - `lock` (inside a push): the playlist and its media are held until the
@@ -404,11 +453,9 @@ export async function assessDisplays(
   );
   const draftOf = (display: DisplayPlanRow): PlaylistDraft | undefined =>
     display.assigned_playlist_id === null ? undefined : drafts.get(display.assigned_playlist_id);
-  const mediaById = await loadMediaRecords(
-    tx,
-    [...drafts.values()].flatMap((draft) => draft.items.map((item) => item.mediaId)),
-    options.lock,
-  );
+  const refs = itemRefs([...drafts.values()].flatMap((draft) => draft.items));
+  const mediaById = await loadMediaRecords(tx, refs.mediaIds, options.lock);
+  const appsById = await loadAppRecords(tx, refs.appIds, options.lock);
 
   const assess = (display: DisplayPlanRow, loaded: LoadedPublication | null): DisplayAssessment => {
     const playlist = draftOf(display);
@@ -424,7 +471,7 @@ export async function assessDisplays(
         current,
       };
     }
-    const plan = planDraft(ctx, display, playlist, mediaById);
+    const plan = planDraft(ctx, display, playlist, mediaById, appsById);
     const decided = decidePushState({ plan, currentManifest: loaded?.manifest ?? null });
     // A stored manifest that no longer parses cannot be compared with anything;
     // the display has a publication, and a push would replace it.
@@ -501,11 +548,15 @@ export async function createPublication(
   );
   const row = inserted.rows[0];
   if (row === undefined) throw new Error('publication insert returned no row');
+  // Media positions only: an app item has no file (the 0004 guard checks each row's assetId).
+  const media = manifest.assets.flatMap((asset, i) =>
+    isMediaItem(asset) ? [{ position: i, mediaId: asset.assetId }] : [],
+  );
   await tx.query(
     `INSERT INTO publication_asset (publication_id, position, org_id, media_id)
-     SELECT $1, (t.ordinal - 1)::int, app_org_id(), t.media_id
-     FROM unnest($2::uuid[]) WITH ORDINALITY AS t(media_id, ordinal)`,
-    [publicationId, manifest.assets.map((asset) => asset.assetId)],
+     SELECT $1, t.position, app_org_id(), t.media_id
+     FROM unnest($2::int[], $3::uuid[]) AS t(position, media_id)`,
+    [publicationId, media.map((m) => m.position), media.map((m) => m.mediaId)],
   );
   await tx.query(
     `INSERT INTO display_delivery (display_id, org_id, desired_publication_id, desired_at)
