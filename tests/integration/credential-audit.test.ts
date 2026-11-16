@@ -1,0 +1,190 @@
+/**
+ * Backend review round 1, CX-01: a credential change and its audit event have one outcome.
+ * Each case makes the audit insert fail (a trigger the test owns), checks that the
+ * credential change did not survive either, then removes the fault and checks that the
+ * same action still works and is audited exactly once.
+ */
+import { randomBytes, randomUUID } from 'node:crypto';
+import pg from 'pg';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { IdentityProvider } from '../../apps/api/src/auth/oidc.ts';
+import {
+  auditEvents,
+  createDisplay,
+  createOrg,
+  newPairing,
+  pollPairing,
+  signIn,
+  startTestApp,
+  type Operator,
+  type TestApp,
+  type TestOrg,
+} from './support.ts';
+
+async function asMigrator<T>(work: (client: pg.Client) => Promise<T>): Promise<T> {
+  const client = new pg.Client({ connectionString: process.env['TEST_DATABASE_MIGRATOR_URL'] });
+  await client.connect();
+  try {
+    return await work(client);
+  } finally {
+    await client.end();
+  }
+}
+
+async function removeFault(): Promise<void> {
+  await asMigrator(async (client) => {
+    await client.query('DROP TRIGGER IF EXISTS test_fail_audit ON public.audit_event');
+    await client.query('DROP FUNCTION IF EXISTS public.test_fail_audit()');
+  });
+}
+
+/** Runs `work` while every audit insert of `action` raises an error. */
+async function whileAuditFails(action: string, work: () => Promise<void>): Promise<void> {
+  if (!/^[a-z._]+$/.test(action)) throw new Error('unexpected audit action');
+  await asMigrator(async (client) => {
+    await client.query(`
+      CREATE FUNCTION public.test_fail_audit() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.action = '${action}' THEN RAISE EXCEPTION 'injected audit failure'; END IF;
+        RETURN NEW;
+      END $$`);
+    await client.query(`CREATE TRIGGER test_fail_audit BEFORE INSERT ON public.audit_event
+      FOR EACH ROW EXECUTE FUNCTION public.test_fail_audit()`);
+  });
+  try {
+    await work();
+  } finally {
+    await removeFault();
+  }
+}
+
+/** One count as the owner of the security functions (bypasses row-level security). */
+function countAsDefiner(text: string, values: readonly unknown[]): Promise<number> {
+  return asMigrator(async (client) => {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL ROLE tinnox_definer');
+    const { rows } = await client.query<{ n: string }>(text, [...values]);
+    await client.query('COMMIT');
+    return Number(rows[0]?.n);
+  });
+}
+
+describe('credential changes and their audit events', () => {
+  let t: TestApp;
+  let org: TestOrg;
+  let alice: Operator;
+
+  beforeAll(async () => {
+    t = await startTestApp();
+    org = await createOrg('Credential audit');
+    alice = await signIn(t, org);
+  });
+  afterAll(async () => {
+    await removeFault();
+    await t.close();
+  });
+
+  const actions = async (action: string): Promise<number> =>
+    (await auditEvents(alice)).filter((event) => event.action === action).length;
+
+  it('keeps a pairing collectable when its audit event cannot be written', async () => {
+    const display = await createDisplay(alice, org);
+    const pairing = await newPairing(t);
+    const claim = await alice.fetch(`/api/displays/${display.id}/claim`, {
+      method: 'POST',
+      json: { code: pairing.code },
+    });
+    expect(claim.status).toBe(200);
+    const registrations = (): Promise<number> =>
+      countAsDefiner('SELECT count(*) AS n FROM public.player_registration WHERE display_id = $1', [
+        display.id,
+      ]);
+
+    await whileAuditFails('pairing.complete', async () => {
+      expect((await pollPairing(t, pairing)).status).toBe(500);
+      expect(await registrations()).toBe(0);
+    });
+    expect(await actions('pairing.complete')).toBe(0);
+
+    // The pairing was not consumed: the next poll hands over the credential.
+    const collected = await pollPairing(t, pairing);
+    expect(collected.status).toBe(200);
+    const body = (await collected.json()) as { status: string; deviceToken?: string };
+    expect(body.status).toBe('claimed');
+    expect(body.deviceToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(await registrations()).toBe(1);
+    expect(await actions('pairing.complete')).toBe(1);
+  });
+
+  it('keeps a session alive when its sign-out audit event cannot be written', async () => {
+    const leaving = await signIn(t, org);
+    await whileAuditFails('auth.logout', async () => {
+      expect((await leaving.fetch('/api/auth/logout', { method: 'POST' })).status).toBe(500);
+      expect((await leaving.fetch('/api/displays')).status).toBe(200);
+    });
+    expect(await actions('auth.logout')).toBe(0);
+
+    expect((await leaving.fetch('/api/auth/logout', { method: 'POST' })).status).toBe(200);
+    expect((await leaving.fetch('/api/displays')).status).toBe(401);
+    expect(await actions('auth.logout')).toBe(1);
+  });
+
+  it('creates no session and keeps the previous one when the sign-in audit event cannot be written', async () => {
+    let lastState = '';
+    const provider: IdentityProvider = {
+      beginLogin: () => {
+        lastState = randomUUID();
+        return Promise.resolve({
+          state: lastState,
+          nonce: randomBytes(32).toString('base64url'),
+          codeVerifier: randomBytes(32).toString('base64url'),
+          url: 'http://localhost:8080/sign-in',
+        });
+      },
+      completeLogin: () => Promise.resolve({ sub: org.oidcSub, acr: null, amr: [], idToken: null }),
+      endSessionUrl: () => Promise.resolve(null),
+      check: () => Promise.resolve(true),
+    };
+    (t.ctx as { idp: IdentityProvider }).idp = provider;
+    const previous = await signIn(t, org);
+    const sessions = (): Promise<number> =>
+      countAsDefiner('SELECT count(*) AS n FROM public.session WHERE membership_id = $1', [
+        org.membershipId,
+      ]);
+    const sessionCookie = new RegExp(`${t.config.sessionCookieName}=[A-Za-z0-9_-]{43}`);
+
+    /** Starts a sign-in and returns the callback response, sent with the previous session's cookie. */
+    const signInThroughProvider = async (): Promise<Response> => {
+      const begin = await fetch(`${t.url}/api/auth/login`, { redirect: 'manual' });
+      expect(begin.status).toBe(303);
+      const preAuth = new RegExp(`${t.config.loginCookieName}=([^;]+)`).exec(
+        begin.headers.get('set-cookie') ?? '',
+      )?.[1];
+      expect(preAuth).toBeDefined();
+      return fetch(`${t.url}/api/auth/callback?code=test&state=${lastState}`, {
+        redirect: 'manual',
+        headers: { cookie: `${t.config.loginCookieName}=${preAuth}; ${previous.cookie}` },
+      });
+    };
+    const before = await sessions();
+    const loginsBefore = await actions('auth.login');
+    await whileAuditFails('auth.login', async () => {
+      const failed = await signInThroughProvider();
+      expect(failed.status).toBe(500);
+      expect(failed.headers.get('set-cookie') ?? '').not.toMatch(sessionCookie);
+      expect(await sessions()).toBe(before);
+      expect((await previous.fetch('/api/displays')).status).toBe(200);
+    });
+    expect(await actions('auth.login')).toBe(loginsBefore);
+
+    const signedIn = await signInThroughProvider();
+    expect(signedIn.status).toBe(303);
+    const cookie = sessionCookie.exec(signedIn.headers.get('set-cookie') ?? '')?.[0];
+    expect(cookie).toBeDefined();
+    // Rotation: the previous session ended in the same transaction that created the new one.
+    expect((await previous.fetch('/api/displays')).status).toBe(401);
+    const session = await fetch(`${t.url}/api/session`, { headers: { cookie: cookie ?? '' } });
+    expect(((await session.json()) as { authenticated: boolean }).authenticated).toBe(true);
+    expect(await actions('auth.login')).toBe(loginsBefore + 1);
+  });
+});

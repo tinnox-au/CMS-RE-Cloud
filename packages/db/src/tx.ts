@@ -82,6 +82,32 @@ export async function withoutOrg<T>(pool: Pool, fn: (tx: Tx) => Promise<T>): Pro
   return run(pool, async () => undefined, fn);
 }
 
+/**
+ * Runs `fn` in one transaction whose organisation is not known when it starts:
+ * pairing completion, sign-in and sign-out, where a sec.* call resolves a
+ * credential to its organisation. `fn` calls `enterOrg` with that organisation
+ * to set the tenant context for the rest of the transaction, so the credential
+ * change and its audit event commit or roll back together. The same rule as
+ * `withOrg` applies: the id must come from a verified credential, never from
+ * request input.
+ */
+export async function withResolvedOrg<T>(
+  pool: Pool,
+  fn: (tx: Tx, enterOrg: (orgId: string) => Promise<void>) => Promise<T>,
+): Promise<T> {
+  return run(
+    pool,
+    async () => undefined,
+    (tx) =>
+      fn(tx, async (orgId) => {
+        if (typeof orgId !== 'string' || !UUID_PATTERN.test(orgId)) {
+          throw new Error('enterOrg requires a lower-case UUID organisation id');
+        }
+        await tx.query("SELECT set_config('app.org_id', $1, true)", [orgId]);
+      }),
+  );
+}
+
 /** Minimal query interface satisfied by Pool, PoolClient and Tx. */
 export interface Queryable {
   query<R extends QueryResultRow = QueryResultRow>(

@@ -39,6 +39,7 @@ import {
   poolAsTx,
   sha256,
   withOrg,
+  withResolvedOrg,
   type DeviceLookup,
 } from '@tinnox/db';
 import { heartbeatRejection, reduceHeartbeat } from '@tinnox/domain';
@@ -277,15 +278,17 @@ export async function registerPlayerRoutes(app: FastifyInstance, ctx: AppContext
       }
 
       // The device token exists in clear only in this response; the database gets its hash.
+      // One transaction: the registration and its audit event commit together, and a failure
+      // leaves the pairing claimed, so the player's next poll can still collect.
       const deviceToken = randomToken();
-      const done = await pairingComplete(unscoped, {
-        pairingId: id,
-        pollingTokenHash,
-        deviceTokenHash: sha256(deviceToken),
-      });
-      if (done.outcome !== 'completed') return { status: 'consumed' };
-
-      const display = await withOrg(pool, done.orgId, async (tx) => {
+      const paired = await withResolvedOrg(pool, async (tx, enterOrg) => {
+        const done = await pairingComplete(tx, {
+          pairingId: id,
+          pollingTokenHash,
+          deviceTokenHash: sha256(deviceToken),
+        });
+        if (done.outcome !== 'completed') return null;
+        await enterOrg(done.orgId);
         const { rows } = await tx.query<{
           id: string;
           name: string;
@@ -300,6 +303,8 @@ export async function registerPlayerRoutes(app: FastifyInstance, ctx: AppContext
            FROM display WHERE id = $1 AND org_id = app_org_id()`,
           [done.displayId],
         );
+        const row = rows[0];
+        if (row === undefined) throw new Error('display of a completed pairing is not visible');
         await auditScoped(tx, {
           actorType: 'player',
           actorId: done.registrationId,
@@ -309,9 +314,10 @@ export async function registerPlayerRoutes(app: FastifyInstance, ctx: AppContext
           result: 'success',
           detail: { displayId: done.displayId, pairingId: id },
         });
-        return rows[0];
+        return { done, display: row };
       });
-      if (display === undefined) throw new Error('display of a completed pairing is not visible');
+      if (paired === null) return { status: 'consumed' };
+      const { done, display } = paired;
       return {
         status: 'claimed',
         deviceToken,

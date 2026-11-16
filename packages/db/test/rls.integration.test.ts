@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { withOrg, withoutOrg, type Pool } from '../src/index.ts';
+import { withOrg, withoutOrg, withResolvedOrg, type Pool } from '../src/index.ts';
 import { appPool, createOrg, migratorClient, PG, pgCode, type TestOrg } from './support.ts';
 
 const TENANT_TABLES = [
@@ -585,6 +585,36 @@ describe('transaction-scoped context on pooled connections', () => {
       await withOrg(single, a.orgId, async (tx) => {
         expect((await tx.query('SELECT 1 FROM playlist WHERE name = $1', [name])).rowCount).toBe(0);
       });
+    } finally {
+      await single.end();
+    }
+  });
+
+  it('enters an organisation part-way through a transaction, and only for that transaction', async () => {
+    const single = appPool(1);
+    try {
+      await withResolvedOrg(single, async (tx, enterOrg) => {
+        expect(await count(tx as never, 'media')).toBe(0);
+        await enterOrg(a.orgId);
+        const ids = await tx.query<{ id: string }>('SELECT id FROM media');
+        expect(ids.rows).toEqual([{ id: a.mediaId }]);
+      });
+      expect(await count(single, 'media')).toBe(0);
+      // A failure after entering rolls back what was written before and after it.
+      const name = `resolved-${randomUUID()}`;
+      await expect(
+        withResolvedOrg(single, async (tx, enterOrg) => {
+          await enterOrg(a.orgId);
+          await tx.query('INSERT INTO playlist (org_id, name) VALUES ($1, $2)', [a.orgId, name]);
+          throw new Error('boom');
+        }),
+      ).rejects.toThrow('boom');
+      await withOrg(single, a.orgId, async (tx) => {
+        expect((await tx.query('SELECT 1 FROM playlist WHERE name = $1', [name])).rowCount).toBe(0);
+      });
+      await expect(
+        withResolvedOrg(single, (_tx, enterOrg) => enterOrg("x' OR '1'='1")),
+      ).rejects.toThrow(/UUID/);
     } finally {
       await single.end();
     }
