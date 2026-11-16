@@ -1,5 +1,5 @@
 /**
- * Portal v2, stage A: what the new routes leave in the audit trail.
+ * Portal v2, stages A and B: what the new routes leave in the audit trail.
  *
  * Every state change writes exactly one event, in the transaction of the change;
  * a request that changes nothing writes none. An event names its object in one
@@ -317,6 +317,83 @@ describe('the audit trail of the stage A routes', () => {
         objectId: tag,
         detail: { scope: 'media', removedFrom: 1 },
       }),
+    ]);
+
+    // Apps: the type and field names only, never the settings an operator typed.
+    const appCreate = await eventsOf(
+      () =>
+        operator.fetch('/api/apps', {
+          method: 'POST',
+          json: {
+            name: `${TYPED} app`,
+            description: `${TYPED} description`,
+            content: {
+              type: 'qr',
+              settings: {
+                content: `https://example.com/${TYPED}`,
+                caption: TYPED,
+                textColour: '#ffffff',
+                backgroundColour: '#000000',
+              },
+            },
+          },
+        }),
+      201,
+    );
+    const app = idOf(appCreate.body);
+    expect(appCreate.events).toEqual([
+      expect.objectContaining({
+        action: 'app.create',
+        result: 'success',
+        objectType: 'app',
+        objectId: app,
+        detail: { type: 'qr' },
+      }),
+    ]);
+    const appUpdate = await eventsOf(
+      () =>
+        operator.fetch(`/api/apps/${upper(app)}`, {
+          method: 'PATCH',
+          json: { name: `${TYPED} app two`, description: null },
+        }),
+      200,
+    );
+    expect(appUpdate.events).toEqual([
+      expect.objectContaining({
+        action: 'app.update',
+        objectId: app,
+        detail: { fields: ['description', 'name'] },
+      }),
+    ]);
+    const typeChange = await eventsOf(
+      () =>
+        operator.fetch(`/api/apps/${app}`, {
+          method: 'PATCH',
+          json: {
+            content: {
+              type: 'date',
+              settings: { format: 'long', textColour: '#ffffff', backgroundColour: '#000000' },
+            },
+          },
+        }),
+      400,
+    );
+    expect(typeChange.events).toEqual([]);
+    const appLoop = await createPlaylist(operator, `${TYPED} app loop`, [
+      { appId: app, durationMs: 5000 },
+    ]);
+    const appInUse = await eventsOf(
+      () => operator.fetch(`/api/apps/${app}`, { method: 'DELETE' }),
+      409,
+    );
+    expect(appInUse.events).toEqual([]);
+    await operator.fetch(`/api/playlists/${appLoop}`, { method: 'DELETE' });
+    const appDelete = await eventsOf(
+      () => operator.fetch(`/api/apps/${upper(app)}`, { method: 'DELETE' }),
+      204,
+    );
+    expect(appDelete.events).toEqual([
+      expect.objectContaining({ action: 'app.delete', objectId: app, detail: { type: 'qr' } }),
     ]);
 
     // The whole trail of this organisation: every object in lower case, nothing typed.

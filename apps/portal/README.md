@@ -57,7 +57,8 @@ src/ui          the component kit; API reference in src/ui/README.md
 src/styles      tokens.css, base.css and one file per component group, imported by index.css;
                 light and dark via prefers-color-scheme; one system-first typeface with self-hosted Inter
 src/features    one folder per area, each with its routed page(s), parts and one CSS file:
-                dashboard, media (library/, detail/), playlists (list/, editor/),
+                dashboard, media (library/, detail/), apps (list, create dialog, editor
+                with a live preview drawn by @tinnox/app-render), playlists (list/, editor/),
                 displays (list/, wizard/, detail/: the operator's "Screens" under /screens),
                 push (PushProvider and the push dialog), settings (settings and tags),
                 audit, planned, shared (parts several pages use: tags, folders,

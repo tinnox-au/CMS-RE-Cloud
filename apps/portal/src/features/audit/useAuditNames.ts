@@ -37,6 +37,10 @@ async function loadKind(kind: AuditTargetKind, signal: AbortSignal): Promise<Loa
       const list = await api.listFolders(signal);
       return { names: new Map(list.map((item) => [item.id.toLowerCase(), item.name])) };
     }
+    case 'app': {
+      const list = await api.listApps(signal);
+      return { names: new Map(list.map((item) => [item.id.toLowerCase(), item.name])) };
+    }
   }
 }
 
@@ -102,6 +106,7 @@ export function useAuditNames(kinds: readonly AuditTargetKind[], generation: num
       playlist: names('playlist'),
       tag: names('tag'),
       folder: names('folder'),
+      app: names('app'),
       tagScopes: byKind.get('tag')?.tagScopes ?? null,
     };
   }, [loaded]);

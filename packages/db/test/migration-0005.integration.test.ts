@@ -550,6 +550,8 @@ describe('forced row-level security after migration 0005', () => {
     );
     expect(rows.map((r) => r.relname)).toEqual(
       [
+        // 0007, applied with the rest by the upgrade above.
+        'app',
         'audit_event',
         'display',
         'display_delivery',

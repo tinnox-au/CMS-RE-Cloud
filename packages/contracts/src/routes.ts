@@ -56,6 +56,12 @@ export const ROUTES = Object.freeze({
   folderPattern: '/api/folders/:id',
   folder: (id: string) => `/api/folders/${enc(id)}`,
 
+  /** GET, POST. */
+  apps: '/api/apps',
+  /** GET, PATCH (the type never changes), DELETE (409 `app_in_use` while a live playlist has it). */
+  appPattern: '/api/apps/:id',
+  app: (id: string) => `/api/apps/${enc(id)}`,
+
   playlists: '/api/playlists',
   /** GET, PUT, DELETE (204, or 409 `playlist_in_use` while a display has it assigned). */
   playlistPattern: '/api/playlists/:id',

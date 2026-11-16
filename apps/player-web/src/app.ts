@@ -391,14 +391,16 @@ export class PlayerApp {
       location.origin,
     );
     const deviceApi = this.#api.forDevice(deviceToken);
-    const presenter = new DomPresenter(this.#stage, (sha256) => assets.getBlob(sha256));
+    // shortcut: clock offset is not persisted; store it in idb if screens reboot offline with bad clocks.
+    const clock = { now: () => Date.now() + this.#clockOffsetMs };
+    const presenter = new DomPresenter(this.#stage, (sha256) => assets.getBlob(sha256), clock.now);
     const displayName = registration.display.name;
     const onRevoked = (): void => void this.#handleRevoked();
 
     const playback = new PlaybackLoop({
       loadActive: async () => (await store.getActive())?.manifest ?? null,
       presenter,
-      clock: { now: () => Date.now() + this.#clockOffsetMs },
+      clock,
       sleep,
       random: Math.random,
       signal,

@@ -194,11 +194,19 @@ export async function createPlaylistInPortal(page: Page, name: string): Promise<
   return page.url().split('/').pop() ?? '';
 }
 
-/** In the playlist editor: adds a ready file from "Add ready media" to the end. */
+/** In the playlist editor: adds a ready file from "Add media or apps" to the end. */
 export async function addToPlaylist(page: Page, mediaName: string): Promise<void> {
   const library = page.getByTestId('playlist-editor-library');
-  await library.getByRole('searchbox', { name: 'Search media' }).fill(mediaName);
+  await library.getByRole('searchbox', { name: 'Search media and apps' }).fill(mediaName);
   await library.getByRole('button', { name: `Add ${mediaName}`, exact: true }).click();
+}
+
+/** In the playlist editor: chooses the Apps chip and adds an app to the end of the sequence. */
+export async function addAppToPlaylist(page: Page, appName: string): Promise<void> {
+  const library = page.getByTestId('playlist-editor-library');
+  await library.getByRole('button', { name: 'Apps', exact: true }).click();
+  await library.getByRole('searchbox', { name: 'Search media and apps' }).fill(appName);
+  await library.getByRole('button', { name: `Add ${appName}`, exact: true }).click();
 }
 
 /** In the playlist editor: saves the draft and waits for "Saved". */
@@ -206,6 +214,41 @@ export async function savePlaylistDraft(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Save draft' }).click();
   await expect(page.getByTestId('playlist-editor-save-state')).toHaveText('Saved');
 }
+
+// ---------------------------------------------------------------------------
+// Apps
+
+/**
+ * Creates an app through the Apps page's "Create app" dialog and lands in its editor;
+ * returns its id. `type` is the API's type ("clock", "ticker", "qr").
+ */
+export async function createAppInPortal(page: Page, type: string, name: string): Promise<string> {
+  await page.goto(`${PORTAL_URL}/apps`);
+  await page.getByTestId('apps-create').click();
+  const dialog = page.getByTestId('apps-create-dialog');
+  await dialog.getByTestId(`apps-create-type-${type}`).click();
+  await dialog.getByLabel('Name', { exact: true }).fill(name);
+  await dialog.getByRole('button', { name: 'Create app' }).click();
+  await page.waitForURL(/\/apps\/[0-9a-f-]{36}$/);
+  await expect(page.getByTestId('app-editor')).toBeVisible();
+  return page.url().split('/').pop() ?? '';
+}
+
+/** In the app editor: saves and waits for "Saved". */
+export async function saveApp(page: Page): Promise<void> {
+  await page.getByTestId('app-editor-save').click();
+  await expect(page.getByTestId('app-editor-save-state')).toHaveText('Saved');
+}
+
+/** True when the page scrolls sideways (content wider than the viewport). */
+export function scrollsSideways(page: Page): Promise<boolean> {
+  return page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Playlist assignment
 
 /** In the playlist editor: assigns the playlist to one screen through the screen picker. */
 export async function assignFromEditor(page: Page, screenName: string): Promise<void> {

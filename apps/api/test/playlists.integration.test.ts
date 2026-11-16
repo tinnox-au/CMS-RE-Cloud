@@ -14,8 +14,10 @@ import {
 import { withOrg } from '@tinnox/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  appItem,
   assignPlaylist,
   auditEvents,
+  createApp,
   createDisplay,
   createOrg,
   createPlaylist,
@@ -33,7 +35,11 @@ import {
 } from './support.ts';
 
 interface ErrorBody {
-  error: { code: string; message: string; details?: { path: string; message: string }[] };
+  error: {
+    code: string;
+    message: string;
+    details?: { path: string; message: string; code?: string }[];
+  };
 }
 
 describe('playlists: description, summary, duplicate and delete', () => {
@@ -223,6 +229,71 @@ describe('playlists: description, summary, duplicate and delete', () => {
     });
   });
 
+  describe('apps in playlists', () => {
+    it('saves app items, lists their kind and time, and copies them in a duplicate', async () => {
+      const image = await readyImage(t, alice);
+      const app = await createApp(alice);
+      const id = await createPlaylist(alice, 'Clock loop', [
+        appItem(app.id, 15),
+        imageItem(image.id, 4),
+        appItem(app.id, 5),
+      ]);
+      const saved = await getPlaylist(alice, id);
+      expect(saved.items).toEqual([
+        {
+          id: expect.any(String) as string,
+          position: 0,
+          appId: app.id,
+          durationMs: 15_000,
+          app: { ...app, usageCount: 1, updatedAt: expect.any(String) as string },
+        },
+        expect.objectContaining({ position: 1, mediaId: image.id, durationMs: 4000, fit: null }),
+        expect.objectContaining({ position: 2, appId: app.id, durationMs: 5000 }),
+      ]);
+      expect(await summaryOf(alice, id)).toMatchObject({
+        itemCount: 3,
+        totalDurationMs: 15_000 + 4000 + 5000,
+        kinds: ['image', 'app'],
+        previewMediaIds: [image.id],
+      });
+      const appOnly = await createPlaylist(alice, 'Only apps', [appItem(app.id)]);
+      expect(await summaryOf(alice, appOnly)).toMatchObject({
+        totalDurationMs: 10_000,
+        kinds: ['app'],
+        previewMediaIds: [],
+      });
+
+      const duplicate = await alice.fetch(`/api/playlists/${id}/duplicate`, { method: 'POST' });
+      expect(duplicate.status).toBe(201);
+      const copy = PlaylistDuplicateResponseSchema.parse(await duplicate.json());
+      expect(copy.items.map((item) => ('appId' in item ? item.appId : item.mediaId))).toEqual([
+        app.id,
+        image.id,
+        app.id,
+      ]);
+    });
+
+    it('refuses an app item that has a fit, a duration out of range, or an unknown app', async () => {
+      const app = await createApp(alice);
+      const id = await createPlaylist(alice, 'Bad apps');
+      const save = (items: unknown[]): Promise<Response> =>
+        alice.fetch(`/api/playlists/${id}`, { method: 'PUT', json: { name: 'Bad apps', items } });
+
+      expect((await save([{ appId: app.id, durationMs: 5000, fit: 'cover' }])).status).toBe(400);
+      expect((await save([{ appId: app.id, durationMs: null }])).status).toBe(400);
+      const tooLong = await save([appItem(app.id, 3601)]);
+      expect(tooLong.status).toBe(400);
+      expect(((await tooLong.json()) as ErrorBody).error.details).toEqual([
+        expect.objectContaining({ path: 'items[0]', code: 'duration_out_of_range' }),
+      ]);
+      const unknown = await save([appItem(randomUUID())]);
+      expect(unknown.status).toBe(400);
+      expect(((await unknown.json()) as ErrorBody).error.details).toEqual([
+        expect.objectContaining({ path: 'items[0]', code: 'app_missing' }),
+      ]);
+    });
+  });
+
   describe('POST /api/playlists/:id/duplicate', () => {
     it('copies the description, the playback options and every item into a new, unassigned playlist', async () => {
       const first = await readyImage(t, alice);
@@ -256,7 +327,11 @@ describe('playlists: description, summary, duplicate and delete', () => {
       expect(copy.description).toBe('Street side');
       expect(copy).toMatchObject({ transition: 'fade', shuffle: true });
       const shape = (playlist: PlaylistDto): unknown =>
-        playlist.items.map((item) => [item.position, item.mediaId, item.durationMs, item.fit]);
+        playlist.items.map((item) =>
+          'mediaId' in item
+            ? [item.position, item.mediaId, item.durationMs, item.fit]
+            : [item.position, item.appId, item.durationMs],
+        );
       expect(shape(copy)).toEqual(shape(source));
       // New rows, not shared ones: editing the copy cannot touch the original.
       const sourceItemIds = source.items.map((item) => item.id);
@@ -270,7 +345,9 @@ describe('playlists: description, summary, duplicate and delete', () => {
       expect(sourceAfter.items.map((item) => item.id)).toEqual(sourceItemIds);
       expect(sourceAfter.updatedAt).toBe(source.updatedAt);
       // Each media item is now used by two playlists.
-      expect(sourceAfter.items.map((item) => item.media.usageCount)).toEqual([2, 2, 2]);
+      expect(
+        sourceAfter.items.map((item) => ('media' in item ? item.media.usageCount : null)),
+      ).toEqual([2, 2, 2]);
 
       const [event] = (await auditEvents(alice, '&category=playlist')).filter(
         (e) => e.objectId === copy.id,

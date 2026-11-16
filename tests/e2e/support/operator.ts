@@ -201,14 +201,23 @@ export class OperatorApi {
     return (await response.json()) as { id: string };
   }
 
+  /** Creates a built-in app; `content` is `{type, settings}` as the API takes it. */
+  async createApp(input: {
+    name: string;
+    content: { type: string; settings: Record<string, string | boolean> };
+  }): Promise<{ id: string }> {
+    const response = await this.post('/api/apps', input);
+    expect(response.status(), await response.text()).toBe(201);
+    return (await response.json()) as { id: string };
+  }
+
   async savePlaylist(
     id: string,
     name: string,
-    items: readonly {
-      mediaId: string;
-      durationMs: number | null;
-      fit: 'contain' | 'cover' | null;
-    }[],
+    items: readonly (
+      | { mediaId: string; durationMs: number | null; fit: 'contain' | 'cover' | null }
+      | { appId: string; durationMs: number }
+    )[],
     playback: { transition?: 'cut' | 'fade'; shuffle?: boolean } = {},
   ): Promise<void> {
     const response = await this.put(`/api/playlists/${id}`, { name, items, ...playback });

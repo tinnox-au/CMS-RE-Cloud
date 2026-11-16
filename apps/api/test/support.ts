@@ -16,7 +16,13 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { MediaJobResult, PlaylistItemInput } from '@tinnox/contracts';
+import {
+  AppDtoSchema,
+  type AppContent,
+  type AppDto,
+  type MediaJobResult,
+  type PlaylistItemInput,
+} from '@tinnox/contracts';
 import { createPool, poolAsTx, sessionCreate, sha256, withOrg, type Pool } from '@tinnox/db';
 import { createDeliveryRegistry } from '@tinnox/delivery';
 import { LocalObjectStorage } from '@tinnox/storage';
@@ -474,6 +480,34 @@ export async function createPlaylist(
 /** One image item of `seconds` seconds with the display's default fit. */
 export function imageItem(mediaId: string, seconds = 5): PlaylistItemInput {
   return { mediaId, durationMs: seconds * 1000, fit: null };
+}
+
+/** A 24-hour Clock with seconds, white on black. */
+export const CLOCK: AppContent = {
+  type: 'clock',
+  settings: {
+    hourCycle: '24',
+    showSeconds: true,
+    textColour: '#ffffff',
+    backgroundColour: '#000000',
+  },
+};
+
+/** Creates an app through the API and returns it. */
+export async function createApp(
+  operator: Operator,
+  content: AppContent = CLOCK,
+  name = 'Lobby clock',
+): Promise<AppDto> {
+  const response = await operator.fetch('/api/apps', { method: 'POST', json: { name, content } });
+  if (response.status !== 201)
+    throw new Error(`app create failed: ${response.status} ${await response.text()}`);
+  return AppDtoSchema.parse(await response.json());
+}
+
+/** One app item of `seconds` seconds. */
+export function appItem(appId: string, seconds = 10): PlaylistItemInput {
+  return { appId, durationMs: seconds * 1000 };
 }
 
 /** Assigns a playlist to a display (null removes the assignment). Nothing is pushed. */

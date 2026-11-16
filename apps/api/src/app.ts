@@ -12,6 +12,7 @@ import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import { requireOperator } from './auth/session.ts';
 import { perMinute, type AppContext } from './context.ts';
 import { HttpError, registerErrorHandling, sendFrameworkError } from './errors.ts';
+import { registerAppRoutes } from './routes/apps.ts';
 import { registerAuditRoutes } from './routes/audit.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
 import { registerDisplayRoutes } from './routes/displays.ts';
@@ -105,6 +106,7 @@ export async function buildApp(
     });
     registerDisplayRoutes(api, ctx);
     registerMediaRoutes(api, ctx);
+    registerAppRoutes(api, ctx);
     registerPlaylistRoutes(api, ctx);
     registerTagRoutes(api, ctx);
     registerFolderRoutes(api, ctx);

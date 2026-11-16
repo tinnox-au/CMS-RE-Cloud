@@ -18,10 +18,12 @@ import {
 import { durationFieldText, parseImageDuration } from './duration.ts';
 import { formatAge, formatBytes, formatDurationMs } from './format.ts';
 import {
+  appendApp,
   appendMedia,
   draftFromPlaylist,
   draftLoopMs,
   isDirty,
+  itemRefId,
   moveItem,
   removeItem,
   updateItem,
@@ -29,6 +31,8 @@ import {
 } from './playlistDraft.ts';
 import { presentStatus } from './status.ts';
 import { newEntry, nextToStart, patchEntry, preflightMessage } from './uploadQueue.ts';
+
+import { app } from './mediaLibrary.test-support.ts';
 
 const ID = (n: number) => `${String(n).repeat(8)}-1111-4111-8111-111111111111`;
 const T = '2026-11-14T03:00:00.000Z';
@@ -428,7 +432,7 @@ describe('playlist draft', () => {
   it('builds the draft in position order and is clean at first', () => {
     const saved = playlist();
     const draft = draftFromPlaylist(saved);
-    expect(draft.items.map((item) => item.media.id)).toEqual([ID(1), ID(2)]);
+    expect(draft.items.map(itemRefId)).toEqual([ID(1), ID(2)]);
     expect(draft.items[0]?.durationText).toBe('8');
     expect(isDirty(draft, saved)).toBe(false);
   });
@@ -496,6 +500,27 @@ describe('playlist draft', () => {
     const tooMany = validateDraft(draft, { ...DEFAULT_LIMITS, maxPlaylistItems: 1 });
     expect(tooMany.ok).toBe(false);
     if (!tooMany.ok) expect(tooMany.errors.form).toContain('at most 1');
+  });
+
+  it('keeps an app item as an app: its seconds, no fit, counted in the loop', () => {
+    const saved: PlaylistDto = {
+      ...playlist(),
+      items: [{ id: ID(7), position: 0, appId: app(3).id, durationMs: 15_000, app: app(3) }],
+    };
+    let draft = draftFromPlaylist(saved);
+    expect(draft.items[0]).toMatchObject({ source: 'app', durationText: '15' });
+    expect(isDirty(draft, saved)).toBe(false);
+    expect(isDirty(updateItem(draft, ID(7), { fit: 'cover' }), saved)).toBe(false);
+    draft = appendApp(draft, app(4), 'new');
+    expect(draft.items[1]?.durationText).toBe('10');
+    expect(draftLoopMs(draft, DEFAULT_LIMITS)).toBe(25_000);
+    const result = validateDraft(draft, DEFAULT_LIMITS);
+    expect(result.ok && result.value.items).toEqual([
+      { appId: app(3).id, durationMs: 15_000 },
+      { appId: app(4).id, durationMs: 10_000 },
+    ]);
+    const bad = validateDraft(updateItem(draft, 'new', { durationText: '0' }), DEFAULT_LIMITS);
+    expect(!bad.ok && bad.errors.items['new']).toBe('Must be at least 1 s.');
   });
 
   it('allows an empty draft to be saved', () => {

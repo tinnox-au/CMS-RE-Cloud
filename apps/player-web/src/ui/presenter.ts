@@ -1,8 +1,12 @@
+import { renderApp, type AppView } from '@tinnox/app-render';
 import {
+  isMediaItem,
   manifestV2Facts,
   type Canvas,
+  type ManifestAppItem,
   type ManifestAssetV1,
   type Manifest,
+  type ManifestItem,
   type Rect,
   type Rotation,
 } from '@tinnox/contracts';
@@ -18,11 +22,14 @@ const READY_TIMEOUT_MS = 15_000;
 export const FADE_MS = 500;
 
 interface Layer {
-  readonly sha256: string;
-  readonly kind: ManifestAssetV1['kind'];
+  /** Null for an app: it has no cached bytes. */
+  readonly sha256: string | null;
+  readonly kind: ManifestItem['kind'];
   readonly holder: HTMLElement;
   dispose(): void;
 }
+
+type NewLayer = Layer & { reveal(fade: boolean): void };
 
 function withTimeout<T>(work: Promise<T>, ms: number, onTimeout: () => Error): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -63,10 +70,17 @@ export class DomPresenter implements Presenter {
   #leaving: Layer | null = null;
   #leavingTimer: ReturnType<typeof setTimeout> | undefined;
   #pendingSha: string | null = null;
+  /** The server-corrected clock, for Clock, Date and Countdown apps. */
+  readonly #now: () => number;
 
-  constructor(stage: HTMLElement, getBlob: (sha256: string) => Promise<Blob | null>) {
+  constructor(
+    stage: HTMLElement,
+    getBlob: (sha256: string) => Promise<Blob | null>,
+    now: () => number,
+  ) {
     this.#stage = stage;
     this.#getBlob = getBlob;
+    this.#now = now;
     this.#contentEl = el('div', { className: 'content' });
     this.#canvasEl = el('div', { className: 'canvas' }, [this.#contentEl]);
     this.#canvasEl.setAttribute('data-testid', 'canvas');
@@ -81,9 +95,9 @@ export class DomPresenter implements Presenter {
   /** Hashes of the assets on screen or being prepared; these must not be garbage-collected. */
   inUse(): ReadonlySet<string> {
     const set = new Set<string>();
-    if (this.#current !== null) set.add(this.#current.sha256);
-    if (this.#leaving !== null) set.add(this.#leaving.sha256);
-    if (this.#pendingSha !== null) set.add(this.#pendingSha);
+    for (const sha of [this.#current?.sha256, this.#leaving?.sha256, this.#pendingSha]) {
+      if (sha !== null && sha !== undefined) set.add(sha);
+    }
     return set;
   }
 
@@ -117,36 +131,51 @@ export class DomPresenter implements Presenter {
     this.#canvasEl.dataset.canvas = `${geometry.canvas.width}x${geometry.canvas.height}`;
   }
 
-  async show(asset: ManifestAssetV1, manifest: Manifest, signal: AbortSignal): Promise<ShownItem> {
+  /** Geometry only changes with a new publication. */
+  #applyGeometry(manifest: Manifest): void {
+    this.#geometry = {
+      canvas: manifest.canvas,
+      contentRect: manifest.contentRect,
+      rotation: manifestV2Facts(manifest).rotation,
+    };
+    this.#layout();
+    this.#canvasEl.hidden = false;
+  }
+
+  async show(asset: ManifestItem, manifest: Manifest, signal: AbortSignal): Promise<ShownItem> {
     this.#dropLeaving();
-    this.#pendingSha = asset.sha256;
-    let layer: (Layer & { reveal(fade: boolean): void }) | null = null;
+    let layer: NewLayer | null = null;
+    // The geometry the item on screen was laid out with; an app changes it before it is ready.
+    const shownGeometry = this.#geometry;
     try {
-      const blob = await this.#getBlob(asset.sha256);
-      throwIfAborted(signal);
-      if (blob === null) {
-        throw new PlayerFault(
-          'storage_error',
-          'asset is missing from the local cache (evicted by the browser?)',
-          {
-            assetId: asset.assetId,
-          },
-        );
+      let built: { layer: NewLayer; ready: Promise<void>; finished: Promise<void> | null };
+      if (isMediaItem(asset)) {
+        this.#pendingSha = asset.sha256;
+        const blob = await this.#getBlob(asset.sha256);
+        throwIfAborted(signal);
+        if (blob === null) {
+          throw new PlayerFault(
+            'storage_error',
+            'asset is missing from the local cache (evicted by the browser?)',
+            {
+              assetId: asset.assetId,
+            },
+          );
+        }
+        built = asset.kind === 'image' ? this.#image(asset, blob) : this.#video(asset, blob);
+      } else {
+        // An app sizes itself from its box, and a hidden canvas has none: its `ready`
+        // would never resolve. Lay the stage out and show it before mounting.
+        this.#applyGeometry(manifest);
+        built = this.#app(asset, manifest);
       }
-      const built = asset.kind === 'image' ? this.#image(asset, blob) : this.#video(asset, blob);
       layer = built.layer;
       await built.ready;
       throwIfAborted(signal);
 
-      // Swap: geometry first (it only changes with a new publication), then reveal, then release.
+      // Swap: geometry first, then reveal, then release.
+      this.#applyGeometry(manifest);
       const facts = manifestV2Facts(manifest);
-      this.#geometry = {
-        canvas: manifest.canvas,
-        contentRect: manifest.contentRect,
-        rotation: facts.rotation,
-      };
-      this.#layout();
-      this.#canvasEl.hidden = false;
       const previous = this.#current;
       // Only image to image fades; the first item and anything with video cut.
       const fade =
@@ -167,6 +196,13 @@ export class DomPresenter implements Presenter {
       return { finished: built.finished };
     } catch (err) {
       layer?.dispose();
+      // An app lays out and shows the canvas before it is ready: put back what was on screen.
+      if (this.#current === null) {
+        this.#canvasEl.hidden = true;
+      } else if (this.#geometry !== shownGeometry) {
+        this.#geometry = shownGeometry;
+        this.#layout();
+      }
       throw err;
     } finally {
       this.#pendingSha = null;
@@ -186,21 +222,26 @@ export class DomPresenter implements Presenter {
     this.#leaving = null;
   }
 
-  #mount(
-    media: HTMLElement,
-    asset: ManifestAssetV1,
-    onDispose: () => void,
-  ): Layer & { reveal(fade: boolean): void } {
+  #mountMedia(media: HTMLElement, asset: ManifestAssetV1, onDispose: () => void): NewLayer {
     media.classList.add(asset.fit === 'cover' ? 'fit-cover' : 'fit-contain');
     const holder = el('div', { className: 'layer pending' }, [media]);
     holder.dataset.assetId = asset.assetId;
-    holder.dataset.kind = asset.kind;
     holder.dataset.fit = asset.fit;
+    return this.#mount(holder, asset.sha256, asset.kind, onDispose);
+  }
+
+  #mount(
+    holder: HTMLElement,
+    sha256: string | null,
+    kind: ManifestItem['kind'],
+    onDispose: () => void,
+  ): NewLayer {
+    holder.dataset.kind = kind;
     this.#contentEl.append(holder);
     let disposed = false;
     return {
-      sha256: asset.sha256,
-      kind: asset.kind,
+      sha256,
+      kind,
       holder,
       // Not at mount: the layer stays hidden until decoded, and the fade starts when it shows.
       reveal: (fade) => {
@@ -220,13 +261,13 @@ export class DomPresenter implements Presenter {
   #image(
     asset: ManifestAssetV1,
     blob: Blob,
-  ): { layer: Layer & { reveal(fade: boolean): void }; ready: Promise<void>; finished: null } {
+  ): { layer: NewLayer; ready: Promise<void>; finished: null } {
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.alt = '';
     img.decoding = 'async';
     img.draggable = false;
-    const layer = this.#mount(img, asset, () => {
+    const layer = this.#mountMedia(img, asset, () => {
       img.removeAttribute('src');
       URL.revokeObjectURL(url);
     });
@@ -248,7 +289,7 @@ export class DomPresenter implements Presenter {
     asset: ManifestAssetV1,
     blob: Blob,
   ): {
-    layer: Layer & { reveal(fade: boolean): void };
+    layer: NewLayer;
     ready: Promise<void>;
     finished: Promise<void>;
   } {
@@ -263,7 +304,7 @@ export class DomPresenter implements Presenter {
     video.preload = 'auto';
     video.disablePictureInPicture = true;
     let disposed = false;
-    const layer = this.#mount(video, asset, () => {
+    const layer = this.#mountMedia(video, asset, () => {
       disposed = true;
       releaseVideo(video);
       URL.revokeObjectURL(url);
@@ -338,5 +379,37 @@ export class DomPresenter implements Presenter {
         }
       });
     return { layer, ready, finished };
+  }
+
+  #app(
+    item: ManifestAppItem,
+    manifest: Manifest,
+  ): { layer: NewLayer; ready: Promise<void>; finished: null } {
+    const fault = (cause: unknown): PlayerFault =>
+      new PlayerFault('playback_error', 'app could not be drawn', { cause });
+    let view: AppView;
+    try {
+      view = renderApp(item.content, {
+        now: this.#now,
+        timeZone: manifest.schemaVersion === 1 ? null : manifest.timeZone,
+        reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+      });
+    } catch (err) {
+      throw fault(err);
+    }
+    const holder = el('div', { className: 'layer pending' }, [view.element]);
+    holder.dataset.appType = item.content.type;
+    // Disposing the view stops its timers, animations and observers.
+    const layer = this.#mount(holder, null, 'app', () => {
+      view.dispose();
+    });
+    const ready = withTimeout(
+      view.ready,
+      READY_TIMEOUT_MS,
+      () => new Error('app took too long to draw'),
+    ).catch((err: unknown) => {
+      throw fault(err);
+    });
+    return { layer, ready, finished: null };
   }
 }

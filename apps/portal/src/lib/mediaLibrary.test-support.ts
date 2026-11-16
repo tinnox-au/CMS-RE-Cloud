@@ -1,4 +1,4 @@
-import type { MediaDto } from '@tinnox/contracts';
+import type { AppDto, MediaDto } from '@tinnox/contracts';
 
 /** A UUID made of one repeated digit, valid for the contracts' id schemas. */
 export const ID = (n: number): string => `${String(n).repeat(8)}-1111-4111-8111-111111111111`;
@@ -34,6 +34,28 @@ export function media(
     codec: kind === 'video' ? 'h264' : null,
     errorCode: null,
     errorDetail: null,
+    createdAt: T,
+    updatedAt: T,
+    ...change,
+  };
+}
+
+/** A Clock app; `change` overrides any field. */
+export function app(n: number, change: Partial<AppDto> = {}): AppDto {
+  return {
+    id: ID(n),
+    name: `Clock ${n}`,
+    description: null,
+    content: {
+      type: 'clock',
+      settings: {
+        hourCycle: '12',
+        showSeconds: false,
+        textColour: '#ffffff',
+        backgroundColour: '#000000',
+      },
+    },
+    usageCount: 0,
     createdAt: T,
     updatedAt: T,
     ...change,

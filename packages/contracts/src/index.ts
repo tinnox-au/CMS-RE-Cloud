@@ -9,6 +9,7 @@ export * from './folder.ts';
 export * from './media.ts';
 export * from './display.ts';
 export * from './pairing.ts';
+export * from './app.ts';
 export * from './manifest.ts';
 export * from './playlist.ts';
 export * from './capability.ts';

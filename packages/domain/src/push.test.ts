@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { FitMode, Manifest, ManifestAssetV1, ManifestV1 } from '@tinnox/contracts';
-import { ID, display, library, limits, playback } from './fixtures.test-support.ts';
+import {
+  ID,
+  apps,
+  display,
+  library,
+  limits,
+  playback,
+  tickerContent,
+} from './fixtures.test-support.ts';
 import { buildManifest, type PlanPublicationResult } from './manifest.ts';
 import { buildPublicationDraft } from './playlist.ts';
 import { decidePushState, draftMatchesManifest, firstDraftManifestDifference } from './push.ts';
 import type {
+  AppRecord,
   DisplayTarget,
   DraftItem,
   MediaRecord,
@@ -32,7 +41,7 @@ function draftOf(
   options: PlaybackOptions = playback,
   mediaById: ReadonlyMap<string, MediaRecord> = library(),
 ): PublicationDraft {
-  const built = buildPublicationDraft(target, items, mediaById, limits, options);
+  const built = buildPublicationDraft(target, items, mediaById, apps(), limits, options);
   if (!built.ok) throw new Error(`fixture playlist is not publishable: ${built.issues[0]?.code}`);
   return built.draft;
 }
@@ -400,6 +409,86 @@ describe('draftMatchesManifest with playback options and time rules', () => {
         stored,
       ),
     ).toEqual({ kind: 'item', index: 0, field: 'availableUntil' });
+  });
+});
+
+describe('draftMatchesManifest with apps', () => {
+  const ticker = (appId: string = ID.ticker, durationMs = 10_000): DraftItem => ({
+    appId,
+    durationMs,
+  });
+  const WITH_APP: readonly DraftItem[] = [image(ID.jpeg), ticker()];
+  /** The app records with the ticker's settings changed. */
+  const editedTicker = (change: { speed: 'slow' | 'medium' | 'fast' }): Map<string, AppRecord> => {
+    const records = apps();
+    records.set(ID.ticker, {
+      id: ID.ticker,
+      content: { type: 'ticker', settings: { ...tickerContent.settings, ...change } },
+    });
+    return records;
+  };
+  const draftWithApps = (
+    items: readonly DraftItem[],
+    appsById: ReadonlyMap<string, AppRecord>,
+  ): PublicationDraft => {
+    const built = buildPublicationDraft(display(), items, library(), appsById, limits, playback);
+    if (!built.ok) throw new Error(`fixture playlist is not publishable: ${built.issues[0]?.code}`);
+    return built.draft;
+  };
+
+  it('matches the v3 manifest built from the same playlist', () => {
+    const stored = published(draftOf(WITH_APP));
+    expect(stored.schemaVersion).toBe(3);
+    expect(firstDraftManifestDifference(draftOf(WITH_APP), stored)).toBeNull();
+  });
+
+  it('matches settings stored as jsonb, with keys in another order', () => {
+    const stored = JSON.parse(JSON.stringify(published(draftOf(WITH_APP)))) as Manifest;
+    const entry = stored.assets[1];
+    if (entry === undefined || entry.kind !== 'app') throw new Error('fixture');
+    const reversed = Object.fromEntries(Object.entries(entry.content.settings).reverse());
+    (entry.content as { settings: unknown }).settings = reversed;
+    expect(Object.keys(entry.content.settings)[0]).toBe('backgroundColour');
+    expect(firstDraftManifestDifference(draftOf(WITH_APP), stored)).toBeNull();
+  });
+
+  it('sees a changed setting, a changed duration and another app', () => {
+    const stored = published(draftOf(WITH_APP));
+    expect(
+      firstDraftManifestDifference(
+        draftWithApps(WITH_APP, editedTicker({ speed: 'fast' })),
+        stored,
+      ),
+    ).toEqual({ kind: 'item', index: 1, field: 'content' });
+    expect(
+      firstDraftManifestDifference(draftOf([image(ID.jpeg), ticker(ID.ticker, 10_001)]), stored),
+    ).toEqual({ kind: 'item', index: 1, field: 'durationMs' });
+    expect(
+      firstDraftManifestDifference(draftOf([image(ID.jpeg), ticker(ID.clock)]), stored),
+    ).toEqual({ kind: 'item', index: 1, field: 'appId' });
+  });
+
+  it('sees an app swapped for media and media swapped for an app', () => {
+    const stored = published(draftOf(WITH_APP));
+    expect(
+      firstDraftManifestDifference(
+        draftOf([ticker(), image(ID.jpeg), ticker()]),
+        published(draftOf([image(ID.jpeg), ticker(), ticker()])),
+      ),
+    ).toEqual({ kind: 'item', index: 0, field: 'kind' });
+    expect(firstDraftManifestDifference(draftOf([ticker(), ticker()]), stored)).toEqual({
+      kind: 'item',
+      index: 0,
+      field: 'kind',
+    });
+  });
+
+  it('offers a push back when the last app is removed', () => {
+    const stored = published(draftOf(WITH_APP));
+    expect(firstDraftManifestDifference(draftOf([image(ID.jpeg)]), stored)).toEqual({
+      kind: 'playback',
+      field: 'schemaVersion',
+    });
   });
 });
 

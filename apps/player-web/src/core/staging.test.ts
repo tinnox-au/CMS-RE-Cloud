@@ -6,8 +6,10 @@ import {
   digestBlob,
   FakeDeviceApi,
   instantSleep,
+  makeAppItem,
   makeAsset,
   makeManifest,
+  makeManifestV3,
   MemoryAssetStore,
   MemoryStateStore,
   REGISTRATION_ID,
@@ -164,6 +166,16 @@ describe('stagePublication: success', () => {
     expect(outcome.kind).toBe('activated');
     expect(w.api.calls.requestMediaUrls).toEqual([]);
     expect(w.api.calls.fetchMedia).toEqual([]);
+  });
+
+  it('activates an app-only publication with zero media requests', async () => {
+    const appsOnly = makeManifestV3([makeAppItem(), makeAppItem()]);
+    const outcome = await stagePublication(appsOnly, w.deps);
+    expect(outcome).toEqual({ kind: 'activated', publicationId: appsOnly.publicationId });
+    expect(w.state.active?.manifest).toEqual(appsOnly);
+    expect(w.api.calls.requestMediaUrls).toEqual([]);
+    expect(w.api.calls.fetchMedia).toEqual([]);
+    expect(w.probed).toEqual([]);
   });
 
   it('replaces a cached entry whose size is wrong instead of trusting it', async () => {

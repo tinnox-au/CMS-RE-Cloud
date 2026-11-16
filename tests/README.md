@@ -9,6 +9,13 @@ services; nothing is mocked except where a file says so in its header.
 | `e2e/` | Browser end-to-end tests (Playwright, Chromium). Real Keycloak sign-in with TOTP, real API process, production builds of the portal and the player in separate browser contexts. | `npm run test:e2e` |
 | `support/` | `dev-identity.ts` (generated development users, TOTP codes), `png.ts` (PNG writer and reader for synthetic images and pixel checks). | |
 
+Stage B slice 2 (built-in apps) added `e2e/07-apps-player.spec.ts` (apps drawn by a
+paired player: the site's time zone, item order and index, a finished countdown, a QR
+code, a ticker on a strip canvas and on a screen rotated 90°, reduced motion, text fit,
+no CSP violation) and `e2e/08-apps-portal.spec.ts` (creating and editing an app through
+the portal by keyboard, the contrast warning, adding an app to a playlist and pushing,
+deleting an app in use, the still ticker preview, no CSP violation and no web storage).
+
 `npm run test:integration` also runs `packages/*/test/*.integration.test.ts` and
 `apps/api/test/*.integration.test.ts`. It rebuilds the database `tinnox_test` first.
 

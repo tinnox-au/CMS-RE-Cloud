@@ -1,17 +1,24 @@
-import type { DraftItem } from '../../../lib/playlistDraft.ts';
 import type { MediaDto, PlaylistDto } from '@tinnox/contracts';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../../api/index.ts';
 import { useLoad } from '../../../hooks/useLoad.ts';
-import { mediaDisplayName } from '../../../lib/mediaName.ts';
-import { moveItem, removeItem, updateItem } from '../../../lib/playlistDraft.ts';
+import {
+  itemName,
+  moveItem,
+  removeItem,
+  updateItem,
+  type DraftItem,
+  type ItemChange,
+} from '../../../lib/playlistDraft.ts';
 import {
   addedAnnouncement,
-  addMedia,
+  addEntry,
   capacityMessage,
   carryItemKeys,
   draftAfterSave,
   editorDraftFromPlaylist,
+  entryName,
+  withCurrentMedia,
   editorIsDirty,
   listProblems,
   movedAnnouncement,
@@ -20,6 +27,7 @@ import {
   removedAnnouncement,
   validateEditorDraft,
   type EditorDraft,
+  type LibraryEntry,
   type ProblemTarget,
 } from '../../../lib/playlistEditor.ts';
 import { useSession } from '../../../session/SessionContext.tsx';
@@ -85,6 +93,8 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
       ),
     [media.state],
   );
+  const loadApps = useCallback((signal: AbortSignal) => api.listApps(signal), []);
+  const apps = useLoad(loadApps);
 
   const dirty = editorIsDirty(draft, saved);
   const validation = useMemo(() => validateEditorDraft(draft, limits), [draft, limits]);
@@ -102,11 +112,11 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
     setDraft(next);
   };
 
-  const nameOf = (item: DraftItem) => mediaDisplayName(mediaById.get(item.media.id) ?? item.media);
+  const nameOf = (item: DraftItem) => itemName(withCurrentMedia(item, mediaById));
 
   /** Adds a library item at the end, or at a drop position. Returns where it went, or null. */
-  const add = (item: MediaDto, slot?: number): number | null => {
-    const result = addMedia(draft, item, crypto.randomUUID(), limits, slot);
+  const add = (entry: LibraryEntry, slot?: number): number | null => {
+    const result = addEntry(draft, entry, crypto.randomUUID(), limits, slot);
     if (!result.ok) {
       announce(
         result.reason === 'full' ? capacityMessage(limits) : 'Only ready media can be added.',
@@ -114,7 +124,7 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
       return null;
     }
     change(result.draft);
-    announce(addedAnnouncement(mediaDisplayName(item), result.index + 1));
+    announce(addedAnnouncement(entryName(entry), result.index + 1));
     return result.index;
   };
 
@@ -143,10 +153,7 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
     announce(removedAnnouncement(nameOf(item), index + 1));
   };
 
-  const changeItem = (
-    key: string,
-    itemChange: Partial<Pick<DraftItem, 'durationText' | 'fit'>>,
-  ) => {
+  const changeItem = (key: string, itemChange: ItemChange) => {
     change({ ...draft, ...updateItem(draft, key, itemChange) });
   };
 
@@ -326,6 +333,7 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
 
         <LibraryCard
           media={media}
+          apps={apps}
           draft={draft}
           limits={limits}
           dragSource={dragSource}

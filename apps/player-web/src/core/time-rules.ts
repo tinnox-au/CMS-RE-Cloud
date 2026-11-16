@@ -56,7 +56,7 @@ export function localWallClock(epochMs: number, timeZone: string): WallClock | n
 // shortcut: an edge inside the repeated DST fall-back hour is ambiguous; upgrade if reported.
 export function playableIndexes(manifest: Manifest, epochMs: number): number[] {
   const all = manifest.assets.map((_, index) => index);
-  if (manifest.schemaVersion !== 2) return all;
+  if (manifest.schemaVersion === 1) return all;
   // fail open: clock behind the publication is untrustworthy; never blank on a dead RTC
   if (epochMs < Date.parse(manifest.createdAt) - 300_000) return all;
   const local = localWallClock(epochMs, manifest.timeZone);
@@ -71,9 +71,11 @@ export function playableIndexes(manifest: Manifest, epochMs: number): number[] {
     )
       return [];
   }
+  // Apps have no availability window; working hours above apply to them too.
   return manifest.assets.flatMap((asset, index) =>
-    (asset.availableFrom ?? '') <= local.stamp &&
-    (asset.availableUntil === null || local.stamp < asset.availableUntil)
+    asset.kind === 'app' ||
+    ((asset.availableFrom ?? '') <= local.stamp &&
+      (asset.availableUntil === null || local.stamp < asset.availableUntil))
       ? [index]
       : [],
   );

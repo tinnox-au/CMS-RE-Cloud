@@ -12,23 +12,25 @@
 import {
   IdParamSchema,
   ManifestSchema,
-  MEDIA_KINDS,
+  PLAYLIST_ITEM_KINDS,
   PLAYLIST_PREVIEW_COUNT,
   PlaylistCreateSchema,
   PlaylistReplaceSchema,
   PublishRequestSchema,
   ROUTES,
   duplicatePlaylistName,
+  type AppDto,
   type FitMode,
-  type MediaKind,
   type PlaylistDto,
+  type PlaylistItemDto,
+  type PlaylistItemKind,
   type PlaylistDuplicateResponse,
   type PlaylistListResponse,
   type PublishResponse,
   type Transition,
 } from '@tinnox/contracts';
 import { auditScoped, STAGE_A_CONSTRAINTS, violatedConstraint, withOrg, type Tx } from '@tinnox/db';
-import { validatePlaylist } from '@tinnox/domain';
+import { isAppDraftItem, validatePlaylist } from '@tinnox/domain';
 import type { FastifyInstance } from 'fastify';
 import { operatorOf } from '../auth/session.ts';
 import { perMinute, type AppContext } from '../context.ts';
@@ -40,6 +42,8 @@ import {
   findPublicationByKey,
   idempotencyKeyOf,
   issueDetails,
+  itemRefs,
+  loadAppRecords,
   loadMediaRecords,
   loadPlaylistDrafts,
   lockDisplayForPublish,
@@ -48,6 +52,7 @@ import {
   publicationRejected,
   type PublicationRow,
 } from '../publishing.ts';
+import { APP_COLUMNS, toAppDto, type AppRow } from './apps.ts';
 import { MEDIA_COLUMNS, toMediaDto, type MediaRow } from './media.ts';
 
 interface PlaylistRow {
@@ -63,14 +68,17 @@ interface SummaryRow extends PlaylistRow {
   total_duration_ms: string;
   has_image: boolean;
   has_video: boolean;
+  has_app: boolean;
   preview_media_ids: string[];
   assigned_display_count: string;
 }
 
+/** The media columns are all null on an app item (`app_id` set): read them only for media. */
 interface ItemRow {
   item_id: string;
   position: number;
   media_id: string;
+  app_id: string | null;
   item_duration_ms: number | null;
   fit: FitMode | null;
 }
@@ -84,26 +92,50 @@ async function loadPlaylistDto(tx: Tx, id: string): Promise<PlaylistDto | null> 
   const row = playlist.rows[0];
   if (row === undefined) return null;
   const items = await tx.query<ItemRow & MediaRow>(
-    `SELECT i.id AS item_id, i.position, i.media_id, i.duration_ms AS item_duration_ms, i.fit,
-            ${MEDIA_COLUMNS}
+    `SELECT i.id AS item_id, i.position, i.media_id, i.app_id,
+            i.duration_ms AS item_duration_ms, i.fit, ${MEDIA_COLUMNS}
      FROM playlist_item i
-     JOIN media m ON m.id = i.media_id AND m.org_id = i.org_id
+     LEFT JOIN media m ON m.id = i.media_id AND m.org_id = i.org_id
      WHERE i.playlist_id = $1 AND i.org_id = app_org_id()
      ORDER BY i.position`,
     [id],
   );
+  // A second query rather than a second join: APP_COLUMNS and MEDIA_COLUMNS share column names.
+  const appIds = items.rows.flatMap((item) => (item.app_id === null ? [] : [item.app_id]));
+  const apps = new Map<string, AppDto>();
+  if (appIds.length > 0) {
+    const appRows = await tx.query<AppRow>(
+      `SELECT ${APP_COLUMNS} FROM app a WHERE a.org_id = app_org_id() AND a.id = ANY($1::uuid[])`,
+      [[...new Set(appIds)]],
+    );
+    for (const app of appRows.rows) apps.set(app.id, toAppDto(app));
+  }
   return {
     id: row.id,
     name: row.name,
     description: row.description,
-    items: items.rows.map((item) => ({
-      id: item.item_id,
-      position: item.position,
-      mediaId: item.media_id,
-      durationMs: item.item_duration_ms,
-      fit: item.fit,
-      media: toMediaDto(item),
-    })),
+    items: items.rows.map((item): PlaylistItemDto => {
+      if (item.app_id === null) {
+        return {
+          id: item.item_id,
+          position: item.position,
+          mediaId: item.media_id,
+          durationMs: item.item_duration_ms,
+          fit: item.fit,
+          media: toMediaDto(item),
+        };
+      }
+      const app = apps.get(item.app_id);
+      // The foreign key keeps the app while an item refers to it (migration 0007).
+      if (app === undefined) throw new Error('playlist item refers to a missing app');
+      return {
+        id: item.item_id,
+        position: item.position,
+        appId: item.app_id,
+        durationMs: item.item_duration_ms ?? 0,
+        app,
+      };
+    }),
     transition: row.transition,
     shuffle: row.shuffle,
     createdAt: iso(row.created_at),
@@ -129,8 +161,8 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
   const limits = config.limits;
 
   /**
-   * One row per live playlist. The loop length adds each image's time on screen
-   * and each video's own length; an item with no length yet counts as zero.
+   * One row per live playlist. The loop length adds each image's and app's time
+   * on screen and each video's own length; an item with no length yet counts as zero.
    */
   app.get(ROUTES.playlists, async (request): Promise<PlaylistListResponse> => {
     const session = operatorOf(request);
@@ -141,10 +173,12 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
                 COALESCE(s.total_duration_ms, 0) AS total_duration_ms,
                 COALESCE(s.has_image, false) AS has_image,
                 COALESCE(s.has_video, false) AS has_video,
+                COALESCE(s.has_app, false) AS has_app,
                 ARRAY(SELECT f.media_id
                       FROM (SELECT i.media_id, min(i.position) AS first_position
                             FROM playlist_item i
                             WHERE i.playlist_id = p.id AND i.org_id = p.org_id
+                              AND i.media_id IS NOT NULL
                             GROUP BY i.media_id) f
                       ORDER BY f.first_position
                       LIMIT $1)::text[] AS preview_media_ids,
@@ -154,12 +188,14 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
          FROM playlist p
          LEFT JOIN LATERAL (
            SELECT count(*) AS item_count,
-                  sum(CASE WHEN m.kind = 'image' THEN COALESCE(i.duration_ms, 0)
+                  sum(CASE WHEN i.app_id IS NOT NULL THEN i.duration_ms
+                           WHEN m.kind = 'image' THEN COALESCE(i.duration_ms, 0)
                            ELSE COALESCE(m.duration_ms, 0) END) AS total_duration_ms,
                   bool_or(m.kind = 'image') AS has_image,
-                  bool_or(m.kind = 'video') AS has_video
+                  bool_or(m.kind = 'video') AS has_video,
+                  bool_or(i.app_id IS NOT NULL) AS has_app
            FROM playlist_item i
-           JOIN media m ON m.id = i.media_id AND m.org_id = i.org_id
+           LEFT JOIN media m ON m.id = i.media_id AND m.org_id = i.org_id
            WHERE i.playlist_id = p.id AND i.org_id = p.org_id
          ) s ON true
          WHERE p.org_id = app_org_id() AND p.deleted_at IS NULL
@@ -168,14 +204,18 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
       );
       return {
         items: rows.map((r) => {
-          const present: Record<MediaKind, boolean> = { image: r.has_image, video: r.has_video };
+          const present: Record<PlaylistItemKind, boolean> = {
+            image: r.has_image,
+            video: r.has_video,
+            app: r.has_app,
+          };
           return {
             id: r.id,
             name: r.name,
             description: r.description,
             itemCount: bigintToNumber(r.item_count),
             totalDurationMs: bigintToNumber(r.total_duration_ms),
-            kinds: MEDIA_KINDS.filter((kind) => present[kind]),
+            kinds: PLAYLIST_ITEM_KINDS.filter((kind) => present[kind]),
             previewMediaIds: r.preview_media_ids,
             assignedDisplayCount: bigintToNumber(r.assigned_display_count),
             createdAt: iso(r.created_at),
@@ -239,12 +279,12 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
         );
         if (locked.rowCount !== 1) throw notFound('The playlist');
 
-        const mediaById = await loadMediaRecords(
-          tx,
-          input.items.map((item) => item.mediaId),
-          true,
-        );
-        const issues = validatePlaylist(input.items, mediaById, limits, { mode: 'draft' });
+        const refs = itemRefs(input.items);
+        const mediaById = await loadMediaRecords(tx, refs.mediaIds, true);
+        const appsById = await loadAppRecords(tx, refs.appIds, true);
+        const issues = validatePlaylist(input.items, mediaById, appsById, limits, {
+          mode: 'draft',
+        });
         if (issues.length > 0) {
           throw new HttpError(
             400,
@@ -262,15 +302,17 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
         );
         if (input.items.length > 0) {
           await tx.query(
-            `INSERT INTO playlist_item (org_id, playlist_id, position, media_id, duration_ms, fit)
-             SELECT app_org_id(), $1, (t.ordinal - 1)::int, t.media_id, t.duration_ms, t.fit
-             FROM unnest($2::uuid[], $3::int[], $4::text[])
-                  WITH ORDINALITY AS t(media_id, duration_ms, fit, ordinal)`,
+            `INSERT INTO playlist_item
+               (org_id, playlist_id, position, media_id, app_id, duration_ms, fit)
+             SELECT app_org_id(), $1, (t.ordinal - 1)::int, t.media_id, t.app_id, t.duration_ms, t.fit
+             FROM unnest($2::uuid[], $3::uuid[], $4::int[], $5::text[])
+                  WITH ORDINALITY AS t(media_id, app_id, duration_ms, fit, ordinal)`,
             [
               id,
-              input.items.map((item) => item.mediaId),
+              input.items.map((item) => (isAppDraftItem(item) ? null : item.mediaId)),
+              input.items.map((item) => (isAppDraftItem(item) ? item.appId : null)),
               input.items.map((item) => item.durationMs),
-              input.items.map((item) => item.fit),
+              input.items.map((item) => (isAppDraftItem(item) ? null : item.fit)),
             ],
           );
         }
@@ -312,7 +354,7 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
         throw new HttpError(
           409,
           'conflict',
-          'A file in this playlist was deleted meanwhile. Reload and try again.',
+          'A file or app in this playlist was deleted meanwhile. Reload and try again.',
         );
       }
       throw error;
@@ -356,8 +398,9 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
         const copyId = inserted.rows[0]?.id;
         if (copyId === undefined) throw new Error('playlist insert returned no row');
         const copied = await tx.query(
-          `INSERT INTO playlist_item (org_id, playlist_id, position, media_id, duration_ms, fit)
-           SELECT app_org_id(), $2, i.position, i.media_id, i.duration_ms, i.fit
+          `INSERT INTO playlist_item
+             (org_id, playlist_id, position, media_id, app_id, duration_ms, fit)
+           SELECT app_org_id(), $2, i.position, i.media_id, i.app_id, i.duration_ms, i.fit
            FROM playlist_item i
            WHERE i.playlist_id = $1 AND i.org_id = app_org_id()`,
           [id, copyId],
@@ -492,13 +535,11 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
             if (display === null) throw notFound('The screen');
             const playlist = (await loadPlaylistDrafts(tx, [playlistId], true)).get(playlistId);
             if (playlist === undefined) throw notFound('The playlist');
-            const mediaById = await loadMediaRecords(
-              tx,
-              playlist.items.map((item) => item.mediaId),
-              true,
-            );
+            const refs = itemRefs(playlist.items);
+            const mediaById = await loadMediaRecords(tx, refs.mediaIds, true);
+            const appsById = await loadAppRecords(tx, refs.appIds, true);
 
-            const plan = planDraft(ctx, display, playlist, mediaById);
+            const plan = planDraft(ctx, display, playlist, mediaById, appsById);
             if (!plan.ok) {
               await auditRejectedPublication(tx, {
                 membershipId: session.membershipId,
@@ -540,7 +581,7 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
           throw new HttpError(
             409,
             'conflict',
-            'A file or screen used by this playlist changed meanwhile. Try again.',
+            'A file, app or screen used by this playlist changed meanwhile. Try again.',
           );
         } else {
           throw error;

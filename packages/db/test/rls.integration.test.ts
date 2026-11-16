@@ -27,6 +27,7 @@ const TENANT_TABLES = [
   'tag',
   'media_tag',
   'display_tag',
+  'app',
 ] as const;
 /**
  * Rows that `createOrg` gives one organisation, where that is not exactly one:
@@ -234,6 +235,7 @@ describe('with organisation A as context', () => {
         ['SELECT 1 FROM display_tag WHERE tag_id = $1', b.displayTagId],
         ['SELECT 1 FROM display WHERE assigned_playlist_id = $1', b.playlistId],
         ['SELECT 1 FROM media WHERE folder_id = $1', b.folderId],
+        ['SELECT 1 FROM app WHERE id = $1', b.appId],
       ];
       for (const [sql, id] of probes) expect((await tx.query(sql, [id])).rowCount, sql).toBe(0);
     });
@@ -280,6 +282,8 @@ describe('with organisation A as context', () => {
         ['DELETE FROM tag WHERE id = $1', b.mediaTagId],
         ['DELETE FROM tag WHERE id = $1', b.displayTagId],
         ['DELETE FROM folder WHERE id = $1', b.folderId],
+        ["UPDATE app SET name = 'hijacked' WHERE id = $1", b.appId],
+        ['DELETE FROM app WHERE id = $1', b.appId],
       ];
       for (const [sql, id] of stageA) expect((await tx.query(sql, [id])).rowCount, sql).toBe(0);
     });
@@ -346,6 +350,10 @@ describe('with organisation A as context', () => {
       ["INSERT INTO tag (org_id, scope, name) VALUES ($1, 'media', $2)", [b.orgId, 'planted']],
       ["INSERT INTO tag (org_id, scope, name) VALUES ($1, 'display', $2)", [b.orgId, 'planted']],
       [
+        "INSERT INTO app (org_id, type, name, settings) VALUES ($1, 'text', 'planted', '{}')",
+        [b.orgId],
+      ],
+      [
         'INSERT INTO media_tag (org_id, media_id, tag_id) VALUES ($1, $2, $3)',
         [b.orgId, b.mediaId, b.mediaTagId],
       ],
@@ -387,6 +395,7 @@ describe('with organisation A as context', () => {
       ['UPDATE folder SET org_id = $1 WHERE id = $2', a.folderId],
       ['UPDATE media_tag SET org_id = $1 WHERE media_id = $2', a.mediaId],
       ['UPDATE display_tag SET org_id = $1 WHERE display_id = $2', a.displayId],
+      ['UPDATE app SET org_id = $1 WHERE id = $2', a.appId],
     ] as const) {
       expect(await pgCode(withOrg(pool, a.orgId, (tx) => tx.query(sql, [b.orgId, id]))), sql).toBe(
         PG.insufficientPrivilege,
@@ -441,6 +450,11 @@ describe('with organisation A as context', () => {
       ],
       // Its own display with the other organisation's playlist assigned.
       ['UPDATE display SET assigned_playlist_id = $2 WHERE id = $1', [a.displayId, b.playlistId]],
+      // Its own playlist with the other organisation's app.
+      [
+        'INSERT INTO playlist_item (org_id, playlist_id, position, app_id, duration_ms) VALUES ($1, $2, 5, $3, 1000)',
+        [a.orgId, a.playlistId, b.appId],
+      ],
       [
         'INSERT INTO display (org_id, site_id, name, canvas_width, canvas_height, assigned_playlist_id) VALUES ($1, $2, $3, 100, 100, $4)',
         [a.orgId, a.siteId, 'cross-playlist', b.playlistId],
@@ -774,7 +788,7 @@ describe('immutable publications and append-only audit', () => {
     expect(
       await pgCode(insert(id, { ...good, displayId: b.displayId }, 'key-aaaaaaaaaaaaaaaa')),
     ).toBe(PG.check);
-    expect(await pgCode(insert(id, { ...good, schemaVersion: 3 }, 'key-aaaaaaaaaaaaaaaa'))).toBe(
+    expect(await pgCode(insert(id, { ...good, schemaVersion: 4 }, 'key-aaaaaaaaaaaaaaaa'))).toBe(
       PG.check,
     );
     expect(await pgCode(insert(id, { ...good, assets: [] }, 'key-aaaaaaaaaaaaaaaa'))).toBe(

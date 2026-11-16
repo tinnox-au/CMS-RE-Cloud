@@ -57,6 +57,8 @@ export function checkCapabilities(
   }
 
   draft.items.forEach((item, index) => {
+    // shortcut: every route is the browser route, which draws apps; add apps to CapabilityProfile when a route that cannot draw them ships.
+    if (item.kind === 'app') return;
     const n = index + 1;
     if (!profile.mediaTypes.includes(item.mediaType)) {
       issues.push({

@@ -10,6 +10,8 @@ import {
   makeAsset,
   makeManifest,
   makeManifestV2,
+  makeManifestV3,
+  makeAppItem,
   MemoryAssetStore,
   MemoryStateStore,
   REGISTRATION_ID,
@@ -156,9 +158,18 @@ describe('syncCycle', () => {
     expect(w.state.active?.manifest).toEqual(manifest);
   });
 
+  it('downloads and activates a v3 manifest with an app between media items', async () => {
+    const manifest = makeManifestV3([w.a.asset, makeAppItem(), w.b.asset]);
+    w.api.manifestResults = [{ kind: 'manifest', raw: manifest }];
+    const result = await syncCycle(w.deps);
+    expect(result).toEqual({ kind: 'activated', publicationId: manifest.publicationId });
+    expect(w.state.active?.manifest).toEqual(manifest);
+    expect(w.api.calls.requestMediaUrls).toEqual([[w.a.asset.assetId, w.b.asset.assetId]]);
+  });
+
   it('reports an unsupported manifest version separately', async () => {
     w.api.manifestResults = [
-      { kind: 'manifest', raw: { ...makeManifest([w.a.asset]), schemaVersion: 3 } },
+      { kind: 'manifest', raw: { ...makeManifestV3([w.a.asset]), schemaVersion: 4 } },
     ];
     const result = await syncCycle(w.deps);
     expect(result.kind).toBe('update_failed');

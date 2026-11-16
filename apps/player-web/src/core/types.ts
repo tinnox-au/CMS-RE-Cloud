@@ -11,6 +11,7 @@ import {
   RegistrationIdSchema,
   StagingPhaseSchema,
   UtcTimestampSchema,
+  isMediaItem,
   type ManifestAssetV1,
   type Manifest,
   type MediaUrlsResponse,
@@ -167,15 +168,18 @@ export interface Clock {
 
 export type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
 
-/** Assets of a manifest with duplicates (same bytes used twice in the playlist) removed. */
+/**
+ * Media assets of a manifest with duplicates (same bytes used twice in the playlist)
+ * removed. Apps have nothing to download, so an app-only publication stages with none.
+ */
 export function uniqueAssets(manifest: Manifest): ManifestAssetV1[] {
   const bySha = new Map<string, ManifestAssetV1>();
   for (const asset of manifest.assets) {
-    if (!bySha.has(asset.sha256)) bySha.set(asset.sha256, asset);
+    if (isMediaItem(asset) && !bySha.has(asset.sha256)) bySha.set(asset.sha256, asset);
   }
   return [...bySha.values()];
 }
 
 export function manifestHashes(manifest: Manifest): Set<string> {
-  return new Set(manifest.assets.map((asset) => asset.sha256));
+  return new Set(manifest.assets.filter(isMediaItem).map((asset) => asset.sha256));
 }

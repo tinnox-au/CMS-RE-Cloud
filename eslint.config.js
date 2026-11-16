@@ -97,7 +97,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ['apps/portal/**/*.{ts,tsx}', 'apps/player-web/**/*.ts'],
+    files: [
+      'apps/portal/**/*.{ts,tsx}',
+      'apps/player-web/**/*.ts',
+      // The shared app renderer runs in both of them.
+      'packages/app-render/src/**/*.ts',
+    ],
     languageOptions: { globals: { ...globals.browser, ...globals.serviceworker } },
     rules: {
       // Operator bearer tokens and session data must never be put in web storage (brief section 6).

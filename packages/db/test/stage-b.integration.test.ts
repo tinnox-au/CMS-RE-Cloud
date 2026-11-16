@@ -166,7 +166,7 @@ describe('display rotation and working hours', () => {
 });
 
 describe('publication manifest version', () => {
-  it('accepts schema versions 1 and 2 and refuses 3', async () => {
+  it('accepts schema versions 1 to 3 and refuses 4', async () => {
     const insert = (version: number) => {
       const id = randomUUID();
       const manifest = {
@@ -190,6 +190,7 @@ describe('publication manifest version', () => {
     };
     expect(await insert(1)).toBe('no error');
     expect(await insert(2)).toBe('no error');
-    expect(await insert(3)).toBe(PG.check);
+    expect(await insert(3)).toBe('no error');
+    expect(await insert(4)).toBe(PG.check);
   });
 });

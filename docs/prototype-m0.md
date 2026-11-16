@@ -160,3 +160,10 @@ Additions recorded by portal v2 stage B, slice 1 (2026-11-16; spec `docs/portal-
 |---|---|---|
 | Media worker (D11) | The worker writes only `outbox/<jobId>.json` | For an accepted image the worker also writes `outbox/<jobId>.thumb.jpg` (via `<jobId>.thumb.tmp`, mode 0644) before the verdict. The API stores it as a second object (`media.thumb_storage_key`, migration 0006) and serves it at `GET /api/media/:id/thumbnail`; media without one is served the original there. The thumbnail bytes are worker-trusted and not tied to the source bytes; the residual risk is in `docs/security/threat-model.md` T1. Thumbnails are not counted against the storage quota (at most 512 KiB each), are never backfilled for older media, and video has none. |
 | Manifest (D14) | Manifest v1 only | `db/migrations/0006_stage_b_slice1.sql` lets `publication.manifest` hold `schemaVersion` 1 or 2. The server still writes v1 unless the publication needs a v2 field (`docs/player-protocol-v1.md` §5 and §9). |
+
+Additions recorded by portal v2 stage B, slice 2 (2026-11-16; built-in apps):
+
+| Topic | Decision as written | As built, and why |
+|---|---|---|
+| Dependencies (D1) | Exact versions, lockfile committed | One new run-time dependency: `uqr` 0.1.3 (MIT, no dependencies), pinned exactly in the new workspace package `packages/app-render` (`@tinnox/app-render`), which the player and the portal bundle to draw QR codes. Risk notes in `docs/security/threat-model.md` §10 (T13). |
+| Manifest (D14) | Manifest v1 only | `db/migrations/0007_stage_b_apps.sql` lets `publication.manifest` hold `schemaVersion` 1, 2 or 3. The server writes v3 only when a playlist item is an app (`docs/player-protocol-v1.md` §5 and §9). |

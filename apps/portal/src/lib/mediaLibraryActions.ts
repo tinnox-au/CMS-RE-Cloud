@@ -2,6 +2,7 @@ import type {
   Limits,
   MediaDto,
   PlaylistDto,
+  PlaylistItemInput,
   PlaylistReplace,
   PlaylistSummaryDto,
 } from '@tinnox/contracts';
@@ -44,7 +45,11 @@ export function playlistWithMediaAppended(
 ): PlaylistReplace {
   const existing = [...playlist.items]
     .sort((a, b) => a.position - b.position)
-    .map((item) => ({ mediaId: item.mediaId, durationMs: item.durationMs, fit: item.fit }));
+    .map((item): PlaylistItemInput =>
+      'appId' in item
+        ? { appId: item.appId, durationMs: item.durationMs }
+        : { mediaId: item.mediaId, durationMs: item.durationMs, fit: item.fit },
+    );
   return {
     name: playlist.name,
     items: [

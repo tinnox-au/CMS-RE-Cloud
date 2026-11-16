@@ -294,6 +294,10 @@
   min-block-size: 208px;
 }
 
+.tx-screen-detail-stage--xl {
+  --tx-screen-detail-frame-max: 360px;
+}
+
 .tx-screen-detail-stage__empty {
   max-inline-size: 28ch;
   color: var(--ink-2);

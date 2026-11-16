@@ -7,8 +7,7 @@ import {
   type DragEvent,
   type RefObject,
 } from 'react';
-import { mediaDisplayName } from '../../../lib/mediaName.ts';
-import type { DraftItem } from '../../../lib/playlistDraft.ts';
+import { itemName, type DraftItem, type ItemChange } from '../../../lib/playlistDraft.ts';
 import {
   dropSlotAt,
   durationRuleText,
@@ -21,6 +20,7 @@ import {
   withCurrentMedia,
   type EditorDraft,
   type EditorErrors,
+  type LibraryEntry,
   type Span,
 } from '../../../lib/playlistEditor.ts';
 import { ListVideo } from '../../../ui/icons.ts';
@@ -41,14 +41,11 @@ export interface SequenceCardProps {
   readonly mediaById: ReadonlyMap<string, MediaDto>;
   readonly dragSource: RefObject<DragSource | null>;
   /** Adds a library item at a drop position; returns its index, or null when refused. */
-  readonly onAdd: (media: MediaDto, slot?: number) => number | null;
+  readonly onAdd: (entry: LibraryEntry, slot?: number) => number | null;
   readonly onMove: (index: number, delta: number) => void;
   readonly onMoveToSlot: (fromIndex: number, slot: number) => void;
   readonly onRemove: (key: string) => void;
-  readonly onChangeItem: (
-    key: string,
-    change: Partial<Pick<DraftItem, 'durationText' | 'fit'>>,
-  ) => void;
+  readonly onChangeItem: (key: string, change: ItemChange) => void;
   readonly onAnnounce: (text: string) => void;
 }
 
@@ -89,7 +86,7 @@ export function SequenceCard({
   const knownKeys = useRef<ReadonlySet<string>>(new Set(draft.items.map((item) => item.key)));
 
   const items = draft.items;
-  const nameOf = (item: DraftItem) => mediaDisplayName(mediaById.get(item.media.id) ?? item.media);
+  const nameOf = (item: DraftItem) => itemName(withCurrentMedia(item, mediaById));
   const bounds = durationStepperBounds(limits);
 
   // After a move or a removal by button, focus goes where the reader expects it.
@@ -196,7 +193,7 @@ export function SequenceCard({
   const acceptDrag = (event: DragEvent<HTMLElement>): DragSource | null => {
     const source = dragSource.current;
     if (source === null) return null;
-    if (source.kind === 'media' && full) {
+    if (source.kind !== 'item' && full) {
       event.dataTransfer.dropEffect = 'none';
       return null;
     }
@@ -242,7 +239,7 @@ export function SequenceCard({
         }
       }
     } else {
-      onAdd(source.media, slot);
+      onAdd(source, slot);
     }
     endDrag();
   };
@@ -349,8 +346,8 @@ export function SequenceCard({
             </span>
             <p className="tx-playlist-editor-empty__title">This playlist is empty</p>
             <p className="tx-playlist-editor-empty__text">
-              Add ready media from the library below: choose a file, or drag it here. A playlist
-              needs at least one item before it can be pushed.
+              Add ready media or apps from the library below: choose one, or drag it here. A
+              playlist needs at least one item before it can be pushed.
             </p>
           </div>
         ) : (

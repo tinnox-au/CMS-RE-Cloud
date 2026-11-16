@@ -109,7 +109,7 @@ A player that is paired to a display of another organisation must first delete e
 | Response | Meaning |
 |---|---|
 | `204` | Nothing is published to this display |
-| `200 {"manifest": Manifest}` with `ETag: "<publicationId>"` | The current (desired) publication, version 1 or 2 (below) |
+| `200 {"manifest": Manifest}` with `ETag: "<publicationId>"` | The current (desired) publication, version 1, 2 or 3 (below) |
 | `304` with the same `ETag` | `If-None-Match` named the current publication |
 | `401` | Credential revoked or invalid |
 
@@ -164,6 +164,33 @@ Time rules (required player behaviour, `apps/player-web/src/core/time-rules.ts`)
 - When at least one item is playable but every playable item fails, the player reports a playback fault as in v1; a window cannot hide a broken publication behind "nothing is due".
 
 The portal shows a screen whose player holds the desired publication, is idle and shows nothing as `standing_by` ("Standing by"), in the in-sync group.
+
+### Manifest v3 (stage B, slice 2: built-in apps)
+
+`ManifestV3Schema` is the v2 document with `schemaVersion: 3`, and `assets` may also hold app items. It keeps every v2 field (`timeZone`, `transition`, `shuffle`, `rotation`, `workingHours`, and the windows on media items). The server writes v3 only when at least one item is an app.
+
+An app item (`ManifestAppItemSchema`, strict, no `assetId`):
+
+```json
+{ "kind": "app", "appId": "uuid", "durationMs": 10000,
+  "content": { "type": "clock", "settings": { "hourCycle": "12", "showSeconds": false,
+    "textColour": "#ffffff", "backgroundColour": "#000000" } } }
+```
+
+- `content` is a copy of the app's settings at publish time (`AppContentSchema`), not a reference: editing or deleting the app later does not change a publication. Settings are flat objects of strings and booleans; every field is required.
+- Types: `clock` (`hourCycle` `12` or `24`, `showSeconds`), `date` (`format` `long`, `short` or `numeric`), `countdown` (`target` as wall-clock `YYYY-MM-DDTHH:mm` in `timeZone`, `label`, `finishedText`, `showSeconds`), `ticker` (`text`, `speed` `slow`, `medium` or `fast`), `qr` (`content`, `caption`), `text` (`heading`, `body`). Every type has `textColour` and `backgroundColour` as lower-case `#rrggbb`.
+- App items have no availability window and are never named in `POST /player/media-urls`; repeated-`assetId` and window checks apply to media items only. `activeItemIndex` stays an index into `assets`, apps included.
+- A publication of apps only stages with no download and activates without calling `/player/media-urls`.
+
+Required player behaviour (`player-web/0.3.0`, `apps/player-web/src/ui/presenter.ts`, drawn by `packages/app-render`):
+
+- The player draws the app itself. Nothing is fetched; operator text is set with `textContent` only, styles through CSSOM, motion through the Web Animations API.
+- An app is shown for `durationMs` like an image, obeys working hours, and always cuts (fade stays image to image). An app that cannot be drawn within 15 s is a `playback_error` item failure, counted like any other.
+- Clock, Date and Countdown use the server-corrected clock (as for the time rules) in `timeZone`; an unknown zone falls back to the device zone. The clock offset is not stored: after a reload without network the device clock is used.
+- Countdown: the remaining time is the difference of two instants, so a daylight-saving change in between is handled. At zero it shows `finishedText` for good (no count-up) and drops its label. A target inside the skipped or repeated daylight-saving hour may be off by an hour.
+- Ticker: one line at 0.6 of the box height (at most 0.25 of its width) scrolls right to left at 2, 3 or 4.5 character heights per second (slow, medium, fast), measured in canvas pixels, so rotation does not change it. With `prefers-reduced-motion: reduce` the text stands still and wraps.
+- QR code: error correction M, black modules on white with a 4-module quiet zone whatever the colours. A box at least 1.6 times as wide as high puts the caption beside the code; otherwise it goes below.
+- Text sizes are fitted to the app's own box, with a floor of 1/12 of its short side; below that text is clipped. Single lines (clock, date, the countdown value, the QR caption, the Text heading) wrap only when they would overflow at that floor. Locale is `en-AU`.
 
 ## 6. Media download
 
@@ -271,9 +298,10 @@ M0 negotiates on the server, at publish time, not with each device.
 - Every display has a `route` (only `browser` exists). Each route has a capability profile (`CapabilityProfileSchema`, `packages/delivery`). For the browser route, profile version 1: JPEG, PNG and MP4 with H.264 (8-bit 4:2:0); `contain` and `cover`; one full-frame region; muted; optional content rectangle; canvas up to 16384 px per side; video up to 3840x2160; assets up to the upload limit; up to 200 items.
 - `POST /api/playlists/:id/publish` checks the playlist against the profile of the target display's route. A playlist the route cannot show is refused with `422 publication_rejected` and one readable reason per item (`PUBLISH_REJECTION_CODES`). Nothing unsupported reaches a manifest.
 - A player declares nothing about itself except `player.version`. If a device cannot play an asset that the profile allows (for example a browser build without H.264), it reports `unsupported_media` or `decode_failed` in the heartbeat and keeps the previous version. Per-device capability reports are a later addition and would be a new field in a new heartbeat schema version.
-- Version handling: `schemaVersion` is explicit in the manifest and the heartbeat. There is no per-player version negotiation. The server writes manifest v1 unless the publication needs v2: a transition other than `cut`, shuffle, a rotation other than 0, working hours, or an availability window on any item. So a screen whose settings did not change keeps getting the same kind of document. The ETag stays the publication id; there is no request header, `Vary` or down-conversion.
+- Version handling: `schemaVersion` is explicit in the manifest and the heartbeat. There is no per-player version negotiation. The server writes manifest v3 when any item is an app; otherwise v2 when the publication needs it (a transition other than `cut`, shuffle, a rotation other than 0, working hours, or an availability window on any item); otherwise v1. So a screen whose settings did not change keeps getting the same kind of document, and removing every app makes the next push v2 or v1 again. The ETag stays the publication id; there is no request header, `Vary` or down-conversion.
 - A v1 player (before `player-web/0.2.0`) that receives v2 reports `manifest_unsupported_version` and keeps playing its last content. Nothing reloads a running player: it moves to v2 only when its page is reloaded. The portal says so under that error on the screen's Overview tab.
-- Manifest v2 stays open while stage B is built: fields may still be added. It is frozen when stage B closes.
+- A player before `player-web/0.3.0` that receives v3 reports `manifest_unsupported_version` and keeps playing its last content, or its waiting slate when it has none; the same Overview hint applies.
+- Version rule: a new manifest schema version is cut whenever a released player would reject the document. Players parse every version with strict objects, so any new field or item shape needs a new version. v2 is frozen. v3 is frozen when `player-web/0.3.0` is released, so the next addition is v4.
 
 A later LED route (a dedicated player over HDMI, or controller-native playback) gets its own profile and its own `route` id. Nothing in this protocol claims compatibility with any LED controller.
 

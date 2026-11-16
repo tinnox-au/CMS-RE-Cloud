@@ -1,5 +1,11 @@
-import type { DisplayDto, PlaylistDto, PushPlanResponse } from '@tinnox/contracts';
+import type {
+  DisplayDto,
+  PlaylistDto,
+  PlaylistMediaItemDto,
+  PushPlanResponse,
+} from '@tinnox/contracts';
 import { describe, expect, it } from 'vitest';
+import { app } from './mediaLibrary.test-support.ts';
 import {
   AssignedReadError,
   assignedContent,
@@ -10,6 +16,7 @@ import {
   pairingHint,
   pairingStateText,
   pairingTtlMinutes,
+  APP_PREVIEW_DISCLAIMER,
   PREVIEW_DISCLAIMER,
   previewCaption,
   previewStateOf,
@@ -34,7 +41,12 @@ import {
 
 const stored: Pick<DisplayDto, 'name' | 'description'> = { name: 'Foyer', description: null };
 
-type Item = PlaylistDto['items'][number];
+type Item = PlaylistMediaItemDto;
+
+function firstMedia(content: ReturnType<typeof assignedContent>) {
+  const first = content.first;
+  return first === null || 'app' in first ? null : first;
+}
 function item(
   position: number,
   mediaId: string,
@@ -79,8 +91,10 @@ function item(
 const M1 = '10000000-0000-4000-8000-000000000001';
 const M2 = '10000000-0000-4000-8000-000000000002';
 const M3 = '10000000-0000-4000-8000-000000000003';
+const CLOCK = app(7);
+const ID_APP_ITEM = '00000000-0000-4000-8000-000000000009';
 
-function playlist(items: Item[]): PlaylistDto {
+function playlist(items: PlaylistDto['items']): PlaylistDto {
   return {
     id: '20000000-0000-4000-8000-000000000001',
     name: 'Reception loop',
@@ -267,18 +281,33 @@ describe('assigned content', () => {
     expect(content.previewMediaIds).toEqual([M1, M2, M3]);
     expect(content.kinds).toEqual(['image', 'video']);
     expect(content.kindById.get(M2)).toBe('video');
-    expect(content.first?.media.id).toBe(M1);
-    expect(content.first?.fit).toBe('cover');
-    expect(content.first?.fitFromItem).toBe(true);
+    expect(firstMedia(content)?.media.id).toBe(M1);
+    expect(firstMedia(content)?.fit).toBe('cover');
+    expect(firstMedia(content)?.fitFromItem).toBe(true);
   });
 
   it('uses the screen default fit and handles an empty playlist', () => {
     const one = assignedContent(playlist([item(0, M1, 'image')]), 'contain');
-    expect(one.first?.fit).toBe('contain');
-    expect(one.first?.fitFromItem).toBe(false);
+    expect(firstMedia(one)?.fit).toBe('contain');
+    expect(firstMedia(one)?.fitFromItem).toBe(false);
     const empty = assignedContent(playlist([]), 'cover');
     expect(empty.first).toBeNull();
     expect(empty.summary).toBe('No items');
+  });
+
+  it('counts an app item and draws an app first', () => {
+    const content = assignedContent(
+      playlist([
+        { id: ID_APP_ITEM, position: 0, appId: CLOCK.id, durationMs: 20_000, app: CLOCK },
+        item(1, M1, 'image'),
+      ]),
+      'contain',
+    );
+    expect(content.loopMs).toBe(30_000);
+    expect(content.kinds).toEqual(['image', 'app']);
+    expect(content.previewMediaIds).toEqual([M1]);
+    expect(content.first).toEqual({ app: CLOCK, name: CLOCK.name });
+    expect(previewStateOf(true, content)).toBe('ready');
   });
 
   it('says what the preview shows, and never calls the object a display', () => {
@@ -308,6 +337,7 @@ describe('assigned content', () => {
       ...states.map((s) => previewCaption(s, 'Loop', 'a.png')),
       ...states.map((s) => previewCaption(s, null, null)),
       PREVIEW_DISCLAIMER,
+      APP_PREVIEW_DISCLAIMER,
       STATUS_DISCLAIMER,
       REPORTED_FACTS_NOTE,
       pairingStateText(null),
