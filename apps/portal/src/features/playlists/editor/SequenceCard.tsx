@@ -125,7 +125,10 @@ export function SequenceCard({
             : box.right > view.right
               ? box.right - view.right + 16
               : 0;
-        if (delta !== 0) scroller.scrollBy({ left: delta, behavior: 'smooth' });
+        if (delta !== 0) {
+          const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          scroller.scrollBy({ left: delta, behavior: reduce ? 'auto' : 'smooth' });
+        }
       }
     }
   }, [items]);

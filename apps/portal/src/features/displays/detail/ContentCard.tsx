@@ -70,6 +70,7 @@ export function ContentCard({ display, assigned, onReloadAssigned, onAssigned }:
       <CardHeader
         id="screen-detail-content-title"
         title="Content"
+        size="title"
         description="Assigning changes nothing on the screen until you push."
       />
       <div className="tx-screen-detail-content">

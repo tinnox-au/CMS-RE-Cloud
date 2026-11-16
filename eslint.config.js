@@ -17,6 +17,8 @@ export default tseslint.config(
       '**/playwright-report/**',
       // local, gitignored run state and check scripts (outside every tsconfig)
       'tests/.run/**',
+      // approved restyle mockups (docs only, kept as the client approved them)
+      'docs/portal-v2/restyle-mockups/**',
     ],
   },
   js.configs.recommended,

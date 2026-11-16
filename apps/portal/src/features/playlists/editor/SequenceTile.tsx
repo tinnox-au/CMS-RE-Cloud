@@ -164,7 +164,7 @@ export function SequenceTile({
               <Button
                 {...props}
                 size="sm"
-                variant="ghost"
+                variant="secondary"
                 trailingIcon={ChevronDown}
                 aria-label={`Fit for ${name}: ${fitLabel(item.fit)}`}
                 className="tx-playlist-editor-tile__fit-button"

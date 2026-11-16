@@ -128,123 +128,122 @@ export function FolderChips({
 
   return (
     <div
-      className="tx-media-library__folders tx-media-library__folders--ready"
+      className="tx-media-library__folders"
+      role="group"
+      aria-label="Folder"
       data-testid="media-library-folders"
     >
-      <div className="tx-media-library__folder-chips" role="group" aria-label="Folder">
-        <span className="tx-media-library__chip" data-testid="media-library-folder-all">
+      <span className="tx-media-library__chip" data-testid="media-library-folder-all">
+        <Chip
+          icon={FolderOpen}
+          selected={value === null}
+          onToggle={() => {
+            onChange(null);
+          }}
+        >
+          <ChipLabel name="All" count={counts?.all} />
+        </Chip>
+      </span>
+      {list.length > 0 && (
+        <span className="tx-media-library__chip" data-testid="media-library-folder-root">
           <Chip
-            icon={FolderOpen}
-            selected={value === null}
+            selected={value === LIBRARY_ROOT_FILTER}
             onToggle={() => {
-              onChange(null);
+              pick(LIBRARY_ROOT_FILTER);
             }}
           >
-            <ChipLabel name="All" count={counts?.all} />
+            <ChipLabel name="Not in a folder" count={counts?.root} />
           </Chip>
         </span>
-        {list.length > 0 && (
-          <span className="tx-media-library__chip" data-testid="media-library-folder-root">
-            <Chip
-              selected={value === LIBRARY_ROOT_FILTER}
-              onToggle={() => {
-                pick(LIBRARY_ROOT_FILTER);
-              }}
-            >
-              <ChipLabel name="Not in a folder" count={counts?.root} />
-            </Chip>
-          </span>
-        )}
-        {inline.map((folder) => (
-          <span
-            key={folder.id}
-            className="tx-media-library__chip"
-            data-testid="media-library-folder"
-            data-folder-id={folder.id}
+      )}
+      {inline.map((folder) => (
+        <span
+          key={folder.id}
+          className="tx-media-library__chip"
+          data-testid="media-library-folder"
+          data-folder-id={folder.id}
+        >
+          <Chip
+            icon={Folder}
+            selected={value === folder.id}
+            onToggle={() => {
+              pick(folder.id);
+            }}
           >
-            <Chip
+            <ChipLabel name={folder.name} count={counts?.byFolder.get(folder.id) ?? 0} />
+          </Chip>
+        </span>
+      ))}
+      {overflow.length > 0 && (
+        <Menu
+          label="More folders"
+          trigger={(props) => (
+            <Button
+              {...props}
+              size="sm"
+              variant="ghost"
+              trailingIcon={ChevronDown}
+              data-testid="media-library-folder-more"
+            >
+              More folders ({overflow.length})
+            </Button>
+          )}
+        >
+          {overflow.map((folder) => (
+            <MenuItem
+              key={folder.id}
               icon={Folder}
-              selected={value === folder.id}
-              onToggle={() => {
-                pick(folder.id);
+              hint={String(counts?.byFolder.get(folder.id) ?? 0)}
+              onSelect={() => {
+                onChange(folder.id);
               }}
             >
-              <ChipLabel name={folder.name} count={counts?.byFolder.get(folder.id) ?? 0} />
-            </Chip>
-          </span>
-        ))}
-        {overflow.length > 0 && (
+              {folder.name}
+            </MenuItem>
+          ))}
+        </Menu>
+      )}
+      {/*
+        "New folder" follows the chips in the same wrapping row. The chosen folder's menu comes
+        last, in a slot of fixed width that is empty while no folder is chosen, so choosing one
+        moves nothing.
+      */}
+      {newFolder}
+      <span className="tx-media-library__folder-actions">
+        {chosen !== undefined && (
           <Menu
-            label="More folders"
+            placement="bottom-end"
             trigger={(props) => (
-              <Button
+              <IconButton
                 {...props}
                 size="sm"
-                variant="ghost"
-                trailingIcon={ChevronDown}
-                data-testid="media-library-folder-more"
-              >
-                More folders ({overflow.length})
-              </Button>
+                icon={Ellipsis}
+                label={`Actions for folder ${chosen.name}`}
+                data-testid="media-library-folder-actions"
+              />
             )}
           >
-            {overflow.map((folder) => (
-              <MenuItem
-                key={folder.id}
-                icon={Folder}
-                hint={String(counts?.byFolder.get(folder.id) ?? 0)}
-                onSelect={() => {
-                  onChange(folder.id);
-                }}
-              >
-                {folder.name}
-              </MenuItem>
-            ))}
+            <MenuItem
+              icon={Pencil}
+              onSelect={() => {
+                onRename(chosen);
+              }}
+            >
+              Rename folder
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem
+              icon={Trash}
+              tone="danger"
+              onSelect={() => {
+                onDelete(chosen);
+              }}
+            >
+              Delete folder
+            </MenuItem>
           </Menu>
         )}
-      </div>
-      {/*
-        "New folder" and the chosen folder's menu sit in their own column. The menu has a slot
-        of fixed width, empty while no folder is chosen, so choosing one moves nothing.
-      */}
-      <div className="tx-media-library__folder-tools">
-        {newFolder}
-        <span className="tx-media-library__folder-actions">
-          {chosen !== undefined && (
-            <Menu
-              placement="bottom-end"
-              trigger={(props) => (
-                <IconButton
-                  {...props}
-                  size="sm"
-                  icon={Ellipsis}
-                  label={`Actions for folder ${chosen.name}`}
-                  data-testid="media-library-folder-actions"
-                />
-              )}
-            >
-              <MenuItem
-                icon={Pencil}
-                onSelect={() => {
-                  onRename(chosen);
-                }}
-              >
-                Rename folder
-              </MenuItem>
-              <MenuSeparator />
-              <MenuItem
-                icon={Trash}
-                tone="danger"
-                onSelect={() => {
-                  onDelete(chosen);
-                }}
-              >
-                Delete folder
-              </MenuItem>
-            </Menu>
-          )}
-        </span>
-      </div>
+      </span>
     </div>
   );
 }

@@ -13,7 +13,6 @@ import {
 } from '../../lib/auditView.ts';
 import { Button, Dialog, Fact, Facts, StatusPill } from '../../ui/index.ts';
 import { AuditPlainObject, AuditTargetLine } from './AuditObject.tsx';
-import { RESULT_ICONS } from './resultIcons.ts';
 import './audit.css';
 
 export interface AuditDetailDialogProps {
@@ -68,9 +67,7 @@ export function AuditDetailDialog({ event, names, onClose }: AuditDetailDialogPr
               <code className="tx-audit-raw">{current.action}</code>
             </Fact>
             <Fact label="Result">
-              <StatusPill tone={result.tone} icon={RESULT_ICONS[current.result]}>
-                {result.label}
-              </StatusPill>
+              <StatusPill tone={result.tone}>{result.label}</StatusPill>
             </Fact>
             {reasons.length > 0 && (
               <Fact label="Reason">

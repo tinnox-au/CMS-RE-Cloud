@@ -4,16 +4,18 @@
  * a dashed, lightly tinted rectangle. Each scope below sets the same three colours:
  * - `--tx-canvas-fill`: the panel.
  * - `--tx-canvas-edge`: the panel's outline. In dark mode the panel is darker than the stage it
- *   sits on, so the outline carries the boundary (#7a8f98 on #182c38 is about 4:1).
+ *   sits on, so the outline carries the boundary (`--line-control` on `--surface-2`, #8e8e93
+ *   on #2c2c2e, is about 4.3:1).
  * - `--tx-canvas-mark`: the dashes and tint of the content area, at least 3:1 on the panel in
- *   both themes (#b7d3dc on #12212a, #7a8f98 on #0c161c).
+ *   both themes (`--line-control` on the panel: #86868b on #1d1d1f is about 4.6:1, #8e8e93
+ *   on #000000 about 6.4:1).
  */
 .tx-screen-detail-stage,
 .tx-screens-frame,
 .tx-screen-wizard__preview {
   --tx-canvas-fill: var(--ink);
   --tx-canvas-edge: var(--ink);
-  --tx-canvas-mark: var(--line-strong);
+  --tx-canvas-mark: var(--line-control);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -21,7 +23,7 @@
   .tx-screens-frame,
   .tx-screen-wizard__preview {
     --tx-canvas-fill: var(--bg);
-    --tx-canvas-edge: var(--ink-3);
-    --tx-canvas-mark: var(--ink-3);
+    --tx-canvas-edge: var(--line-control);
+    --tx-canvas-mark: var(--line-control);
   }
 }

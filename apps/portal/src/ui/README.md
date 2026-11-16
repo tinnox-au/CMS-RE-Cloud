@@ -10,7 +10,7 @@ import { Plus, Trash } from '../../ui/icons.ts';
 ## Rules that apply to every component
 
 - Import components from `ui/index.ts` and icons from `ui/icons.ts`, nowhere else. To use a new lucide icon, add its export to `ui/icons.ts` first.
-- Colour comes only from the tokens in `styles/tokens.css`. Never write a hex value in a page or a component. `styles/tokens.test.ts` checks the token pairs for WCAG 2.2 AA in both themes; add a pair there when a new combination is introduced. Do not set `--ink-2` text on `--surface-3` (4.4:1 in the light theme) and never use `--ink-3` for text that must be read.
+- Colour comes only from the tokens in `styles/tokens.css`. Never write a hex value in a page or a component. `styles/tokens.test.ts` checks the token pairs for WCAG 2.2 AA in both themes; add a pair there when a new combination is introduced. Filled controls use `--accent` with `--on-accent` text; links, text buttons and active icons use `--link`; focus uses `--focus`. Never use `--ink-3` for text that must be read, and never set `--link` text on `--surface-3` (in dark it reaches 3.8:1, enough for an icon, not for text).
 - Content-Security-Policy: no `style="..."` in markup and no `dangerouslySetInnerHTML`. For a value that is truly dynamic use React's `style` prop with `cssVars({ '--tx-name': value })` and read the variable in CSS.
 - Props are `readonly`. Text is Australian English, sentence case. Everything an operator sees says "screen" (P2-03): "Screens", "Add screen", "Push to screens", paths under `/screens`. Code, API paths and contracts keep the name `display`. Screen status wording follows P2-04: say what the player software last reported; the portal has no word for a screen being reachable.
 - Components that render links (`ButtonLink` with `to`, `MenuItem` with `to`, `NameCell`, `Tile`, `BackLink`, `Breadcrumb`) need a router above them.
@@ -30,8 +30,8 @@ Plain class names for arranging components (`styles/layout.css`, `styles/base.cs
 | `tx-display`, `tx-h1`, `tx-h2`, `tx-h3`, `tx-body`, `tx-small`, `tx-caption` | The type styles. `h1` to `h3` elements already carry theirs |
 | `tx-strong`, `tx-muted`, `tx-mono`, `tx-num` | Weight 600, `--ink-2`, monospace, tabular numbers |
 | `tx-truncate`, `tx-break`, `tx-nowrap` | Ellipsis on one line, break anywhere, no wrapping |
-| `tx-code` | An API error code or other literal inside a sentence |
-| `tx-glass` | The translucent fill of the sidebar and sticky header |
+| `tx-code` | An API error code or other literal inside a sentence: ink on `--fill`, no border; it stays whole (wraps as a unit, ellipsis only when wider than the line) |
+| `tx-glass` | The translucent fill of the sticky page header (the sidebar is flat on the page) |
 | `tx-visually-hidden`, `tx-skip-link` | Assistive-technology-only text; the skip link (first in the tab order, `href="#main"`). Hidden text is absolutely positioned: any element of your own that scrolls sideways (`overflow-x: auto`, a filmstrip) needs `position: relative`, or hidden text inside it is placed against the page and makes the whole page scroll sideways. The kit's own scrollers already have it |
 
 Tokens worth knowing: space `--s-1` to `--s-9` (4 to 56 px), radii `--r-xs` `--r-sm` `--r-md` `--r-lg` `--r-pill`, control heights `--h-sm` `--h-md` `--h-lg` (32, 36, 44), `--header-h` (72), `--sidebar-w` (240), `--sidebar-w-collapsed` (72), `--gutter` (32, or 16 under 900 px), `--content-max` (1440), motion `--t-fast` `--t` `--t-slow` with `--ease` (all zero under reduced motion), stacking `--z-sticky` `--z-drawer` `--z-float` `--z-toast`.
@@ -42,7 +42,7 @@ Tokens worth knowing: space `--s-1` to `--s-9` (4 to 56 px), radii `--r-xs` `--r
 
 ```ts
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-solid';
-type ButtonSize = 'sm' | 'md' | 'lg'; // 32, 36, 44 px
+type ButtonSize = 'sm' | 'md' | 'lg'; // 32, 40, 44 px
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant; // default 'secondary'
@@ -69,7 +69,9 @@ interface ButtonLinkProps extends AnchorHTMLAttributes<HTMLAnchorElement> {
 <ButtonLink variant="primary" size="lg" to="/screens/new" icon={Plus}>Add screen</ButtonLink>
 ```
 
-Accessibility: one `primary` per view. `danger` is text only; `danger-solid` belongs to the confirming button of a destructive `ConfirmDialog` and nowhere else. `busy` sets `aria-busy` and `aria-disabled`, so focus is not lost while a save runs. A `Badge` may sit inside the label (`<Badge count={3} variant="inverse" label="3 changes waiting" />` on a primary button).
+Look (restyle 2026-11): every kind is a borderless pill. `primary` is the `--accent` fill with white text at 600; `secondary` is a translucent `--fill` with ink text at 500; `ghost` is the text button, transparent with `--link` text; `danger` is the destructive button, a `--danger-bg` tint with `--danger` text; disabled is one look for all kinds (`--fill-disabled`, `--ink-3` text).
+
+Accessibility: one `primary` per view. `danger` is a red tint, not a filled red; `danger-solid` belongs to the confirming button of a destructive `ConfirmDialog` and nowhere else. `busy` sets `aria-busy` and `aria-disabled`, so focus is not lost while a save runs. A `Badge` may sit inside the label (`<Badge count={3} variant="inverse" label="3 changes waiting" />` on a primary button).
 
 ## IconButton
 
@@ -89,6 +91,8 @@ interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
 <IconButton icon={RefreshCw} label="Refresh" onClick={reload} />
 <IconButton icon={Copy} label="Copy ID" size="sm" onClick={copy} />
 ```
+
+Look (restyle 2026-11): round and borderless. The default is transparent with a `--ink-2` icon and a `--fill` circle on hover; `secondary` sits on `--fill`; `sm` is 32 px.
 
 Accessibility: `label` is required and should name the object in a row ("Actions for Foyer loop"). The tooltip repeats the name for sighted users; it is suppressed while the button's menu is open.
 
@@ -116,6 +120,8 @@ interface SplitButtonProps {
   Save
 </SplitButton>
 ```
+
+Look (restyle 2026-11): two pill halves with a 2 px seam and 6 px inner corners.
 
 Accessibility: two buttons in a `role="group"`; the chevron follows the menu-button pattern (see Menu).
 
@@ -157,6 +163,8 @@ type Placement = 'top' | 'bottom' | 'left' | 'right' | `${'top' | 'bottom' | 'le
 
 Accessibility: the ARIA menu-button pattern. Enter, Space or Arrow Down opens on the first item, Arrow Up on the last; inside, arrows wrap and skip disabled items, Home and End jump, letters jump to the next matching item, Enter activates an item, and so does Space (link items included); Escape closes and returns focus to the trigger, Tab closes. A `hint` is read after the label ("Users, Planned"). Destructive items go last, after a `MenuSeparator`. An `onSelect` that opens a `Dialog` works: focus returns to the trigger first, so the dialog restores it there on close. The popover is drawn in the browser's top layer (native Popover API, with a fixed-position fallback), so a menu inside a dialog or a scrolling table is never clipped; it flips and clamps to the viewport (`lib/positioner.ts`). If its trigger is scrolled off the screen the menu closes and focus returns to the trigger without scrolling back. `MenuHeader` and `MenuLabel` are not focusable.
 
+Look (restyle 2026-11): a borderless `--surface` card, 14 px radius, `--shadow-2` (which carries a faint white ring in dark). Rows are at least 36 px with an 8 px radius; hover and focus fill `--fill`, pressed `--fill-hover`, keyboard focus adds an inner `--focus` ring. The radio tick is `--link`, a danger item is `--danger` on `--danger-bg`, a disabled item `--ink-3`. Separators are inset `--line` hairlines; `MenuLabel` is 12 px / 600 `--ink-2`.
+
 ## Dialog
 
 ```ts
@@ -188,6 +196,8 @@ interface DialogProps {
 ```
 
 Accessibility: a native `<dialog>` opened with `showModal()`, so it has the dialog role, the page behind is inert and Tab stays inside. It is labelled by its title. Focus on open goes to the element marked `data-autofocus`, else the first control in the body, else the first footer button; on close it returns to the element that opened it. When that element has gone, at once or when the list is read again a moment later (a deleted row's "Actions" button, a selection bar that empties), focus goes to `returnFocus()` if given, else to the page's `main` landmark, never to `<body>` (`focusReturn.ts`; it never takes focus from a control the person chose, and stops at the first pointer press). A list that deletes rows should pass `returnFocus` that finds the next row's "Actions" button, else the previous row's, else the page's primary action. Keep the component mounted and toggle `open`; do not render it conditionally, or the exit transition and the focus return are lost.
+
+Look (restyle 2026-11): a borderless `--surface` card with a 24 px radius and `--shadow-3` over the `--scrim` backdrop; the title is the card title (21 px / 600). The footer has no rule while the body fits; when the body scrolls, a `--line` hairline appears above the footer (scroll-driven, so browsers without scroll timelines show none). Footer buttons are the standard pills. Under 560 px the dialog is a sheet on the bottom edge with only its top corners rounded, and its footer buttons share the width.
 
 ## ConfirmDialog
 
@@ -244,6 +254,8 @@ toast.error('The file was not deleted', { detail: 'media_in_use' });
 ```
 
 Accessibility: announced through two always-present live regions (polite; assertive for errors). The words are written about 150 ms after the toast is raised, so `close(); toast.success(...)` in one handler is announced once the dialog has stopped making the page inert, and the same message twice in a row is announced twice. At most three show: when a fourth arrives, the oldest toast that would have left by itself goes, and an error goes only when all three showing are errors. Hovering or focusing the stack pauses the timers. The stack is last in the tab order, so never make a toast action the only way to do something. Dismissing a toast from the keyboard moves focus to the next toast, or back to where it was before it entered the stack. While a modal dialog stays open, everything outside it is inert, the toast stack and its live regions included: a toast is then drawn above the dialog but cannot be pressed or heard, so report inside an open dialog with a `Banner` (`live`) in the dialog, and keep toasts for after it closes. Report only what happened: no toast before the server has answered.
+
+Look (restyle 2026-11): a borderless `--surface` capsule (24 px radius, at least 48 px tall) with `--shadow-2`; the tone shows as the icon colour (`--ok`, `--warn`, `--danger`, or `--ink-2` for information). The detail line is 13 px `--ink-2`.
 
 ## Field, FieldGroup, FormSection
 
@@ -305,6 +317,8 @@ interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'siz
 )}</Field>
 ```
 
+Look (restyle 2026-11): white fields, 44 px tall with a 12 px radius and a 1 px `--line-control` boundary (darker than the mockups' #d2d2d7, so it reaches 3:1). Focus turns the border `--focus` and thickens it to a 2 px edge (`inset 0 0 0 1px var(--focus)`) inside a 4 px `--focus-halo`, for inputs, selects, input groups, steppers and the search field; invalid is a 2 px `--danger` edge, and focus on an invalid field adds the standard ring. Labels are 13 px at 500. A small `Select` (`size="sm"`, per page) is a 32 px pop-up button on `--surface` with the same 1 px `--line-control` boundary (it has no placeholder, so its edge identifies it).
+
 Accessibility: always inside a `Field` (or give an `aria-label`). `Select` is the native element, so the platform's own picker is used. Read-only inputs get a tinted fill; disabled ones cannot be focused.
 
 ## SearchField
@@ -321,6 +335,8 @@ interface SearchFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, '
 ```tsx
 <SearchField label="Search media" value={query} onChange={(next) => { setQuery(next); setPage(1); }} />
 ```
+
+Look (restyle 2026-11): filled with `--surface-3`, 40 px, a 12 px radius and no border until it has focus. At most 320 px wide; under 640 px it fills its row. The clear disc is `--ink-2` (`--ink` on hover) so it keeps 3:1 on the field. The fill has no 3:1 boundary by design (accepted deviation, design-system.md section 5): the magnifier, the placeholder and the accessible name identify it.
 
 Accessibility: filters as the person types; Escape clears a non-empty query (and only then reaches a surrounding dialog); the clear button is named "Clear search". Announce the result count next to it (`aria-live="polite"` on the toolbar count).
 
@@ -340,7 +356,9 @@ interface SwitchProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'
 <Switch checked={shuffle} onChange={setShuffle} label="Shuffle" hint="Play the items in a new order each loop." />
 ```
 
-Accessibility: a real checkbox with `role="switch"` (36 by 22 px track inside a 24 px tall target); Space toggles. Use it for a setting that takes effect at once; use `Checkbox` when a Save button applies the choice.
+Look (restyle 2026-11): an iOS switch, a 44 by 27 px track with a white 23 px thumb; on is `--ok` green, off is `--line-control` grey.
+
+Accessibility: a real checkbox with `role="switch"` (the 44 by 27 px track is the target); Space toggles. Use it for a setting that takes effect at once; use `Checkbox` when a Save button applies the choice.
 
 ## Checkbox
 
@@ -357,6 +375,8 @@ interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'typ
 ```tsx
 <Checkbox checked={all} mixed={some && !all} label="All tags" onChange={() => setPicked(toggleAll(ids, picked))} />
 ```
+
+Look (restyle 2026-11): a 5 px radius and a 1 px `--line-control` border; ticked or mixed is the `--accent` fill.
 
 Accessibility: an 18 px box in a 24 px target. `mixed` sets the DOM `indeterminate` property, which is read as "mixed".
 
@@ -378,6 +398,8 @@ interface StepperProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type
 </Field>
 ```
 
+Look (restyle 2026-11): drawn like a TextInput (44 px, 12 px radius, the same focus) with round 32 px minus and plus buttons.
+
 Accessibility: a text input with `role="spinbutton"` and the value attributes. Arrow Up and Down step by one, Page Up and Page Down by ten. At a bound the minus or plus button is soft-disabled (`aria-disabled`), so stepping to the limit never drops keyboard focus. Typing is never rewritten; parse with `parseStepperValue` from `lib/stepper.ts` (or the page's own validator, for example `parseImageDuration`).
 
 ## Segmented
@@ -398,6 +420,8 @@ interface SegmentedProps<T extends string> {
 <Segmented label="View" iconOnly value={view} onChange={setView}
   options={[{ value: 'list', label: 'List', icon: List }, { value: 'grid', label: 'Grid', icon: LayoutGrid }]} />
 ```
+
+Look (restyle 2026-11): an iOS segmented control. The track is `--surface-3` with a 12 px radius and 3 px padding; the chosen segment slides under the option as a `--surface` piece with a 9 px radius and `--shadow-1`, and its label is weight 600. In dark the segment is lifted with a `--fill-hover` tint over the track. Under 400 px wide the options take the width of their labels and wrap inside the track when even that does not fit; the chosen option then paints its own segment (no slide).
 
 Accessibility: native radio buttons in a `radiogroup`: one tab stop, arrow keys move the choice.
 
@@ -441,6 +465,8 @@ interface ChipProps {
 <ChipList label="Tags">{tags.map((tag) => <li key={tag.id}><Chip colour={tag.colour} onRemove={() => remove(tag.id)} removeLabel={`Remove tag ${tag.name}`}>{tag.name}</Chip></li>)}</ChipList>
 ```
 
+Look: a borderless capsule, white on the grey page and `--surface-2` inside a card, table, tile, dialog or menu (a surface container sets `--tx-chip-bg`). A tag shows an 8 px colour dot before its name. A filter chip is 32 px with 14 px text; hover lays `--fill` over it; the selected one is filled with `--ink` and its text turns to `--surface` (white in light). Disabled is `--fill-disabled` with `--ink-3`.
+
 Accessibility: a filter chip is a button with `aria-pressed`; selected chips gain a tick as well as a fill. The colour dot is decoration; the name carries the meaning. Group filter chips in a labelled `role="group"`. Put removable chips in a `ChipList`: when a chip is removed, the list moves keyboard focus to the next chip's remove button (or to itself when none is left), so focus is not dropped to the top of the page.
 
 ## StatusPill
@@ -454,6 +480,8 @@ interface StatusPillProps { tone: 'ok' | 'warn' | 'danger' | 'neutral'; children
 <StatusPill tone="warn">Processing</StatusPill>
 <StatusPill tone="neutral">Planned</StatusPill>
 ```
+
+Look: no filled pill. An 8 px dot (or a 14 px icon) and the words in the tone's colour at 13 px, weight 500: `--ok`, `--warn`, `--danger`; neutral is `--ink-2` words with an `--ink-3` dot.
 
 Accessibility: the words are always present; the dot or icon is decoration. Map `lib/status.ts` tones as `good` to `ok`, `bad` to `danger`.
 
@@ -507,6 +535,8 @@ const list = applyListView(items, { search: { query, texts: (m) => [m.name] }, f
   footer={<Pagination info={list.info} onPageChange={setPage} onPageSizeChange={setPageSize} />} />
 ```
 
+Look: one `--surface` card with a 20 px radius and no outer border; no zebra. The header row is 12 px at weight 600 in `--ink-2` with no fill; rows are separated by `--line`; a hovered or selected row takes `--surface-2`. The name in a `NameCell` is the 15 px / 500 row title.
+
 Accessibility: a real table with a caption and column headers. Sortable headers are buttons and the sorted column carries `aria-sort`. The header checkbox selects the rows on the page and shows the mixed state; Shift-click selects a range. Every control in a row is a native button, link or checkbox in reading order; the row itself is not clickable, the name is the link. When the columns no longer fit, they leave by `priority` (every column of priority 4, then 3, then 2) and return when there is room again; only when the columns that always stay do not fit does the table scroll sideways (the scrolling area then becomes focusable). The fit is measured from the content, not from breakpoints, so give every column that can be missed a priority. The `grow` column keeps at least 240 px; in a table narrower than 480 px the `NameCell` drops its thumbnail and keeps 112 px. Helpers: `applyListView`, `nextSort`, `countLabel`, `PAGE_SIZE_OPTIONS` in `lib/listView.ts`; `pruneSelection`, `selectedRows` in `lib/selection.ts` (call `pruneSelection` after a reload or a delete).
 
 ## Pagination
@@ -557,7 +587,7 @@ interface CardHeaderProps { title: string; level?: 2 | 3 | 4; size?: 'caption' |
 </Card>
 ```
 
-Accessibility: `CardHeader` renders a real heading (default `h2`) in the caption style; pick `level` so the page outline stays in order. Cards have a hairline border and no shadow.
+Accessibility: `CardHeader` renders a real heading (default `h2`) in the caption style (13 px / 600, `--ink-2`); `size="title"` is the 21 px / 600 card title. Pick `level` so the page outline stays in order. Cards are white (`--surface`) with a 20 px radius, no border and no shadow.
 
 ## EmptyState
 
@@ -570,6 +600,8 @@ interface EmptyStateProps { title: string; children?: ReactNode; icon?: IconComp
   Add a screen, pair its player, and assign a playlist to it.
 </EmptyState>
 ```
+
+Look: the icon sits in a `--fill` circle in `--link`; the page title is 28 px / 700, the inline title 17 px / 600.
 
 Accessibility: one sentence and at most one action. A Planned page is an `EmptyState` with no action. Use `variant="inline"` inside a card or as a table's `empty`; offer "Clear filters" when a search or filter hides everything.
 
@@ -591,6 +623,8 @@ interface ThumbProps {
 ```tsx
 <Thumb size="sm" kind={media.kind} src={media.status === 'ready' ? ROUTES.mediaPreview(media.id) : null} />
 ```
+
+Look: a 12 px radius (10 px for the 44 px `sm` square) on `--neutral-bg`; the kind badge is a small round capsule.
 
 Accessibility: decorative by default (`alt=""`). The box keeps its size while loading (shimmer) and when the picture is missing or fails (icon). Request a preview only for ready media.
 
@@ -616,6 +650,8 @@ interface TileProps {
   ))}
 </TileGrid>
 ```
+
+Look: white, 20 px radius, no border, no shadow, 10 px padding; the name is 14 px / 500. Hover is a faint fill, never a lift; a ticked tile has a 2 px `--accent` ring inside its edge.
 
 Accessibility: a list of items; the name is the link. The checkbox shows on hover and focus, stays once ticked, and is always shown on touch devices. While loading, render `TileSkeleton` items in the grid inside a `SkeletonGroup`.
 
@@ -656,6 +692,8 @@ interface BannerProps {
   {message} <span className="tx-code">{error.code}</span>
 </Banner>
 ```
+
+Look: a tinted block with a 14 px radius and no stripe or border. `info` is `--fill` (it shows on the page and in a card), the others are `--ok-bg`, `--warn-bg` and `--danger-bg` with the icon in the tone's colour.
 
 Accessibility: replaces the M0 `Notice` and is the base for the restyled `ErrorNotice`. `live="assertive"` gives `role="alert"` (the end-to-end tests look for it on errors); `polite` gives `role="status"`. Tone is carried by the icon and the words as well as the tint. Show API error codes as text.
 
@@ -699,6 +737,8 @@ interface TooltipProps {
 
 Accessibility: shows on hover and on keyboard focus after 400 ms; Escape, a press, or its control leaving the screen dismisses it; the pointer can move onto it. Never the only place a label exists: set `describe` when the text adds information, leave it off when it repeats the name (as `IconButton` does). Not shown for touch.
 
+Look (restyle 2026-11): inverted, `--ink` fill with `--surface` text at 13 px / 500, 12 px radius, `--shadow-2`.
+
 ## Spinner
 
 ```ts
@@ -725,7 +765,9 @@ interface BadgeProps { count: number; max?: number; label?: string; variant?: 'b
 <Kbd>Esc</Kbd>
 ```
 
-Accessibility: the avatar is decorative unless `labelled`. A badge renders nothing at zero; give `label` unless nearby text already says the number. `inverse` is for a badge on a brand-filled button.
+Look: `brand` (default) is `--accent` with `--on-accent`; `neutral` is the quiet capsule (`--ink-2` on the opaque `--surface-3`, which keeps 4.5:1 on a card, the page and an inset alike); `danger` is `--danger` with `--on-danger`.
+
+Accessibility: the avatar is decorative unless `labelled`. A badge renders nothing at zero; give `label` unless nearby text already says the number. `inverse` is for a badge on an accent-filled button.
 
 ## BackLink, Breadcrumb
 
@@ -741,6 +783,8 @@ interface BreadcrumbProps { items: readonly { label: string; to?: string }[]; cl
 
 Accessibility: `Breadcrumb` is a `nav` named "Breadcrumb" with `aria-current="page"` on the last item.
 
+Look (restyle 2026-11): `BackLink` is a 14 px `--link` link with a leading chevron, as in the mockups ("‹ Playlists"), `--link-hover` on hover and no fill. `Breadcrumb` links are `--link`; the current page is `--ink` at weight 500; separators are `--ink-3` chevrons.
+
 ## Meter
 
 ```ts
@@ -751,6 +795,8 @@ interface MeterProps { label: string; value: number; max: number; valueText: str
 <Meter variant="inline" label="Storage" value={storage.usedBytes} max={storage.limitBytes}
   valueText={`${formatBytes(storage.usedBytes)} of ${formatBytes(storage.limitBytes)}`} />
 ```
+
+Look: a 6 px `--neutral-bg` track with an `--accent` fill (`--warn` and `--danger` near the limit).
 
 Accessibility: `role="meter"` with the reading as `aria-valuetext`; the same reading is always visible. The bar turns to the attention colour from 80 per cent and to the danger colour from 95 per cent (`lib/meter.ts`).
 
@@ -815,11 +861,11 @@ The application frame lives in `src/shell/`; its styles are `src/styles/shell.cs
 AppShell  (route "/", inside the session gate)
   ToastProvider > PushProvider > ShellContext
   skip link (#main)
-  Sidebar            wordmark, nav.ts, Settings, collapse button; a drawer under 900 px
+  Sidebar            wordmark and "Prototype" capsule, nav.ts, Settings, collapse button;
+                     a drawer under 900 px
   column
-    environment strip   "Internal engineering prototype. Synthetic data only."
     <Outlet />          the page, which renders Page or EditorPage:
-                          header (h1, actions, global controls)
+                          header (h1 and subtitle, actions, global controls)
                           main#main (the content)
 ```
 
@@ -828,7 +874,7 @@ Rules for every page:
 - Render exactly one frame, `Page` or `EditorPage`, as the root of the page component. The frame renders the page's only `h1`, the `main#main` landmark and the document title ("Playlists · TINNOX CMS"). Do not render another `h1`, `main` or skip link.
 - The frame must be below `AppShell` (it reads the session, the shell state and `PushContext`).
 - While a page loads, keep the frame and put a skeleton inside it (`title` can be a plain noun such as "Playlist" until the object's name is known).
-- The shell holds its state in memory only: sidebar collapsed, drawer open, strip dismissed. Nothing is written to web storage.
+- The shell holds its state in memory only: sidebar collapsed, drawer open. Nothing is written to web storage.
 - `useToast()` works in every page: `AppShell` renders the one `ToastProvider`.
 
 ### Page
@@ -837,6 +883,7 @@ Rules for every page:
 interface PageProps {
   title: string; // the h1; also the document title
   documentTitle?: string; // the page part of the document title when it should differ
+  subtitle?: ReactNode; // optional short line under the title, in secondary text
   actions?: ReactNode; // page-level actions in the header, before the global controls
   children: ReactNode; // the content, inside main#main
 }

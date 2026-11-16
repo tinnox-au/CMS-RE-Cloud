@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
-import { BackLink, ErrorNotice, Icon, IconButton, VisuallyHidden } from '../ui/index.ts';
+import { BackLink, ErrorNotice, IconButton, VisuallyHidden } from '../ui/index.ts';
 import { cx } from '../ui/cx.ts';
-import { Building, MenuIcon } from '../ui/icons.ts';
+import { MenuIcon } from '../ui/icons.ts';
 import { useShell } from './ShellContext.ts';
 import { useDocumentTitle } from './useDocumentTitle.ts';
 
@@ -14,13 +14,15 @@ export interface PageBackLink {
 export interface PageHeaderProps {
   /** The page's one `h1`. */
   readonly title: string;
+  /** A short line under the title, in secondary text: "10 screens, as each player last reported." */
+  readonly subtitle?: ReactNode;
   /** Editor pages: a back link above the title. */
   readonly back?: PageBackLink | undefined;
   /** Page-level actions, between the title and the global controls. */
   readonly actions?: ReactNode;
   /**
-   * The organisation's name, shown as a quiet label before the global controls. Its width is
-   * capped, so a long name is shortened and the title keeps the rest of the line.
+   * The organisation's name, shown as a quiet capsule before the global controls. Its width
+   * is capped, so a long name is shortened and the title keeps the rest of the line.
    */
   readonly organisation?: string | undefined;
   /** The global controls at the far end: account menu, push button. */
@@ -28,10 +30,19 @@ export interface PageHeaderProps {
 }
 
 /**
- * The sticky glass header shared by the two page frames. Pages do not render it directly:
+ * The sticky frosted header shared by the two page frames: the large page title (with a back
+ * link above it on editor pages, an optional subtitle under it) and the controls at the end.
+ * A hairline under it appears once content scrolls beneath. Pages do not render it directly:
  * use `Page` or `EditorPage`.
  */
-export function PageHeader({ title, back, actions, organisation, global }: PageHeaderProps) {
+export function PageHeader({
+  title,
+  subtitle,
+  back,
+  actions,
+  organisation,
+  global,
+}: PageHeaderProps) {
   const { drawerMode, navOpen, openNav } = useShell();
   return (
     <header
@@ -51,6 +62,9 @@ export function PageHeader({ title, back, actions, organisation, global }: PageH
         <div className="tx-page-header__heading">
           {back !== undefined && <BackLink to={back.to}>{back.label}</BackLink>}
           <h1 className="tx-page-header__title">{title}</h1>
+          {subtitle !== undefined && subtitle !== null && subtitle !== false && (
+            <p className="tx-page-header__subtitle">{subtitle}</p>
+          )}
         </div>
         {actions !== undefined && actions !== null && actions !== false && (
           <div className="tx-page-header__actions">{actions}</div>
@@ -58,7 +72,6 @@ export function PageHeader({ title, back, actions, organisation, global }: PageH
         {organisation !== undefined && (
           // The label may be cut short; `title` lets a pointer read the whole name.
           <span className="tx-org-label" title={organisation}>
-            <Icon icon={Building} size={16} className="tx-org-label__icon" />
             <VisuallyHidden>Organisation: </VisuallyHidden>
             <span className="tx-org-label__name">{organisation}</span>
           </span>

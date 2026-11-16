@@ -1,12 +1,17 @@
 /*
- * The application shell (design-system.md, section 4): sidebar, navigation drawer, sticky page
- * header, environment strip, content column, and the screens shown without the shell
- * (sign-in, session check, route error). Components: src/shell/.
+ * The application shell (design-system.md, section 4): flat sidebar with the wordmark and its
+ * "Prototype" capsule, navigation drawer, sticky frosted page header with the large title,
+ * content column, and the screens shown without the shell (sign-in, session check, route
+ * error). Components: src/shell/.
  */
 
 /* ---------- Frame ---------- */
 
 .tx-shell {
+  /* The page's gutters and header height inside the shell (36 px gutters, 16 px on a phone). */
+  --gutter: 36px;
+  --header-h: 88px;
+
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   min-block-size: 100dvh;
@@ -21,7 +26,14 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* The column beside the sidebar: environment strip, then the page's header and content. */
+@media (max-width: 899px) {
+  .tx-shell {
+    --gutter: 16px;
+    --header-h: 72px;
+  }
+}
+
+/* The column beside the sidebar: the page's header and content. */
 .tx-shell__column {
   display: flex;
   flex-direction: column;
@@ -35,7 +47,7 @@
   inset: 0 0 auto;
   z-index: var(--z-toast);
   block-size: 2px;
-  background: var(--brand);
+  background: var(--accent);
   opacity: 0;
   transform-origin: 0 50%;
   animation: tx-shell-progress 1.6s var(--ease) 240ms infinite;
@@ -73,36 +85,38 @@
   display: inline-flex;
   align-items: center;
   gap: var(--s-2);
-  border-radius: var(--r-sm);
-  color: var(--ink);
-  text-decoration: none;
+  min-inline-size: 0;
   white-space: nowrap;
   user-select: none;
 }
 
-.tx-wordmark:hover {
+.tx-wordmark__link {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-xs);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.tx-wordmark__link:hover {
   color: var(--ink);
 }
 
-.tx-wordmark__text {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-2);
-}
-
 .tx-wordmark__name {
-  font: 800 18px/24px var(--font-head);
-  letter-spacing: 0.08em;
+  font: 700 17px/24px var(--font-body);
+  letter-spacing: 0.14em;
 }
 
+/* "Prototype": the quiet capsule. Its meaning is its tooltip and its hidden text. */
 .tx-wordmark__tag {
-  display: inline-block;
-  padding: 0 7px;
+  flex: none;
+  padding: 2px 8px;
   border-radius: var(--r-pill);
-  background: var(--surface-3);
-  color: var(--brand);
-  font: 600 11px/18px var(--font-body);
-  letter-spacing: 0.04em;
+  background: var(--fill);
+  color: var(--ink-2);
+  font: 600 11px/14px var(--font-body);
+  letter-spacing: 0;
+  cursor: default;
 }
 
 /* The square "T" shows only in the compact form. */
@@ -112,31 +126,33 @@
   inline-size: 36px;
   block-size: 36px;
   border-radius: var(--r-sm);
-  background: var(--brand);
-  color: var(--on-brand);
-  font: 800 18px/1 var(--font-head);
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 700 17px/1 var(--font-body);
 }
 
 .tx-wordmark--compact .tx-wordmark__mark {
   display: grid;
 }
 
-.tx-wordmark--compact .tx-wordmark__text {
+.tx-wordmark--compact :is(.tx-wordmark__name, .tx-wordmark__tag) {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
   margin: -1px;
+  padding: 0;
   overflow: hidden;
   clip-path: inset(50%);
 }
 
 .tx-wordmark--lg .tx-wordmark__name {
-  font-size: 22px;
+  font-size: 21px;
   line-height: 28px;
 }
 
 /* ---------- Sidebar ---------- */
 
+/* Flat on the page grey, a hairline on its right edge. */
 .tx-sidebar {
   position: sticky;
   inset-block-start: 0;
@@ -147,8 +163,10 @@
   block-size: 100dvh;
   border-inline-end: 1px solid var(--line);
   overflow: hidden;
+  background: var(--bg);
 }
 
+/* As tall as the page header, so the wordmark lines up with the page title. */
 .tx-sidebar__head {
   flex: none;
   display: flex;
@@ -170,7 +188,7 @@
   position: relative;
   flex: 1 1 auto;
   min-block-size: 0;
-  padding: var(--s-1) var(--s-2) var(--s-2);
+  padding: var(--s-1) var(--s-3) var(--s-6);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -178,13 +196,12 @@
 
 .tx-sidebar__foot {
   flex: none;
-  padding: var(--s-2) var(--s-2) 0;
-  border-block-start: 1px solid var(--line);
+  padding: var(--s-2) var(--s-3) 0;
 }
 
 .tx-sidebar__collapse {
   flex: none;
-  padding: 2px var(--s-2) var(--s-2);
+  padding: 2px var(--s-3) var(--s-4);
 }
 
 .tx-nav__list {
@@ -199,15 +216,15 @@
 .tx-nav__item {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
+  gap: 10px;
   inline-size: 100%;
   block-size: 40px;
-  padding: 0 var(--s-3);
+  padding: 0 10px;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
   color: var(--ink);
-  font: 500 14px/20px var(--font-body);
+  font: 400 14px/20px var(--font-body);
   letter-spacing: -0.005em;
   text-align: start;
   text-decoration: none;
@@ -220,16 +237,25 @@
 }
 
 .tx-nav__item:hover {
-  background: var(--surface-2);
+  background: var(--fill);
   color: var(--ink);
 }
 
 .tx-nav__item:active {
-  background: var(--surface-3);
+  background: var(--fill-hover);
 }
 
-.tx-nav__icon,
-.tx-nav__chevron {
+/* Section icons in the accent blue (--nav-icon: the link blue in dark, for 3:1 on black);
+   Settings and the collapse control in secondary grey. */
+.tx-nav__icon {
+  flex: none;
+  color: var(--nav-icon);
+}
+
+.tx-nav__chevron,
+.tx-sidebar__foot .tx-nav__icon,
+.tx-sidebar__collapse .tx-nav__icon,
+.tx-nav__item--sub > .tx-nav__icon {
   flex: none;
   color: var(--ink-2);
 }
@@ -250,31 +276,45 @@
   rotate: 180deg;
 }
 
-/* The current page: a soft fill, brand icon and text, and more weight. */
+/* The current page: the soft fill, ink text at 600 (never the accent colour). */
 .tx-nav__item[aria-current='page'] {
-  background: var(--surface-2);
-  color: var(--brand);
+  background: var(--fill);
+  color: var(--ink);
   font-weight: 600;
+}
+
+.tx-nav__item[aria-current='page']:hover {
+  background: var(--fill-hover);
 }
 
 .tx-nav__item[aria-current='page'] > .tx-nav__icon,
-.tx-nav__item--holds-current,
 .tx-nav__item--holds-current > .tx-nav__icon {
-  color: var(--brand);
+  color: var(--nav-icon);
 }
 
+/* A closed group, or the collapsed sidebar's group icon, that holds the current page. */
 .tx-nav__item--holds-current {
+  background: var(--fill);
   font-weight: 600;
 }
 
+.tx-nav__item--holds-current:hover {
+  background: var(--fill-hover);
+}
+
+/* "Planned": the quiet capsule. On a filled row it turns white so its text keeps 4.5:1. */
 .tx-nav__planned {
   flex: none;
-  padding: 0 7px;
+  padding: 2px 8px;
   border-radius: var(--r-pill);
-  background: var(--neutral-bg);
+  background: var(--fill);
   color: var(--ink-2);
-  font: 600 11px/18px var(--font-body);
-  letter-spacing: 0.01em;
+  font: 600 11px/14px var(--font-body);
+  letter-spacing: 0;
+}
+
+.tx-nav__item:is(:hover, :active, [aria-current='page']) > .tx-nav__planned {
+  background: var(--surface);
 }
 
 /* The links of a disclosure group, one step in and one step smaller. */
@@ -317,6 +357,14 @@
   white-space: nowrap;
 }
 
+/* With the words hidden, the soft fill and the weight no longer mark the current page well
+   enough (the fill is 1.14:1 on the page). A 1px ring in the control boundary colour, 3:1
+   on the page, marks it without relying on colour alone. The focus ring replaces it. */
+.tx-sidebar--collapsed
+  .tx-nav__item:is([aria-current='page'], .tx-nav__item--holds-current):not(:focus-visible) {
+  box-shadow: inset 0 0 0 1px var(--line-control);
+}
+
 /* ---------- Navigation drawer (under 900 px) ---------- */
 
 .tx-drawer {
@@ -330,7 +378,7 @@
   padding: 0;
   border: 0;
   overflow: hidden;
-  background: var(--surface);
+  background: var(--bg);
   box-shadow: var(--shadow-3);
   color: var(--ink);
 }
@@ -396,38 +444,34 @@ html:has(.tx-drawer[open]) {
   }
 }
 
-/* ---------- Environment strip ---------- */
-
-.tx-env-strip {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  min-block-size: 32px;
-  padding: 2px var(--s-2) 2px var(--gutter);
-  background: var(--neutral-bg);
-  color: var(--ink-2);
-  font: 500 12px/16px var(--font-body);
-  letter-spacing: 0.01em;
-}
-
-.tx-env-strip__icon {
-  flex: none;
-}
-
-.tx-env-strip__text {
-  flex: 1 1 auto;
-  min-inline-size: 0;
-}
-
 /* ---------- Page header ---------- */
 
+/*
+ * Sticky and frosted (`.tx-glass`). Unscrolled it reads as part of the page; a hairline
+ * fades in once content scrolls beneath it. Without scroll-driven animations the hairline
+ * is always there.
+ */
 .tx-page-header {
   position: sticky;
   inset-block-start: 0;
   z-index: var(--z-sticky);
   flex: none;
   border-block-end: 1px solid var(--line);
+}
+
+@supports (animation-timeline: scroll()) {
+  .tx-page-header {
+    border-block-end-color: transparent;
+    animation: tx-page-header-line linear both;
+    animation-timeline: scroll(root block);
+    animation-range: 0 16px;
+  }
+}
+
+@keyframes tx-page-header-line {
+  to {
+    border-block-end-color: var(--line);
+  }
 }
 
 .tx-page-header__inner {
@@ -438,7 +482,12 @@ html:has(.tx-drawer[open]) {
   max-inline-size: var(--content-max);
   min-block-size: var(--header-h);
   margin-inline: auto;
-  padding: 6px var(--gutter);
+  padding: var(--s-3) var(--gutter);
+}
+
+/* Editor pages: the back link sits above the title; the controls line up with the title. */
+.tx-page-header--editor .tx-page-header__inner {
+  align-items: flex-end;
 }
 
 .tx-page-header__menu {
@@ -452,6 +501,7 @@ html:has(.tx-drawer[open]) {
   min-inline-size: 0;
 }
 
+/* The large page title: 34/40 at 700 from base.css (h1). */
 .tx-page-header__title {
   max-inline-size: 100%;
   overflow: hidden;
@@ -459,23 +509,21 @@ html:has(.tx-drawer[open]) {
   white-space: nowrap;
 }
 
+.tx-page-header__subtitle {
+  max-inline-size: 100%;
+  margin-block-start: 2px;
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 20px;
+}
+
 .tx-page-header__actions,
 .tx-page-header__global {
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--s-2);
+  gap: 10px;
   min-inline-size: 0;
-}
-
-/* A hairline sets the page's own actions apart from the global controls. */
-.tx-page-header__actions::after {
-  content: '';
-  flex: none;
-  inline-size: 1px;
-  block-size: 24px;
-  margin-inline-start: var(--s-2);
-  background: var(--line);
 }
 
 /* "Saved" or "Unsaved changes", before an editor's Cancel and Save. */
@@ -487,34 +535,29 @@ html:has(.tx-drawer[open]) {
   white-space: nowrap;
 }
 
-/* The organisation: a quiet label now, the workspace switcher later. */
+/* The organisation: a quiet capsule now, the workspace switcher later. */
 .tx-org-label {
   /*
    * Its width is capped, and capped harder on narrower windows, so a long name is cut with an
    * ellipsis and the page title keeps the rest of the line. It never shrinks below that: a
-   * label squeezed to its icon and a sliver of text reads as a fault.
+   * capsule squeezed to a sliver of text reads as a fault.
    */
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   max-inline-size: 240px;
-  block-size: var(--h-sm);
-  padding: 0 12px 0 10px;
-  border: 1px solid var(--line);
+  block-size: var(--h-md);
+  padding: 0 14px;
   border-radius: var(--r-pill);
-  color: var(--ink-2);
-  font: 500 13px/18px var(--font-body);
-  letter-spacing: 0;
+  background: var(--fill);
+  color: var(--ink);
+  font: 500 14px/20px var(--font-body);
+  letter-spacing: -0.005em;
 }
 
-.tx-org-label__icon {
-  flex: none;
-}
-
-/* The label and the controls after it read as one group: 8 px apart, not the header's 16. */
+/* The capsule and the controls after it read as one group: 10 px apart, not the header's 16. */
 .tx-org-label + .tx-page-header__global {
-  margin-inline-start: calc(var(--s-2) - var(--s-4));
+  margin-inline-start: calc(10px - var(--s-4));
 }
 
 .tx-org-label__name {
@@ -524,34 +567,62 @@ html:has(.tx-drawer[open]) {
   white-space: nowrap;
 }
 
-/* The account menu's button: the avatar and a chevron in one pill. */
+/*
+ * Between the phone layout and a wide window the line can be too short for the title, the
+ * page's actions, the organisation capsule and the global controls. Three things keep the
+ * title whole there: the heading never gets narrower than 260 px (every plain page title fits
+ * in that), the organisation capsule steps aside (the name is on the Settings page), and the
+ * global controls drop to a second line, at the end, only when they still do not fit. Editor
+ * pages are left alone: their titles are object names and shorten with an ellipsis.
+ */
+@media (min-width: 760px) {
+  .tx-page-header:not(.tx-page-header--editor) .tx-page-header__inner {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .tx-page-header:not(.tx-page-header--editor) .tx-page-header__heading {
+    flex: 1 1 0;
+    min-inline-size: min(100%, 260px);
+  }
+}
+
+@media (min-width: 760px) and (max-width: 1199px) {
+  .tx-page-header:not(.tx-page-header--editor) .tx-org-label {
+    display: none;
+  }
+}
+
+/* The account menu's button: a round button with the initials. */
 .tx-account-button {
   flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-1);
-  block-size: 40px;
-  padding: 2px var(--s-2) 2px 2px;
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--h-md);
+  block-size: var(--h-md);
+  padding: 0;
   border: 0;
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: var(--ink-2);
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--ink);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color var(--t-fast) var(--ease);
+  transition: box-shadow var(--t-fast) var(--ease);
 }
 
-.tx-account-button:hover {
-  background: var(--surface-2);
+.tx-account-button > .tx-avatar {
+  inline-size: 100%;
+  block-size: 100%;
+  background: transparent;
 }
 
-.tx-account-button:active,
-.tx-account-button[aria-expanded='true'] {
-  background: var(--surface-3);
+.tx-account-button:hover:not(:focus-visible) {
+  box-shadow: 0 0 0 3px var(--fill-hover);
 }
 
-.tx-account-button__chevron {
-  flex: none;
+.tx-account-button:active:not(:focus-visible),
+.tx-account-button[aria-expanded='true']:not(:focus-visible) {
+  box-shadow: 0 0 0 3px var(--line-strong);
 }
 
 /* Who is signed in, at the top of the account menu. */
@@ -579,6 +650,17 @@ html:has(.tx-drawer[open]) {
   overflow-wrap: anywhere;
 }
 
+/* "Push to screens": the accent pill with a white count. The send icon shows only on a phone. */
+.tx-push-button {
+  --_pad: 18px;
+}
+
+@media (min-width: 480px) {
+  .tx-push-button > .tx-button__icon {
+    display: none;
+  }
+}
+
 /* ---------- Content column ---------- */
 
 .tx-page-main {
@@ -586,7 +668,7 @@ html:has(.tx-drawer[open]) {
   inline-size: 100%;
   max-inline-size: var(--content-max);
   margin-inline: auto;
-  padding: var(--s-6) var(--gutter) var(--s-9);
+  padding: var(--s-3) var(--gutter) var(--s-9);
 }
 
 /* The skip link lands here; a ring around the whole column would say nothing. */
@@ -595,7 +677,7 @@ html:has(.tx-drawer[open]) {
 }
 
 .tx-page-main__notice {
-  margin-block-end: var(--s-4);
+  margin-block-end: var(--s-6);
 }
 
 /* ---------- Narrow screens ---------- */
@@ -621,19 +703,28 @@ html:has(.tx-drawer[open]) {
     flex-basis: calc(100% - 48px);
   }
 
+  .tx-page-header__title {
+    font-size: 28px;
+    line-height: 34px;
+  }
+
+  .tx-page-header__subtitle {
+    font-size: 14px;
+  }
+
   .tx-page-header__actions {
     flex: 0 1 auto;
     flex-wrap: wrap;
   }
 
-  .tx-page-header__actions::after {
-    content: none;
-  }
-
-  /* The organisation label and the global controls keep to the end of the second line. */
+  /* The organisation capsule and the global controls keep to the end of the second line. */
   .tx-org-label,
   .tx-page-header__global {
     margin-inline-start: auto;
+  }
+
+  .tx-org-label + .tx-page-header__global {
+    margin-inline-start: calc(10px - var(--s-4));
   }
 
   /*
@@ -644,6 +735,10 @@ html:has(.tx-drawer[open]) {
    * The account menu is drawn before the actions here but still follows them in the DOM, so
    * focus goes title, actions, account menu, as on a wide screen.
    */
+  .tx-page-header--editor .tx-page-header__inner {
+    align-items: center;
+  }
+
   .tx-page-header--editor .tx-page-header__heading {
     flex: 1 1 0;
   }
@@ -668,14 +763,14 @@ html:has(.tx-drawer[open]) {
   }
 
   .tx-page-main {
-    padding-block-start: var(--s-4);
+    padding-block-start: var(--s-2);
   }
 }
 
 /* On a phone the push button keeps its icon and count; its name stays for assistive technology. */
 @media (max-width: 479px) {
   .tx-push-button {
-    --_pad: 10px;
+    --_pad: 12px;
   }
 
   .tx-push-button__text {
@@ -694,35 +789,47 @@ html:has(.tx-drawer[open]) {
 
   .tx-org-label {
     max-inline-size: 132px;
+    padding-inline: 12px;
+    font-size: 13px;
   }
 }
 
 /* ---------- Screens without the shell: sign-in, session check, route error ---------- */
 
+/* One centred white card on the page grey. */
 .tx-screen {
   display: grid;
   place-items: center;
   min-block-size: 100dvh;
   padding: var(--s-6) var(--s-4);
+  background: var(--bg);
 }
 
 .tx-screen__card {
   display: grid;
   gap: var(--s-4);
-  justify-items: start;
+  justify-items: center;
   inline-size: min(100%, 440px);
-  padding: var(--s-8);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+  padding: var(--s-8) var(--s-8) var(--s-7);
+  border-radius: calc(var(--r-lg) + 4px);
   background: var(--surface);
+  text-align: center;
 }
 
 .tx-screen__card > .tx-wordmark {
-  margin-block-end: var(--s-2);
+  margin-block-end: var(--s-1);
 }
 
 .tx-screen__card > .tx-banner {
   justify-self: stretch;
+  text-align: start;
+}
+
+/* The page title, scaled to the card. */
+.tx-screen__title {
+  font-size: 34px;
+  line-height: 40px;
+  text-wrap: balance;
 }
 
 .tx-screen__text {
@@ -738,15 +845,18 @@ html:has(.tx-drawer[open]) {
 }
 
 .tx-screen__note {
-  justify-self: center;
   color: var(--ink-2);
   font-size: 12px;
   line-height: 16px;
-  text-align: center;
 }
 
 @media (max-width: 479px) {
   .tx-screen__card {
-    padding: var(--s-6);
+    padding: var(--s-7) var(--s-5) var(--s-6);
+  }
+
+  .tx-screen__title {
+    font-size: 28px;
+    line-height: 34px;
   }
 }

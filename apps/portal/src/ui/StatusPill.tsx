@@ -15,7 +15,7 @@ export interface StatusPillProps {
 }
 
 /**
- * A small pill with a leading dot or icon. Screen status wording follows the rule in
+ * A status: a leading 8 px dot (or an icon) and the words in the tone's colour at weight 500. Screen status wording follows the rule in
  * docs/portal-v2/README.md (P2-04): report what the player software last said.
  */
 export function StatusPill({ tone, children, icon, className }: StatusPillProps) {

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TINNOX CMS dashboard, dark</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0}
+a{color:#2997ff}a:hover{color:#6cb8ff}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1000px; background: #000000; color: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased">
+<nav aria-label="Sections" style="flex: 1 1 220px; box-sizing: border-box; padding: 22px 14px; border-right: 1px solid rgba(255,255,255,0.12); display: flex; flex-direction: column; gap: 2px">
+<div style="display: flex; align-items: center; gap: 8px; padding: 4px 10px 18px">
+<span style="font-size: 17px; font-weight: 700; letter-spacing: 0.14em">TINNOX</span>
+<span style="font-size: 11px; font-weight: 600; color: #a1a1a6; background: rgba(255,255,255,0.1); border-radius: 980px; padding: 2px 8px">Prototype</span>
+</div>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; background: rgba(255,255,255,0.1); color: #f5f5f7; text-decoration: none; font-weight: 600"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2997ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"></path></svg>Dashboard</a>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #f5f5f7; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2997ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>Media</a>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #f5f5f7; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2997ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM17 14v6M14 17h6"></path></svg><span style="flex: 1">Apps</span><span style="font-size: 11px; font-weight: 600; color: #a1a1a6; background: rgba(255,255,255,0.1); border-radius: 980px; padding: 2px 8px">Planned</span></a>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #f5f5f7; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2997ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h11M4 12h11M4 18h7M17 13l5 3-5 3z"></path></svg>Playlists</a>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #f5f5f7; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2997ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18v16H3zM3 10h18M10 10v10"></path></svg><span style="flex: 1">Layouts</span><span style="font-size: 11px; font-weight: 600; color: #a1a1a6; background: rgba(255,255,255,0.1); border-radius: 980px; padding: 2px 8px">Planned</span></a>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #f5f5f7; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2997ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v15H4zM4 10h16M8 3v4M16 3v4"></path></svg><span style="flex: 1">Schedules</span><span style="font-size: 11px; font-weight: 600; color: #a1a1a6; background: rgba(255,255,255,0.1); border-radius: 980px; padding: 2px 8px">Planned</span></a>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #f5f5f7; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2997ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18v12H3zM8 20h8M12 16v4"></path></svg>Screens</a>
+<div style="flex: 1; min-height: 24px"></div>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #f5f5f7; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a1a1a6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4"></path></svg>Settings</a>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border-radius: 10px; color: #f5f5f7; text-decoration: none"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a1a1a6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h0M4 12h0M4 18h0"></path></svg>Audit log</a>
+</nav>
+<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 28px 36px 48px; display: flex; flex-direction: column; gap: 24px">
+<header style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px">
+<div>
+<h1 style="margin: 0; font-size: 34px; font-weight: 700; letter-spacing: -0.022em; line-height: 1.15">Dashboard</h1>
+<p style="margin: 4px 0 0; color: #a1a1a6; font-size: 15px">10 screens, as each player last reported.</p>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+<button type="button" style="height: 40px; padding: 0 14px; border: 0; border-radius: 980px; background: rgba(255,255,255,0.1); color: #f5f5f7; font: inherit; font-weight: 500">TINNOX Internal</button>
+<button type="button" aria-label="Account" style="width: 40px; height: 40px; border: 0; border-radius: 50%; background: #2c2c2e; color: #f5f5f7; font: inherit; font-weight: 600">MF</button>
+<button type="button" style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 18px; border: 0; border-radius: 980px; background: #0071e3; color: #ffffff; font: inherit; font-weight: 600">Push to screens<span style="min-width: 20px; height: 20px; border-radius: 980px; background: #ffffff; color: #1d1d1f; font-size: 12px; line-height: 20px; text-align: center">2</span></button>
+</div>
+</header>
+<section aria-label="Screen status" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
+<div style="background: #1c1c1e; border-radius: 20px; padding: 20px 22px">
+<div style="display: flex; align-items: center; gap: 8px; color: #a1a1a6; font-size: 13px; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #30d158"></span>In sync</div>
+<div style="margin-top: 6px; font-size: 44px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1">6</div>
+<div style="color: #a1a1a6; font-size: 13px">As the player last reported</div>
+</div>
+<div style="background: #1c1c1e; border-radius: 20px; padding: 20px 22px">
+<div style="display: flex; align-items: center; gap: 8px; color: #a1a1a6; font-size: 13px; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #2997ff"></span>Updating or waiting</div>
+<div style="margin-top: 6px; font-size: 44px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1">1</div>
+<div style="color: #a1a1a6; font-size: 13px">Downloading or nothing pushed</div>
+</div>
+<div style="background: #1c1c1e; border-radius: 20px; padding: 20px 22px">
+<div style="display: flex; align-items: center; gap: 8px; color: #a1a1a6; font-size: 13px; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #ff453a"></span>Needs attention</div>
+<div style="margin-top: 6px; font-size: 44px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; color: #ff453a">1</div>
+<div style="color: #a1a1a6; font-size: 13px">Error or not reporting</div>
+</div>
+<div style="background: #1c1c1e; border-radius: 20px; padding: 20px 22px">
+<div style="display: flex; align-items: center; gap: 8px; color: #a1a1a6; font-size: 13px; font-weight: 500"><span style="width: 8px; height: 8px; border-radius: 50%; background: #8e8e93"></span>Not paired</div>
+<div style="margin-top: 6px; font-size: 44px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1">2</div>
+<div style="color: #a1a1a6; font-size: 13px">No player paired yet</div>
+</div>
+</section>
+<div style="display: flex; flex-wrap: wrap; gap: 16px">
+<section style="flex: 2 1 480px; min-width: 0; box-sizing: border-box; background: #1c1c1e; border-radius: 20px; padding: 24px 26px">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px">
+<h2 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.01em">Changes waiting</h2>
+<a href="#" style="font-size: 14px; text-decoration: none">Review and push ›</a>
+</div>
+<p style="margin: 4px 0 12px; color: #a1a1a6">Nothing changes on a screen until you push.</p>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-top: 1px solid rgba(255,255,255,0.12)">
+<div style="min-width: 0"><div style="font-size: 15px; font-weight: 500">Reception PC monitor</div><div style="color: #a1a1a6; font-size: 13px">Reception loop · last pushed yesterday</div></div>
+<span style="display: flex; align-items: center; gap: 6px; color: #ff9f0a; font-size: 13px; font-weight: 500; white-space: nowrap"><span style="width: 7px; height: 7px; border-radius: 50%; background: #ff9f0a"></span>Changes waiting</span>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-top: 1px solid rgba(255,255,255,0.12)">
+<div style="min-width: 0"><div style="font-size: 15px; font-weight: 500">Showroom wall</div><div style="color: #a1a1a6; font-size: 13px">Spring range · never pushed</div></div>
+<span style="display: flex; align-items: center; gap: 6px; color: #ff9f0a; font-size: 13px; font-weight: 500; white-space: nowrap"><span style="width: 7px; height: 7px; border-radius: 50%; background: #ff9f0a"></span>Changes waiting</span>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-top: 1px solid rgba(255,255,255,0.12)">
+<div style="min-width: 0"><div style="font-size: 15px; font-weight: 500">Workshop strip</div><div style="color: #a1a1a6; font-size: 13px">Safety notices · the playlist has no items</div></div>
+<span style="display: flex; align-items: center; gap: 6px; color: #ff453a; font-size: 13px; font-weight: 500; white-space: nowrap"><span style="width: 7px; height: 7px; border-radius: 50%; background: #ff453a"></span>Blocked</span>
+</div>
+</section>
+<section style="flex: 1 1 320px; min-width: 0; box-sizing: border-box; background: #1c1c1e; border-radius: 20px; padding: 24px 26px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.01em">Library</h2>
+<div style="display: flex; gap: 12px">
+<a href="#" style="flex: 1; background: #2c2c2e; border-radius: 14px; padding: 14px 16px; color: #f5f5f7; text-decoration: none"><div style="font-size: 28px; font-weight: 600; letter-spacing: -0.02em">47</div><div style="color: #a1a1a6; font-size: 13px">media files</div></a>
+<a href="#" style="flex: 1; background: #2c2c2e; border-radius: 14px; padding: 14px 16px; color: #f5f5f7; text-decoration: none"><div style="font-size: 28px; font-weight: 600; letter-spacing: -0.02em">8</div><div style="color: #a1a1a6; font-size: 13px">playlists</div></a>
+</div>
+<div>
+<div style="display: flex; justify-content: space-between; font-size: 13px; color: #a1a1a6"><span>Storage</span><span>0.6 GB of 5 GB</span></div>
+<div style="margin-top: 8px; height: 6px; border-radius: 980px; background: #2c2c2e"><div style="width: 12%; height: 6px; border-radius: 980px; background: #2997ff"></div></div>
+</div>
+</section>
+</div>
+<section style="background: #1c1c1e; border-radius: 20px; padding: 24px 26px">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px">
+<h2 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.01em">Recent activity</h2>
+<a href="#" style="font-size: 14px; text-decoration: none">Audit log ›</a>
+</div>
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 13px 0; margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.12)"><span>Pushed <strong style="font-weight: 600">Reception loop</strong> to Reception PC monitor</span><span style="color: #a1a1a6; white-space: nowrap">10:04 am</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 13px 0; border-top: 1px solid rgba(255,255,255,0.12)"><span>Edited playlist <strong style="font-weight: 600">Spring range</strong></span><span style="color: #a1a1a6; white-space: nowrap">9:48 am</span></div>
+<div style="display: flex; justify-content: space-between; gap: 12px; padding: 13px 0; border-top: 1px solid rgba(255,255,255,0.12)"><span>Uploaded <strong style="font-weight: 600">spring-poster.png</strong></span><span style="color: #a1a1a6; white-space: nowrap">9:41 am</span></div>
+</section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

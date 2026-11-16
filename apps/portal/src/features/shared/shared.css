@@ -128,7 +128,7 @@
   line-height: 18px;
 }
 
-/* The list box: a hairline frame with rows like menu items. It scrolls by itself. */
+/* The list box: an inset fill (no border) with rows like menu items. It scrolls by itself. */
 .tx-shared-options {
   position: relative;
   display: grid;
@@ -136,11 +136,11 @@
   max-block-size: 232px;
   margin: 0;
   padding: 6px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-md);
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: var(--surface);
+  background: var(--surface-2);
   list-style: none;
 }
 
@@ -167,12 +167,20 @@
 }
 
 .tx-shared-option:hover {
-  background: var(--surface-2);
+  background: var(--surface-3);
 }
 
 /* The option the keyboard is on, while the search field has the focus. */
 .tx-shared-checklist:has(.tx-search__input:focus) .tx-shared-option[data-active] {
-  background: var(--surface-2);
+  background: var(--surface-3);
+}
+
+/* Link-blue text misses 4.5:1 on --surface-3 in dark: a filled "Create" row turns ink. */
+.tx-shared-option--create:hover .tx-shared-option__name,
+.tx-shared-checklist:has(.tx-search__input:focus)
+  .tx-shared-option--create[data-active]
+  .tx-shared-option__name {
+  color: var(--ink);
 }
 
 .tx-shared-checklist:has(.tx-search__input:focus-visible) .tx-shared-option[data-active] {
@@ -193,13 +201,13 @@
   border: 1.5px solid var(--line-control);
   border-radius: var(--r-xs);
   background: var(--surface);
-  color: var(--on-brand);
+  color: var(--on-accent);
 }
 
 .tx-shared-option[data-state='all'] .tx-shared-option__box,
 .tx-shared-option[data-state='some'] .tx-shared-option__box {
-  border-color: var(--brand);
-  background: var(--brand);
+  border-color: var(--accent);
+  background: var(--accent);
 }
 
 .tx-shared-option[aria-disabled='true'] .tx-shared-option__box {
@@ -209,7 +217,7 @@
 .tx-shared-option__box--plain {
   border-color: transparent;
   background: transparent;
-  color: var(--brand);
+  color: var(--link);
 }
 
 .tx-shared-option__name {
@@ -221,7 +229,7 @@
 }
 
 .tx-shared-option--create .tx-shared-option__name {
-  color: var(--brand);
+  color: var(--link);
   font-weight: 600;
 }
 
@@ -350,7 +358,7 @@
   gap: 6px;
   min-inline-size: 0;
   padding: var(--s-3) var(--s-4) var(--s-4);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-md);
   background: var(--surface-2);
 }
@@ -411,12 +419,22 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/*
+ * Rows sit on the dialog's white surface. Hover and the chosen row step to --surface-2, not to
+ * --surface-3: a row can carry status words in --danger or --warn, which miss 4.5:1 on
+ * --surface-3. The chosen row is marked by its radio dot or tick and a semibold title, never
+ * by the fill alone.
+ */
 .tx-shared-pickrow:hover {
   background: var(--surface-2);
 }
 
 .tx-shared-pickrow:has(input:checked) {
   background: var(--surface-2);
+}
+
+.tx-shared-pickrow:has(input:checked) .tx-shared-pickrow__title {
+  font-weight: 600;
 }
 
 .tx-shared-pickrow--disabled,
@@ -490,7 +508,8 @@
 .tx-shared-pickrow__title {
   overflow: hidden;
   color: var(--ink);
-  font-weight: 600;
+  font: 500 15px/20px var(--font-body);
+  letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -540,7 +559,7 @@
 }
 
 .tx-shared-radio__input:checked {
-  border-color: var(--brand);
+  border-color: var(--accent);
 }
 
 .tx-shared-radio__input:disabled {
@@ -553,7 +572,7 @@
   inline-size: 8px;
   block-size: 8px;
   border-radius: 50%;
-  background: var(--brand);
+  background: var(--accent);
   opacity: 0;
   pointer-events: none;
 }

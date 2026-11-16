@@ -172,6 +172,8 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
               onReloadAssigned={assigned.reload}
               onAssigned={changed}
             />
+          </div>
+          <div className="tx-screen-detail__tabs">
             <ScreenTabs
               tab={tab}
               onTab={selectTab}

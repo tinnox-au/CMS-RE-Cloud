@@ -1,15 +1,17 @@
 /*
- * Self-hosted variable fonts (SIL Open Font License), bundled from the @fontsource-variable
- * packages and served from the portal's own origin. Only the Latin and Latin Extended
- * subsets are referenced, so the build carries four files instead of the packages' twenty;
- * the browser downloads a subset only when a page uses a character from its range.
+ * The portal uses one family: the system face first (San Francisco on Apple devices), then
+ * self-hosted Inter Variable (SIL Open Font License) on everything else. Inter is bundled from
+ * @fontsource-variable/inter and served from the portal's own origin. Only the Latin and Latin
+ * Extended subsets are referenced, so the build carries two files instead of the package's
+ * full set; the browser downloads a subset only when a page uses a character from its range, and
+ * not at all where the system face comes first in `--font-body` and is present.
  *
  * `font-display: swap` shows text at once in a fallback and swaps when the file arrives. So
  * that the swap does not move anything, the fallback is a local Arial (or a font with the
- * same metrics) resized to the web font's average character width and given its ascent and
- * descent: the "Fallback" faces at the end of this file, which come right after the web font
- * in `--font-body` and `--font-head`. The numbers were measured against the bundled files.
- * Where no such local font exists the face is skipped and the system fonts after it are used.
+ * same metrics) resized to Inter's average character width and given its ascent and descent:
+ * the "Inter Fallback" faces at the end of this file, which come right after Inter in
+ * `--font-body`. The numbers were measured against the bundled files. Where no such local
+ * font exists the face is skipped and the fonts after it are used.
  */
 
 @font-face {
@@ -30,31 +32,6 @@
   font-display: swap;
   font-weight: 100 900;
   src: url('@fontsource-variable/inter/files/inter-latin-ext-wght-normal.woff2')
-    format('woff2-variations');
-  unicode-range:
-    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
-    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
-    U+A720-A7FF;
-}
-
-@font-face {
-  font-family: 'Manrope Variable';
-  font-style: normal;
-  font-display: swap;
-  font-weight: 200 800;
-  src: url('@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2')
-    format('woff2-variations');
-  unicode-range:
-    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
-    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: 'Manrope Variable';
-  font-style: normal;
-  font-display: swap;
-  font-weight: 200 800;
-  src: url('@fontsource-variable/manrope/files/manrope-latin-ext-wght-normal.woff2')
     format('woff2-variations');
   unicode-range:
     U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
@@ -86,18 +63,5 @@
   size-adjust: 101%;
   ascent-override: 96%;
   descent-override: 23.8%;
-  line-gap-override: 0%;
-}
-
-/* Manrope is used for headings only, at 700 and 800: the width of Arial Bold. */
-@font-face {
-  font-family: 'Manrope Fallback';
-  font-style: normal;
-  font-weight: 200 800;
-  src:
-    local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('Arimo Bold');
-  size-adjust: 100.5%;
-  ascent-override: 106.5%;
-  descent-override: 29.9%;
   line-gap-override: 0%;
 }

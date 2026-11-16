@@ -6,9 +6,31 @@ import { cx, Icon, StatusPill } from '../../../ui/index.ts';
 import './mediaLibrary.css';
 
 /**
+ * An API error code as text that keeps whole where it fits and, only where it cannot, breaks
+ * after an underscore ("unsupported_" then "codec") rather than in the middle of a word.
+ */
+export function ErrorCodeText({ code }: { readonly code: string }) {
+  const parts = code.split('_');
+  return (
+    <span className="tx-media-library__failure-code">
+      {parts.map((part, index) =>
+        index < parts.length - 1 ? (
+          <span key={index}>
+            {part}_<wbr />
+          </span>
+        ) : (
+          <span key={index}>{part}</span>
+        ),
+      )}
+    </span>
+  );
+}
+
+/**
  * Why a file failed the server's check, as M0's `MediaFailure` says it: the explanation from
- * the shared message table, the API error code as text, and what the inspection added.
- * Renders nothing for a file that has not failed.
+ * the shared message table on one caption line in the danger colour, then a quieter line with
+ * the API error code as text and what the inspection added. Renders nothing for a file that
+ * has not failed.
  *
  * `compact` is for a grid tile: the explanation is cut to two lines on screen (assistive
  * technology still reads all of it), the code keeps its own line and the inspection detail is
@@ -26,36 +48,33 @@ export function MediaFailureNote({
 }) {
   const failure = mediaFailureText(media);
   if (failure === null) return null;
-  if (compact) {
-    return (
-      <span
-        className={cx('tx-media-library__failure', 'tx-media-library__failure--compact', className)}
-        data-testid="media-library-failure"
-      >
-        <span className="tx-media-library__failure-message">{failure.message}</span>
-        {failure.code !== null && (
-          <>
-            {' '}
-            <span className="tx-code">{failure.code}</span>
-          </>
-        )}
-      </span>
-    );
-  }
+  const detail = compact ? null : failure.detail;
   return (
     <span
-      className={cx('tx-media-library__failure', className)}
+      className={cx(
+        'tx-media-library__failure',
+        compact && 'tx-media-library__failure--compact',
+        className,
+      )}
       data-testid="media-library-failure"
     >
-      {failure.message}
-      {failure.code !== null && (
-        <>
-          {' '}
-          <span className="tx-code">{failure.code}</span>
-        </>
-      )}
-      {failure.detail !== null && (
-        <span className="tx-media-library__failure-detail"> {failure.detail}</span>
+      <span className="tx-media-library__failure-message">{failure.message}</span>
+      {(failure.code !== null || detail !== null) && (
+        <span className="tx-media-library__failure-meta">
+          {failure.code !== null && (
+            // The dot stays with the code, so a wrapped detail never starts with it.
+            <span className="tx-media-library__failure-group">
+              {' '}
+              <ErrorCodeText code={failure.code} />
+              {detail !== null && (
+                <span className="tx-media-library__failure-dot" aria-hidden="true">
+                  {' ·'}
+                </span>
+              )}
+            </span>
+          )}
+          {detail !== null && <span className="tx-media-library__failure-detail"> {detail}</span>}
+        </span>
       )}
     </span>
   );

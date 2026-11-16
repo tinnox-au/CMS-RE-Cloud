@@ -37,7 +37,7 @@ export function DetailsCard({
           <>Last saved {formatTimestamp(saved.updatedAt)}. Saving replaces the whole sequence.</>
         }
       />
-      <div className="tx-form-section--rows tx-playlist-editor__fields">
+      <div className="tx-playlist-editor__fields">
         <Field label="Playlist name" error={errors.name ?? undefined} required>
           {(control) => (
             <TextInput
@@ -65,7 +65,7 @@ export function DetailsCard({
             <Textarea
               {...control}
               ref={descriptionRef}
-              rows={2}
+              rows={3}
               value={draft.description}
               maxLength={ABSOLUTE.maxDescriptionLength}
               data-testid="playlist-editor-description"

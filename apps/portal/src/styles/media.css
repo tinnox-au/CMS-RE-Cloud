@@ -22,10 +22,12 @@
   aspect-ratio: 4 / 3;
 }
 
-/* Fixed sizes for rows: 44 px in a table, 72 px in a details header. */
+/* Fixed sizes for rows: 44 px in a table, 72 px in a details header. The small one is rounded
+   a little less so its corners do not eat the picture. */
 .tx-thumb--sm {
   inline-size: 44px;
   aspect-ratio: 1;
+  border-radius: var(--r-sm);
 }
 
 .tx-thumb--md {
@@ -88,7 +90,7 @@
   place-items: center;
   inline-size: 24px;
   block-size: 24px;
-  border-radius: 8px;
+  border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--ink) 78%, transparent);
   color: var(--surface);
 }
@@ -203,7 +205,7 @@
 
 .tx-meter {
   display: grid;
-  gap: 6px;
+  gap: var(--s-2);
   min-inline-size: 0;
 }
 
@@ -226,6 +228,7 @@
   white-space: nowrap;
 }
 
+/* A 6 px track in the neutral fill (#ebebf0 light, darker in dark so the accent keeps 3:1). */
 .tx-meter__track {
   block-size: 6px;
   border-radius: var(--r-pill);
@@ -237,7 +240,7 @@
   inline-size: calc(var(--tx-meter, 0) * 100%);
   block-size: 100%;
   border-radius: inherit;
-  background: var(--brand);
+  background: var(--accent);
   transition: inline-size var(--t-slow) var(--ease);
 }
 

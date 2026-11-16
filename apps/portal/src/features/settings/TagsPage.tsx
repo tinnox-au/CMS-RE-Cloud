@@ -34,6 +34,7 @@ import {
 import {
   Breadcrumb,
   Button,
+  Card,
   Chip,
   cx,
   DataTable,
@@ -260,11 +261,13 @@ export function TagsPage() {
     );
   } else if (state.status === 'ready' && scopeTags.length === 0) {
     panel = (
-      <EmptyState icon={Tags} title={`No ${words.tag}s yet`} action={newButton('lg')} level={3}>
-        {scope === 'media'
-          ? 'Media tags label files in the library, so they can be found and filtered.'
-          : 'Screen tags label screens, so a group of them can be found and filtered.'}
-      </EmptyState>
+      <Card flush>
+        <EmptyState icon={Tags} title={`No ${words.tag}s yet`} action={newButton('lg')} level={3}>
+          {scope === 'media'
+            ? 'Media tags label files in the library, so they can be found and filtered.'
+            : 'Screen tags label screens, so a group of them can be found and filtered.'}
+        </EmptyState>
+      </Card>
     );
   } else {
     const searching = query.trim() !== '';

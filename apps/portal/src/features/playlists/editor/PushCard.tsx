@@ -11,13 +11,12 @@ import {
   pushSummary,
   rowsForPlaylist,
 } from '../../../lib/playlistEditor.ts';
-import { Monitor, Plus, Send } from '../../../ui/icons.ts';
+import { Plus, Send } from '../../../ui/icons.ts';
 import {
   Button,
   Card,
   CardHeader,
   ErrorNotice,
-  Icon,
   Skeleton,
   SkeletonGroup,
   Tooltip,
@@ -148,9 +147,6 @@ export function PushCard({ playlist, dirty }: PushCardProps) {
                 data-state={row.state}
                 data-testid={`playlist-editor-push-row-${row.display.id}`}
               >
-                <span className="tx-playlist-editor-push__icon">
-                  <Icon icon={Monitor} size={18} />
-                </span>
                 <span className="tx-playlist-editor-push__text">
                   <Link
                     className="tx-playlist-editor-push__name tx-break"
@@ -158,25 +154,24 @@ export function PushCard({ playlist, dirty }: PushCardProps) {
                   >
                     {row.display.name}
                   </Link>
-                  {/* Under the name, so a long name keeps the width of the narrow card. */}
-                  <span className="tx-playlist-editor-push__state">
-                    <PushStatePill state={row.state} />
+                  <span className="tx-playlist-editor-push__meta">
+                    {row.lastPushedAt === null
+                      ? 'Never pushed'
+                      : `Last pushed ${formatTimestamp(row.lastPushedAt)}`}
                   </span>
-                  {row.lastPushedAt !== null && (
-                    <span className="tx-playlist-editor-push__meta">
-                      Last pushed {formatTimestamp(row.lastPushedAt)}
-                    </span>
-                  )}
-                  {row.state === 'blocked' && row.issues.length > 0 && (
-                    <ul className="tx-playlist-editor-push__issues">
-                      {row.issues.map((issue, index) => (
-                        <li key={index}>
-                          {issue.message} <span className="tx-code">{issue.code}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </span>
+                <span className="tx-playlist-editor-push__state">
+                  <PushStatePill state={row.state} />
+                </span>
+                {row.state === 'blocked' && row.issues.length > 0 && (
+                  <ul className="tx-playlist-editor-push__issues">
+                    {row.issues.map((issue, index) => (
+                      <li key={index}>
+                        {issue.message} <span className="tx-code">{issue.code}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             ))}
           </ul>
@@ -188,7 +183,7 @@ export function PushCard({ playlist, dirty }: PushCardProps) {
 
         <div className="tx-playlist-editor-push__actions">
           <Button
-            variant="ghost"
+            variant="secondary"
             icon={Plus}
             onClick={() => {
               setFailures(null);

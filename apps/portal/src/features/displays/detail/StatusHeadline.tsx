@@ -2,7 +2,7 @@ import type { DeliveryStatusView } from '@tinnox/contracts';
 import { formatTimestamp } from '../../../lib/format.ts';
 import { screenStatus } from '../../../lib/screenStatus.ts';
 import { StatusPill } from '../../../ui/index.ts';
-import { SCREEN_STATUS_ICONS, useNow } from '../../shared/index.ts';
+import { useNow } from '../../shared/index.ts';
 
 export interface StatusHeadlineProps {
   readonly view: DeliveryStatusView;
@@ -11,7 +11,7 @@ export interface StatusHeadlineProps {
 }
 
 /**
- * The status headline of a screen: the pill in the approved wording, the M0 report badge
+ * The status headline of a screen: the status (dot and words) in the approved wording, the M0 report badge
  * (`STALE`, `NO REPORT`, both from the API's flag), what the status means, and when the player
  * last reported. It carries the M0 test hooks: `data-testid="status-headline"` with
  * `data-summary` and `data-stale` exactly as the API sent them.
@@ -28,9 +28,7 @@ export function StatusHeadline({ view, fetchedAt }: StatusHeadlineProps) {
       data-kind={status.kind}
     >
       <p className="tx-screen-detail-headline__pills">
-        <StatusPill tone={status.tone} icon={SCREEN_STATUS_ICONS[status.kind]}>
-          {status.label}
-        </StatusPill>
+        <StatusPill tone={status.tone}>{status.label}</StatusPill>
         {status.reportBadge === 'stale' && <span className="tx-screen-detail-badge">STALE</span>}
         {status.reportBadge === 'no_report' && (
           <span className="tx-screen-detail-badge">NO REPORT</span>

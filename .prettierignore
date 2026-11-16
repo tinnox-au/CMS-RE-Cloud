@@ -10,3 +10,5 @@ infra/.generated
 docs
 *.md
 db/migrations
+# approved restyle mockups: kept byte for byte as the client approved them
+docs/portal-v2/restyle-mockups/

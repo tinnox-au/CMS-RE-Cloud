@@ -14,19 +14,27 @@ const COLOUR_GROUPS: readonly { readonly title: string; readonly tokens: readonl
     {
       title: 'Surfaces',
       tokens: [
-        { name: '--bg', use: 'Page background' },
+        { name: '--bg', use: 'Page background, sidebar' },
         { name: '--surface', use: 'Cards, tables, dialogs, inputs' },
-        { name: '--surface-2', use: 'Hover rows, soft fills' },
-        { name: '--surface-3', use: 'Pressed, selected chips' },
-        { name: '--neutral-bg', use: 'Neutral pills, skeletons' },
-        { name: '--glass', use: 'Sidebar and sticky header' },
+        { name: '--surface-2', use: 'Inset fill inside a card, hover rows' },
+        { name: '--surface-3', use: 'Control fill: search, segmented track' },
+        { name: '--neutral-bg', use: 'Skeletons, meter tracks' },
+        { name: '--glass', use: 'Sticky header' },
         { name: '--scrim', use: 'Dialog backdrop' },
+      ],
+    },
+    {
+      title: 'Fills',
+      tokens: [
+        { name: '--fill', use: 'Secondary button, code, selected row' },
+        { name: '--fill-hover', use: 'Hover of the above' },
+        { name: '--fill-disabled', use: 'Disabled button' },
       ],
     },
     {
       title: 'Lines',
       tokens: [
-        { name: '--line', use: 'Hairlines, card borders' },
+        { name: '--line', use: 'Hairlines between rows' },
         { name: '--line-strong', use: 'Dividers that must show' },
         { name: '--line-control', use: 'Input and checkbox boundaries' },
       ],
@@ -40,12 +48,16 @@ const COLOUR_GROUPS: readonly { readonly title: string; readonly tokens: readonl
       ],
     },
     {
-      title: 'Brand',
+      title: 'Accent',
       tokens: [
-        { name: '--brand', use: 'Primary buttons, links, selection' },
-        { name: '--brand-hover', use: 'Hover of the above' },
-        { name: '--on-brand', use: 'Text on a brand fill' },
-        { name: '--focus', use: 'Focus ring' },
+        { name: '--accent', use: 'Filled controls: primary button, checked box' },
+        { name: '--accent-hover', use: 'Hover of a filled control' },
+        { name: '--on-accent', use: 'Text on an accent fill' },
+        { name: '--link', use: 'Links, text buttons, active icons' },
+        { name: '--link-hover', use: 'Hover of a link' },
+        { name: '--nav-icon', use: 'Sidebar section icons' },
+        { name: '--focus', use: 'Focus ring, focused field border' },
+        { name: '--focus-halo', use: 'Soft ring around a focused field' },
       ],
     },
     {
@@ -53,10 +65,15 @@ const COLOUR_GROUPS: readonly { readonly title: string; readonly tokens: readonl
       tokens: [
         { name: '--ok', use: 'Ready, in sync, success' },
         { name: '--ok-bg', use: 'Its tint' },
+        { name: '--ok-hover', use: 'A switch that is on, hovered' },
         { name: '--warn', use: 'Processing, attention' },
         { name: '--warn-bg', use: 'Its tint' },
         { name: '--danger', use: 'Errors, destructive actions' },
-        { name: '--danger-bg', use: 'Its tint' },
+        { name: '--danger-bg', use: 'Its tint, destructive button fill' },
+        { name: '--on-danger', use: 'Text on a danger fill' },
+        { name: '--danger-text-hover', use: 'Destructive text button, hovered' },
+        { name: '--danger-solid-hover', use: 'Filled destructive button, hovered' },
+        { name: '--chip-pressed-hover', use: 'A pressed chip, hovered' },
       ],
     },
     {
@@ -79,26 +96,51 @@ interface PairInfo {
 const CONTRAST_PAIRS: readonly PairInfo[] = [
   { fore: '--ink', back: '--bg', use: 'Body text on the page', needs: 4.5 },
   { fore: '--ink', back: '--surface', use: 'Body text on a card', needs: 4.5 },
-  { fore: '--ink', back: '--surface-3', use: 'Selected chip', needs: 4.5 },
-  { fore: '--ink-2', back: '--bg', use: 'Table header on the page', needs: 4.5 },
-  { fore: '--ink-2', back: '--surface', use: 'Secondary text, placeholder', needs: 4.5 },
+  { fore: '--ink', back: '--surface-3', use: 'Text on a control fill', needs: 4.5 },
+  {
+    fore: '--ink',
+    back: '--fill',
+    use: 'Secondary button, selected sidebar row, code',
+    needs: 4.5,
+  },
+  { fore: '--ink-2', back: '--bg', use: 'Secondary text on the page', needs: 4.5 },
+  { fore: '--ink-2', back: '--surface', use: 'Secondary text, table header', needs: 4.5 },
   { fore: '--ink-2', back: '--surface-2', use: 'Secondary text on a hovered row', needs: 4.5 },
-  { fore: '--ink-2', back: '--neutral-bg', use: 'Neutral status pill', needs: 4.5 },
-  { fore: '--brand', back: '--surface', use: 'Link', needs: 4.5 },
-  { fore: '--brand', back: '--surface-2', use: 'Active navigation item', needs: 4.5 },
-  { fore: '--on-brand', back: '--brand', use: 'Primary button', needs: 4.5 },
-  { fore: '--on-brand', back: '--danger', use: 'Confirming a destructive action', needs: 4.5 },
-  { fore: '--ok', back: '--ok-bg', use: 'Status pill, ok', needs: 4.5 },
-  { fore: '--warn', back: '--warn-bg', use: 'Status pill, attention', needs: 4.5 },
-  { fore: '--danger', back: '--danger-bg', use: 'Status pill, error', needs: 4.5 },
+  {
+    fore: '--ink-2',
+    back: '--surface-3',
+    use: 'Search placeholder, capsule, clear disc',
+    needs: 4.5,
+  },
+  { fore: '--ink-2', back: '--fill', use: 'Secondary text on a fill', needs: 4.5 },
+  { fore: '--link', back: '--surface', use: 'Link, text button', needs: 4.5 },
+  { fore: '--link', back: '--bg', use: 'Link on the page', needs: 4.5 },
+  { fore: '--on-accent', back: '--accent', use: 'Primary button', needs: 4.5 },
+  { fore: '--on-accent', back: '--accent-hover', use: 'Primary button, hovered', needs: 4.5 },
+  { fore: '--on-danger', back: '--danger', use: 'Confirming a destructive action', needs: 4.5 },
+  { fore: '--ok', back: '--surface', use: 'Status text, ok', needs: 4.5 },
+  { fore: '--warn', back: '--surface', use: 'Status text, attention', needs: 4.5 },
+  { fore: '--danger', back: '--surface', use: 'Status text, error', needs: 4.5 },
+  { fore: '--danger', back: '--danger-bg', use: 'Destructive button, error banner', needs: 4.5 },
   { fore: '--surface', back: '--ink', use: 'Tooltip', needs: 4.5 },
   { fore: '--focus', back: '--surface', use: 'Focus ring on a card', needs: 3 },
   { fore: '--focus', back: '--bg', use: 'Focus ring on the page', needs: 3 },
-  { fore: '--focus', back: '--surface-3', use: 'Focus ring on a pressed fill', needs: 3 },
-  { fore: '--line-control', back: '--surface', use: 'Input boundary on a card', needs: 3 },
+  { fore: '--focus', back: '--surface-3', use: 'Focus ring on a control fill', needs: 3 },
+  {
+    fore: '--line-control',
+    back: '--surface',
+    use: 'Input and small select boundary on a card',
+    needs: 3,
+  },
   { fore: '--line-control', back: '--bg', use: 'Input boundary on the page', needs: 3 },
-  { fore: '--line-control', back: '--surface-2', use: 'Segmented thumb boundary', needs: 3 },
-  { fore: '--brand', back: '--neutral-bg', use: 'Meter fill on its track', needs: 3 },
+  { fore: '--accent', back: '--neutral-bg', use: 'Meter fill on its track', needs: 3 },
+  { fore: '--nav-icon', back: '--bg', use: 'Sidebar section icon', needs: 3 },
+  {
+    fore: '--on-danger',
+    back: '--danger-solid-hover',
+    use: 'Destructive confirm, hovered',
+    needs: 4.5,
+  },
 ];
 
 const ALL_TOKENS = Array.from(
@@ -245,50 +287,56 @@ const TYPE_STYLES: readonly {
   readonly sample: string;
 }[] = [
   {
-    name: 'Display',
-    spec: 'Manrope 700, 32 / 38, -0.02em',
-    className: 'tx-display',
-    sample: 'No screens yet',
+    name: 'Numeral',
+    spec: '600, 44 / 48, -0.03em, tabular',
+    className: 'tx-numeral',
+    sample: '128',
   },
   {
     name: 'Page title',
-    spec: 'Manrope 700, 26 / 32, -0.02em',
+    spec: '700, 34 / 40, -0.022em (also tx-display)',
     className: 'tx-h1',
     sample: 'Media library',
   },
   {
-    name: 'Section title',
-    spec: 'Manrope 700, 18 / 24, -0.01em',
+    name: 'Card title',
+    spec: '600, 21 / 28, -0.01em',
     className: 'tx-h2',
     sample: 'Changes waiting',
   },
   {
-    name: 'Card title',
-    spec: 'Inter 600, 15 / 20, -0.01em',
+    name: 'Heading',
+    spec: '600, 15 / 20, -0.01em',
     className: 'tx-h3',
     sample: 'Assigned content',
   },
   {
+    name: 'Row title',
+    spec: '500, 15 / 20, -0.01em',
+    className: 'tx-row-title',
+    sample: 'Reception PC monitor',
+  },
+  {
     name: 'Body',
-    spec: 'Inter 400, 14 / 20, -0.005em',
+    spec: '400, 14 / 20, -0.005em',
     className: 'tx-body',
     sample: 'Editing or assigning changes nothing on a screen until it is pushed.',
   },
   {
     name: 'Body strong',
-    spec: 'Inter 600, 14 / 20, -0.005em',
+    spec: '600, 14 / 20, -0.005em',
     className: 'tx-body tx-strong',
     sample: 'Foyer welcome loop',
   },
   {
-    name: 'Small',
-    spec: 'Inter 400, 13 / 18',
-    className: 'tx-small',
+    name: 'Caption',
+    spec: '400, 13 / 18 (tx-small; with tx-muted for secondary text)',
+    className: 'tx-small tx-muted',
     sample: 'Last report 12 seconds ago',
   },
   {
-    name: 'Caption',
-    spec: 'Inter 600, 12 / 16, 0.02em, ink-2',
+    name: 'Label',
+    spec: '600, 12 / 16, ink-2 (tx-caption: group labels, table headers)',
     className: 'tx-caption',
     sample: 'Modified',
   },
@@ -311,7 +359,7 @@ export function TypographySection() {
     <Section
       id="type"
       title="Typography"
-      lead="Manrope for headings, Inter for everything else. Both are variable fonts served from the portal's own origin."
+      lead="One family: the system typeface (San Francisco on Apple devices), and self-hosted Inter, served from the portal's own origin, everywhere else."
     >
       <Demo title="Scale" layout="stack">
         <dl className="tx-sg-type">

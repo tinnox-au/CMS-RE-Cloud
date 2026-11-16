@@ -69,6 +69,7 @@ import {
   useToast,
   type DataTableColumn,
 } from '../../../ui/index.ts';
+import { Page } from '../../../shell/Page.tsx';
 import { usePush } from '../../push/PushContext.tsx';
 import {
   PlaylistPickerDialog,
@@ -414,7 +415,7 @@ export function ScreensList() {
   };
 
   const siteCell = (row: ScreenRow) => {
-    if (row.siteName !== null) return row.siteName;
+    if (row.siteName !== null) return <span className="tx-muted">{row.siteName}</span>;
     if (sites.status === 'loading') return <Skeleton width="96px" />;
     return <span className="tx-muted">Not loaded</span>;
   };
@@ -467,7 +468,7 @@ export function ScreensList() {
       sortable: true,
       numeric: true,
       priority: 4,
-      cell: (row) => canvasLabel(row.display),
+      cell: (row) => <span className="tx-muted">{canvasLabel(row.display)}</span>,
     },
     {
       id: 'tags',
@@ -482,11 +483,13 @@ export function ScreensList() {
 
   if (displays.status === 'error') {
     return (
-      <ErrorNotice
-        error={displays.error}
-        title="The screens could not be loaded"
-        onRetry={reloadDisplays}
-      />
+      <Page title="Screens">
+        <ErrorNotice
+          error={displays.error}
+          title="The screens could not be loaded"
+          onRetry={reloadDisplays}
+        />
+      </Page>
     );
   }
 
@@ -496,32 +499,34 @@ export function ScreensList() {
 
   if (!loading && rows.length === 0) {
     return (
-      <div className="tx-stack" data-testid="screens-empty">
-        {displays.refreshError !== null && (
-          <ErrorNotice
-            error={displays.refreshError}
-            title="The list could not be refreshed"
-            onRetry={reloadDisplays}
-          />
-        )}
-        <EmptyState
-          icon={Monitor}
-          title="No screens yet"
-          action={
-            <ButtonLink
-              variant="primary"
-              size="lg"
-              to="/screens/new"
-              icon={Plus}
-              data-testid="screens-add"
-            >
-              Add screen
-            </ButtonLink>
-          }
-        >
-          Add a screen to set its canvas, pair its player, and assign a playlist to it.
-        </EmptyState>
-      </div>
+      <Page title="Screens">
+        <div className="tx-stack" data-testid="screens-empty">
+          {displays.refreshError !== null && (
+            <ErrorNotice
+              error={displays.refreshError}
+              title="The list could not be refreshed"
+              onRetry={reloadDisplays}
+            />
+          )}
+          <EmptyState
+            icon={Monitor}
+            title="No screens yet"
+            action={
+              <ButtonLink
+                variant="primary"
+                size="lg"
+                to="/screens/new"
+                icon={Plus}
+                data-testid="screens-add"
+              >
+                Add screen
+              </ButtonLink>
+            }
+          >
+            Add a screen to set its canvas, pair its player, and assign a playlist to it.
+          </EmptyState>
+        </div>
+      </Page>
     );
   }
 
@@ -566,343 +571,376 @@ export function ScreensList() {
   );
 
   const countText = loading
-    ? 'Loading'
+    ? 'Loading screens'
     : filtering
-      ? `${list.matched.length} of ${countLabel(list.total, 'screen')}`
-      : countLabel(list.total, 'screen');
+      ? `${list.matched.length} of ${countLabel(list.total, 'screen')}, as each player last reported.`
+      : `${countLabel(list.total, 'screen')}, as each player last reported.`;
 
   return (
-    <div className="tx-stack tx-screens">
-      {displays.status === 'ready' && displays.refreshError !== null && (
-        <ErrorNotice
-          error={displays.refreshError}
-          title="The list could not be refreshed"
-          onRetry={reloadDisplays}
-        />
-      )}
-      {statuses.status === 'error' && (
-        <div data-testid="screens-status-error">
+    <Page
+      title="Screens"
+      subtitle={
+        <span aria-live="polite" data-testid="screens-count">
+          {countText}
+        </span>
+      }
+      actions={
+        <ButtonLink
+          variant="secondary"
+          to="/screens/new"
+          icon={Plus}
+          className="tx-screens-add"
+          title="Add screen"
+          data-testid="screens-add"
+        >
+          {/* Under 1100 px only the icon shows; the name stays for assistive technology. */}
+          <span className="tx-screens-add__label">Add screen</span>
+        </ButtonLink>
+      }
+    >
+      <div className="tx-stack tx-screens">
+        {displays.status === 'ready' && displays.refreshError !== null && (
           <ErrorNotice
-            error={statuses.error}
-            title="The status of the screens could not be loaded"
+            error={displays.refreshError}
+            title="The list could not be refreshed"
+            onRetry={reloadDisplays}
+          />
+        )}
+        {statuses.status === 'error' && (
+          <div data-testid="screens-status-error">
+            <ErrorNotice
+              error={statuses.error}
+              title="The status of the screens could not be loaded"
+              onRetry={reloadStatuses}
+            />
+          </div>
+        )}
+        {statuses.status === 'ready' && statuses.refreshError !== null && (
+          <PartialNotice
+            testId="screens-status-stale"
+            title="The status could not be refreshed"
+            note="The list shows what was last received, and the age of each report keeps counting."
+            error={statuses.refreshError}
             onRetry={reloadStatuses}
           />
-        </div>
-      )}
-      {statuses.status === 'ready' && statuses.refreshError !== null && (
-        <PartialNotice
-          testId="screens-status-stale"
-          title="The status could not be refreshed"
-          note="The list shows what was last received, and the age of each report keeps counting."
-          error={statuses.refreshError}
-          onRetry={reloadStatuses}
-        />
-      )}
-      {sites.status === 'error' && (
-        <PartialNotice
-          testId="screens-sites-error"
-          title="The sites could not be loaded"
-          note="The screens are listed without their site."
-          error={sites.error}
-          onRetry={reloadSites}
-        />
-      )}
-      {planError !== null && (
-        <PartialNotice
-          testId="screens-plan-error"
-          title="The push state could not be read"
-          note="The Content column may not show which screens have changes waiting."
-          error={planError}
-          onRetry={refreshPush}
-        />
-      )}
-      {assignFailure !== null && (
-        <AssignFailureNotice
-          failure={assignFailure}
-          retrying={assignRetrying}
-          onRetry={retryAssign}
-          onDismiss={() => {
-            setAssignFailure(null);
-          }}
-        />
-      )}
-      {revokeError !== null && (
-        <ErrorNotice
-          error={revokeError.error}
-          title={`The player of ${revokeError.name} was not revoked`}
-          onDismiss={() => {
-            setRevokeError(null);
-          }}
-        />
-      )}
-      {revokeOutcome !== null && (
-        <div data-testid="screens-revoke-result">
-          <Banner
-            tone="info"
-            live="polite"
-            title={revokeOutcome.name}
-            onDismiss={() => {
-              setRevokeOutcome(null);
-            }}
-          >
-            <p>
-              {revokeOutcome.revoked
-                ? 'The player credential was revoked. That player can no longer fetch manifests or media. Content it already cached stays on the device until it is reset there.'
-                : 'This screen had no active player credential. Nothing was changed.'}
-            </p>
-          </Banner>
-        </div>
-      )}
-
-      <div className="tx-filter-row">
-        <div className="tx-filter-row__filters">
-          <SearchField
-            label="Search screens"
-            value={query}
-            onChange={(next) => {
-              setQuery(next);
-              setPage(1);
-            }}
-            data-testid="screens-search"
+        )}
+        {sites.status === 'error' && (
+          <PartialNotice
+            testId="screens-sites-error"
+            title="The sites could not be loaded"
+            note="The screens are listed without their site."
+            error={sites.error}
+            onRetry={reloadSites}
           />
-          <div
-            className="tx-cluster"
-            role="group"
-            aria-label="Filter by status"
-            data-testid="screens-status-filter"
-          >
-            {SCREEN_STATUS_FILTERS.map((value) => (
-              <span
-                key={value}
-                className="tx-screens-chip"
-                title={SCREEN_STATUS_FILTER_HINTS[value]}
-                data-testid={`screens-status-${value.replace('_', '-')}`}
-              >
+        )}
+        {planError !== null && (
+          <PartialNotice
+            testId="screens-plan-error"
+            title="The push state could not be read"
+            note="The Content column may not show which screens have changes waiting."
+            error={planError}
+            onRetry={refreshPush}
+          />
+        )}
+        {assignFailure !== null && (
+          <AssignFailureNotice
+            failure={assignFailure}
+            retrying={assignRetrying}
+            onRetry={retryAssign}
+            onDismiss={() => {
+              setAssignFailure(null);
+            }}
+          />
+        )}
+        {revokeError !== null && (
+          <ErrorNotice
+            error={revokeError.error}
+            title={`The player of ${revokeError.name} was not revoked`}
+            onDismiss={() => {
+              setRevokeError(null);
+            }}
+          />
+        )}
+        {revokeOutcome !== null && (
+          <div data-testid="screens-revoke-result">
+            <Banner
+              tone="info"
+              live="polite"
+              title={revokeOutcome.name}
+              onDismiss={() => {
+                setRevokeOutcome(null);
+              }}
+            >
+              <p>
+                {revokeOutcome.revoked
+                  ? 'The player credential was revoked. That player can no longer fetch manifests or media. Content it already cached stays on the device until it is reset there.'
+                  : 'This screen had no active player credential. Nothing was changed.'}
+              </p>
+            </Banner>
+          </div>
+        )}
+
+        <div className="tx-filter-row">
+          <div className="tx-filter-row__filters">
+            <SearchField
+              label="Search screens"
+              value={query}
+              onChange={(next) => {
+                setQuery(next);
+                setPage(1);
+              }}
+              data-testid="screens-search"
+            />
+            <div
+              className="tx-screens-status"
+              role="group"
+              aria-label="Filter by status"
+              data-testid="screens-status-filter"
+            >
+              <span className="tx-screens-chip" data-testid="screens-status-all">
                 <Chip
-                  selected={statusFilter.has(value)}
-                  onToggle={(on) => {
-                    setStatusFilter(toggleStatusFilter(statusFilter, value, on));
+                  selected={statusFilter.size === 0}
+                  onToggle={() => {
+                    setStatusFilter(new Set());
                   }}
                 >
-                  {SCREEN_STATUS_FILTER_LABELS[value]}
+                  All
                   {statusCounts !== null && (
                     <>
-                      {/* Keeps the label and the count apart in the name: "Needs attention, 5". */}
                       <span className="tx-visually-hidden">, </span>
-                      <span className="tx-screens-chip__count">{statusCounts[value]}</span>
+                      <span className="tx-screens-chip__count">{rows.length}</span>
                     </>
                   )}
                 </Chip>
               </span>
-            ))}
+              {SCREEN_STATUS_FILTERS.map((value) => (
+                <span
+                  key={value}
+                  className="tx-screens-chip"
+                  title={SCREEN_STATUS_FILTER_HINTS[value]}
+                  data-testid={`screens-status-${value.replace('_', '-')}`}
+                >
+                  <Chip
+                    selected={statusFilter.has(value)}
+                    onToggle={(on) => {
+                      setStatusFilter(toggleStatusFilter(statusFilter, value, on));
+                    }}
+                  >
+                    {SCREEN_STATUS_FILTER_LABELS[value]}
+                    {statusCounts !== null && (
+                      <>
+                        {/* Keeps the label and the count apart in the name: "Needs attention, 5". */}
+                        <span className="tx-visually-hidden">, </span>
+                        <span className="tx-screens-chip__count">{statusCounts[value]}</span>
+                      </>
+                    )}
+                  </Chip>
+                </span>
+              ))}
+            </div>
+            <TagFilter
+              tags={tags}
+              selected={tagFilter}
+              onChange={(next) => {
+                setTagFilter(next);
+                setPage(1);
+              }}
+              testId="screens-tag-filter"
+            />
           </div>
-          <TagFilter
-            tags={tags}
-            selected={tagFilter}
-            onChange={(next) => {
-              setTagFilter(next);
+          <div className="tx-filter-row__end">
+            <Segmented
+              label="View"
+              iconOnly
+              value={view}
+              onChange={setView}
+              options={VIEW_OPTIONS}
+            />
+            <IconButton
+              icon={RefreshCw}
+              label="Refresh"
+              onClick={refreshAll}
+              data-testid="screens-refresh"
+            />
+          </div>
+        </div>
+
+        {view === 'list' ? (
+          <DataTable
+            caption="Screens"
+            columns={columns}
+            rows={list.rows}
+            rowId={rowId}
+            sort={sort}
+            onSortChange={(next) => {
+              setSort(next);
               setPage(1);
             }}
-            testId="screens-tag-filter"
+            selection={{
+              selected,
+              onChange: setSelected,
+              rowLabel: (row) => row.display.name,
+            }}
+            rowActions={menuFor}
+            loading={tableLoading}
+            empty={empty}
+            footer={list.matched.length > 0 ? pagination : undefined}
+            rowTestId={(row) => `screens-row-${row.display.id}`}
           />
-        </div>
-        <div className="tx-filter-row__end">
-          <ButtonLink variant="primary" to="/screens/new" icon={Plus} data-testid="screens-add">
-            Add screen
-          </ButtonLink>
-        </div>
-      </div>
+        ) : tableLoading ? (
+          <SkeletonGroup label="Loading screens">
+            <TileGrid label="Screens" minTileWidth={240} className="tx-screens-grid">
+              {Array.from({ length: 8 }, (_, index) => (
+                <TileSkeleton key={index} />
+              ))}
+            </TileGrid>
+          </SkeletonGroup>
+        ) : list.rows.length === 0 ? (
+          <div className="tx-card tx-card--flush">{empty}</div>
+        ) : (
+          <>
+            <TileGrid label="Screens" minTileWidth={240} className="tx-screens-grid">
+              {list.rows.map((row) => (
+                <Tile
+                  key={row.display.id}
+                  name={row.display.name}
+                  to={`/screens/${row.display.id}`}
+                  testId={`screens-tile-${row.display.id}`}
+                  media={<ScreenFrame display={row.display} />}
+                  meta={
+                    <span className="tx-screens-tile-meta">
+                      <span className="tx-num">{canvasLabel(row.display)}</span>
+                      {statusCell(row)}
+                      {contentCell(row)}
+                    </span>
+                  }
+                  actions={menuFor(row)}
+                  selection={{
+                    selected: selected.has(row.display.id),
+                    label: row.display.name,
+                    onChange: () => {
+                      setSelected(toggleOne(selected, row.display.id));
+                    },
+                  }}
+                />
+              ))}
+            </TileGrid>
+            {pagination}
+          </>
+        )}
 
-      <div className="tx-toolbar">
-        <span className="tx-toolbar__count" aria-live="polite" data-testid="screens-count">
-          {countText}
-        </span>
-        <div className="tx-toolbar__end">
-          <Segmented label="View" iconOnly value={view} onChange={setView} options={VIEW_OPTIONS} />
-          <IconButton
-            icon={RefreshCw}
-            label="Refresh"
-            onClick={refreshAll}
-            data-testid="screens-refresh"
-          />
-        </div>
-      </div>
-
-      {view === 'list' ? (
-        <DataTable
-          caption="Screens"
-          columns={columns}
-          rows={list.rows}
-          rowId={rowId}
-          sort={sort}
-          onSortChange={(next) => {
-            setSort(next);
-            setPage(1);
-          }}
-          selection={{
-            selected,
-            onChange: setSelected,
-            rowLabel: (row) => row.display.name,
-          }}
-          rowActions={menuFor}
-          loading={tableLoading}
-          empty={empty}
-          footer={list.matched.length > 0 ? pagination : undefined}
-          rowTestId={(row) => `screens-row-${row.display.id}`}
-        />
-      ) : tableLoading ? (
-        <SkeletonGroup label="Loading screens">
-          <TileGrid label="Screens" minTileWidth={240} className="tx-screens-grid">
-            {Array.from({ length: 8 }, (_, index) => (
-              <TileSkeleton key={index} />
-            ))}
-          </TileGrid>
-        </SkeletonGroup>
-      ) : list.rows.length === 0 ? (
-        <div className="tx-card tx-card--flush">{empty}</div>
-      ) : (
-        <>
-          <TileGrid label="Screens" minTileWidth={240} className="tx-screens-grid">
-            {list.rows.map((row) => (
-              <Tile
-                key={row.display.id}
-                name={row.display.name}
-                to={`/screens/${row.display.id}`}
-                testId={`screens-tile-${row.display.id}`}
-                media={<ScreenFrame display={row.display} />}
-                meta={
-                  <span className="tx-screens-tile-meta">
-                    <span className="tx-num">{canvasLabel(row.display)}</span>
-                    {statusCell(row)}
-                    {contentCell(row)}
-                  </span>
-                }
-                actions={menuFor(row)}
-                selection={{
-                  selected: selected.has(row.display.id),
-                  label: row.display.name,
-                  onChange: () => {
-                    setSelected(toggleOne(selected, row.display.id));
-                  },
-                }}
-              />
-            ))}
-          </TileGrid>
-          {pagination}
-        </>
-      )}
-
-      <p className="tx-small tx-muted tx-screens-note">
-        Status is what the player of each screen last reported, with the time of that report. It is
-        not proof of what the screen shows.
-      </p>
-
-      <SelectionBar
-        count={selected.size}
-        label="Selected screens"
-        onClear={() => {
-          setSelected(new Set());
-        }}
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={ListVideo}
-          data-testid="screens-bulk-assign"
-          onClick={() => {
-            openAssign(selectedDisplays());
-          }}
-        >
-          Assign content
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={Tags}
-          data-testid="screens-bulk-tags"
-          onClick={() => {
-            openTags(selectedDisplays());
-          }}
-        >
-          Add tags
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={Send}
-          data-testid="screens-bulk-push"
-          onClick={() => {
-            pushTo(selectedDisplays());
-          }}
-        >
-          Push
-        </Button>
-      </SelectionBar>
-
-      <PlaylistPickerDialog
-        open={assign.open}
-        onClose={() => {
-          setAssign((state) => ({ ...state, open: false }));
-        }}
-        title={
-          assignSingle !== null || assignTargets.length === 0
-            ? 'Assign content'
-            : `Assign content to ${screensLabel(assignTargets.length)}`
-        }
-        description={
-          assignSingle !== null
-            ? `Choose the playlist for ${assignSingle.name}. Nothing changes on the screen until you push.`
-            : 'Every chosen screen gets this playlist. Nothing changes on a screen until you push.'
-        }
-        confirmLabel={
-          assignSingle !== null || assignTargets.length === 0
-            ? 'Assign playlist'
-            : `Assign to ${screensLabel(assignTargets.length)}`
-        }
-        currentId={assignCurrentId}
-        allowNone={assignSingle !== null}
-        noneHint="The screen keeps what it was last given."
-        disabledReason={(playlist) =>
-          screensToAssign(assignTargets, playlist.id).length > 0
-            ? null
-            : assignSingle !== null
-              ? 'Assigned to this screen now'
-              : 'Every chosen screen has this playlist'
-        }
-        busy={assign.busy}
-        error={assign.error}
-        errorTitle="The playlist was not assigned"
-        onConfirm={confirmAssign}
-        testId="screens-assign"
-      />
-
-      <TagsDialog
-        open={tagsDialog.open}
-        onClose={() => {
-          setTagsDialog((state) => ({ ...state, open: false }));
-        }}
-        items={tagsDialog.targets}
-        tags={tags}
-        onSaved={reloadDisplays}
-        testId="screens-tags"
-      />
-
-      <ConfirmDialog
-        open={revoke.open}
-        title="Revoke this player?"
-        confirmLabel="Revoke player"
-        tone="danger"
-        busy={revoke.busy}
-        onConfirm={confirmRevoke}
-        onCancel={() => {
-          setRevoke((state) => ({ ...state, open: false }));
-        }}
-      >
-        <p>
-          The player paired with “{revoke.target?.name ?? 'this screen'}” will lose access
-          immediately. To use it again it must be paired with a new code.
+        <p className="tx-small tx-muted tx-screens-note">
+          Status is what the player of each screen last reported, with the time of that report. It
+          is not proof of what the screen shows.
         </p>
-      </ConfirmDialog>
-    </div>
+
+        <SelectionBar
+          count={selected.size}
+          label="Selected screens"
+          onClear={() => {
+            setSelected(new Set());
+          }}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={ListVideo}
+            data-testid="screens-bulk-assign"
+            onClick={() => {
+              openAssign(selectedDisplays());
+            }}
+          >
+            Assign content
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Tags}
+            data-testid="screens-bulk-tags"
+            onClick={() => {
+              openTags(selectedDisplays());
+            }}
+          >
+            Add tags
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Send}
+            data-testid="screens-bulk-push"
+            onClick={() => {
+              pushTo(selectedDisplays());
+            }}
+          >
+            Push
+          </Button>
+        </SelectionBar>
+
+        <PlaylistPickerDialog
+          open={assign.open}
+          onClose={() => {
+            setAssign((state) => ({ ...state, open: false }));
+          }}
+          title={
+            assignSingle !== null || assignTargets.length === 0
+              ? 'Assign content'
+              : `Assign content to ${screensLabel(assignTargets.length)}`
+          }
+          description={
+            assignSingle !== null
+              ? `Choose the playlist for ${assignSingle.name}. Nothing changes on the screen until you push.`
+              : 'Every chosen screen gets this playlist. Nothing changes on a screen until you push.'
+          }
+          confirmLabel={
+            assignSingle !== null || assignTargets.length === 0
+              ? 'Assign playlist'
+              : `Assign to ${screensLabel(assignTargets.length)}`
+          }
+          currentId={assignCurrentId}
+          allowNone={assignSingle !== null}
+          noneHint="The screen keeps what it was last given."
+          disabledReason={(playlist) =>
+            screensToAssign(assignTargets, playlist.id).length > 0
+              ? null
+              : assignSingle !== null
+                ? 'Assigned to this screen now'
+                : 'Every chosen screen has this playlist'
+          }
+          busy={assign.busy}
+          error={assign.error}
+          errorTitle="The playlist was not assigned"
+          onConfirm={confirmAssign}
+          testId="screens-assign"
+        />
+
+        <TagsDialog
+          open={tagsDialog.open}
+          onClose={() => {
+            setTagsDialog((state) => ({ ...state, open: false }));
+          }}
+          items={tagsDialog.targets}
+          tags={tags}
+          onSaved={reloadDisplays}
+          testId="screens-tags"
+        />
+
+        <ConfirmDialog
+          open={revoke.open}
+          title="Revoke this player?"
+          confirmLabel="Revoke player"
+          tone="danger"
+          busy={revoke.busy}
+          onConfirm={confirmRevoke}
+          onCancel={() => {
+            setRevoke((state) => ({ ...state, open: false }));
+          }}
+        >
+          <p>
+            The player paired with “{revoke.target?.name ?? 'this screen'}” will lose access
+            immediately. To use it again it must be paired with a new code.
+          </p>
+        </ConfirmDialog>
+      </div>
+    </Page>
   );
 }

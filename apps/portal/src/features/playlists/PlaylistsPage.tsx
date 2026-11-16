@@ -5,7 +5,12 @@ import { isAbort } from '../../api/client.ts';
 import { api } from '../../api/index.ts';
 import { useLoad, type LoadState } from '../../hooks/useLoad.ts';
 import { formatTimestamp } from '../../lib/format.ts';
-import { applyListView, DEFAULT_PAGE_SIZE, type SortState } from '../../lib/listView.ts';
+import {
+  applyListView,
+  countLabel,
+  DEFAULT_PAGE_SIZE,
+  type SortState,
+} from '../../lib/listView.ts';
 import {
   playlistItemCountLabel,
   playlistLengthLabel,
@@ -26,22 +31,12 @@ import { duplicatedToast } from '../../lib/playlistsListActions.ts';
 import type { RowDeleteMode } from '../../lib/rowFocus.ts';
 import { pruneSelection, selectedRows, setMany } from '../../lib/selection.ts';
 import { Page } from '../../shell/Page.tsx';
-import {
-  LayoutGrid,
-  List,
-  ListVideo,
-  Monitor,
-  Plus,
-  RefreshCw,
-  SearchX,
-  Trash,
-} from '../../ui/icons.ts';
+import { LayoutGrid, List, ListVideo, Plus, RefreshCw, SearchX, Trash } from '../../ui/icons.ts';
 import {
   Button,
   DataTable,
   EmptyState,
   ErrorNotice,
-  Icon,
   IconButton,
   NameCell,
   Pagination,
@@ -50,6 +45,7 @@ import {
   Select,
   SelectionBar,
   SkeletonGroup,
+  StatusPill,
   Tile,
   TileGrid,
   TileSkeleton,
@@ -422,7 +418,7 @@ export function PlaylistsPage() {
   }
 
   return (
-    <Page title="Playlists">
+    <Page title="Playlists" subtitle={ready ? countLabel(playlists.length, 'playlist') : undefined}>
       <div className="tx-stack tx-playlists-list">
         <div className="tx-filter-row">
           <div className="tx-filter-row__filters">
@@ -457,7 +453,13 @@ export function PlaylistsPage() {
         )}
 
         <div className="tx-toolbar">
-          <span className="tx-toolbar__count" aria-live="polite" data-testid="playlists-count">
+          {/* The page subtitle says how many there are; this line shows only while a search
+              narrows the list, and stays in the document as the live region for the result. */}
+          <span
+            className={searching ? 'tx-toolbar__count' : 'tx-toolbar__count tx-visually-hidden'}
+            aria-live="polite"
+            data-testid="playlists-count"
+          >
             {loading
               ? 'Loading playlists'
               : playlistsCountLabel(list.matched.length, list.total, searching)}
@@ -546,15 +548,14 @@ export function PlaylistsPage() {
                   to={`/playlists/${playlist.id}`}
                   media={mosaic(playlist, 'fill')}
                   meta={
-                    <>
-                      <span className="tx-playlists-list__tile-meta">
+                    <span className="tx-playlists-list__tile-meta">
+                      <span className="tx-playlists-list__tile-summary">
                         {playlistSummaryLabel(playlist)}
                       </span>
-                      <span className="tx-playlists-list__tile-meta">
-                        <Icon icon={Monitor} size={14} />
+                      <StatusPill tone={playlist.assignedDisplayCount > 0 ? 'ok' : 'neutral'}>
                         {assignedScreensLabel(playlist.assignedDisplayCount)}
-                      </span>
-                    </>
+                      </StatusPill>
+                    </span>
                   }
                   actions={rowMenu(playlist)}
                   selection={{

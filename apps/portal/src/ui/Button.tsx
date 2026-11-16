@@ -5,7 +5,7 @@ import { Icon } from './Icon.tsx';
 import type { IconComponent } from './icons.ts';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'danger-solid';
-/** 32, 36 and 44 px tall. `lg` is for the page's primary action and the sign-in screen. */
+/** 32, 40 and 44 px tall. `lg` is for the page's primary action and the sign-in screen. */
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 interface ButtonLook {

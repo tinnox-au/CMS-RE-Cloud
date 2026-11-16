@@ -8,7 +8,7 @@ export interface CardProps extends HTMLAttributes<HTMLElement> {
   readonly flush?: boolean;
 }
 
-/** A surface with a hairline border and a 20 px radius. Cards have no shadow. */
+/** A white surface with a 20 px radius. Cards have no border and no shadow. */
 export function Card({ as: Element = 'div', flush = false, className, ...rest }: CardProps) {
   return <Element {...rest} className={cx('tx-card', flush && 'tx-card--flush', className)} />;
 }
@@ -18,8 +18,8 @@ export interface CardHeaderProps {
   /** Heading level of the title in the page outline. Default 2. */
   readonly level?: 2 | 3 | 4;
   /**
-   * `caption` (default) is the quiet 12 px label of the specification; `title` is the 15 px
-   * card title, for a card whose heading should carry more weight.
+   * `caption` (default) is the quiet 13 px label for a small card; `title` is the 21 px card
+   * title of the type scale, for a card whose heading should carry more weight.
    */
   readonly size?: 'caption' | 'title';
   readonly description?: ReactNode;

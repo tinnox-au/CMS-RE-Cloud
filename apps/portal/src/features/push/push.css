@@ -41,11 +41,11 @@
   gap: var(--s-3);
 }
 
-/* ---------- A group: title, note, and its rows in one bordered list ---------- */
+/* ---------- A group: title, note, and its rows as a plain list with hairlines ---------- */
 
 .tx-push-group {
   display: grid;
-  gap: var(--s-3);
+  gap: var(--s-2);
   min-inline-size: 0;
 }
 
@@ -79,19 +79,16 @@
   line-height: 18px;
 }
 
+/* No outline and no fill: rows sit on the dialog, a hairline above each one (DataTable's
+   look). Hovering a row that can be ticked gives it the inset fill. */
 .tx-push-list {
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--surface);
-  overflow: hidden;
+  min-inline-size: 0;
 }
 
 .tx-push-list__all {
   display: flex;
   align-items: center;
-  padding: var(--s-2) var(--s-4);
-  border-block-end: 1px solid var(--line);
-  background: var(--surface-2);
+  padding: var(--s-2) var(--s-3);
 }
 
 .tx-push-list__all .tx-check {
@@ -112,7 +109,7 @@
 .tx-push-list__more {
   display: flex;
   justify-content: center;
-  padding: var(--s-2) var(--s-4);
+  padding: var(--s-2) var(--s-3);
   border-block-start: 1px solid var(--line);
 }
 
@@ -130,16 +127,25 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--s-2) var(--s-3);
-  padding: var(--s-3) var(--s-4);
+  padding: var(--s-3);
+  border-block-start: 1px solid var(--line);
   transition: background-color var(--t-fast) var(--ease);
 }
 
-.tx-push-row + .tx-push-row {
-  border-block-start: 1px solid var(--line);
+/* The first row of a group meets the group's note, not another row: no hairline there. */
+.tx-push-list > .tx-push-rows:first-child > .tx-push-row:first-child {
+  border-block-start-color: transparent;
 }
 
 .tx-push-rows > .tx-push-row:has(.tx-check__input:not(:disabled)):hover {
+  border-radius: var(--r-md);
   background: var(--surface-2);
+}
+
+/* A hovered row's rounded fill hides the hairlines on both of its sides. */
+.tx-push-rows > .tx-push-row:has(.tx-check__input:not(:disabled)):hover,
+.tx-push-rows > .tx-push-row:has(.tx-check__input:not(:disabled)):hover + .tx-push-row {
+  border-block-start-color: transparent;
 }
 
 .tx-push-row__main {
@@ -175,9 +181,12 @@
   color: var(--ok);
 }
 
+/* The row title of the scale: 15 / 500 in ink. */
 .tx-push-row__name {
   color: var(--ink);
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 20px;
   overflow-wrap: anywhere;
 }
 
@@ -194,6 +203,15 @@
 
 .tx-push-row__meta > * {
   flex: none;
+}
+
+/* The first part (the playlist, or "No playlist assigned") gives way so the line never runs
+   under the status beside it. */
+.tx-push-row__meta > :first-child {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tx-push-row__meta > * + *::before {
@@ -237,7 +255,7 @@
   padding: var(--s-2) var(--s-3);
   border-radius: var(--r-sm);
   background: var(--danger-bg);
-  color: var(--ink);
+  color: var(--danger);
   font-size: 13px;
   line-height: 18px;
   list-style: none;

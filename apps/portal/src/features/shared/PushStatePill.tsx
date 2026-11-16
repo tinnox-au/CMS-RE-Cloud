@@ -1,6 +1,5 @@
 import type { PushState } from '@tinnox/contracts';
 import { presentPushState } from '../../lib/screenStatusPush.ts';
-import { Check, CircleDashed, Lock, Send, type IconComponent } from '../../ui/icons.ts';
 import { cx, StatusPill } from '../../ui/index.ts';
 import './shared.css';
 
@@ -11,14 +10,6 @@ export interface PushStatePillProps {
   readonly testId?: string;
   readonly className?: string;
 }
-
-const ICONS: { readonly [K in PushState]: IconComponent } = {
-  nothing_assigned: CircleDashed,
-  never_pushed: Send,
-  changes: Send,
-  up_to_date: Check,
-  blocked: Lock,
-};
 
 /**
  * Where a screen stands between what is assigned to it and what it was last given:
@@ -33,9 +24,7 @@ export function PushStatePill({
   const presentation = presentPushState(state);
   return (
     <span className={cx('tx-shared-push', className)} data-testid={testId} data-state={state}>
-      <StatusPill tone={presentation.tone} icon={ICONS[state]}>
-        {presentation.label}
-      </StatusPill>
+      <StatusPill tone={presentation.tone}>{presentation.label}</StatusPill>
     </span>
   );
 }

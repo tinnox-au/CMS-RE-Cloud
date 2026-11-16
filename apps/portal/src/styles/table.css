@@ -1,12 +1,13 @@
 /* DataTable, NameCell, Pagination, SelectionBar. */
 
 /*
- * One surface holds the whole list: rows are separated by hairlines, not drawn as cards.
- * The surface is a size container, so the cells can tighten when it is as narrow as a phone.
+ * One white card holds the whole list, with no outer border and no zebra: rows are separated
+ * by hairlines. The card is a size container, so the cells can tighten when it is as narrow
+ * as a phone.
  */
 .tx-table-card {
   container: tx-table / inline-size;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-lg);
   overflow: hidden;
   background: var(--surface);
@@ -53,11 +54,14 @@
   padding-inline-end: var(--s-4);
 }
 
+/* The header row: 12 px at weight 600 in the secondary colour, with no fill. */
 .tx-table thead th {
-  block-size: 44px;
+  block-size: 40px;
+  padding-block: 6px 2px;
+  background: transparent;
   color: var(--ink-2);
   font: 600 12px/16px var(--font-body);
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 
@@ -79,6 +83,12 @@
 .tx-table tbody tr[data-row]:hover td,
 .tx-table tbody tr[data-selected] td {
   background: var(--surface-2);
+}
+
+/* A chosen row keeps a faint fill; hovering it steps that a little (tokens.test.ts keeps
+   status and link text on it at 4.5:1). */
+.tx-table tbody tr[data-selected]:hover td {
+  background: var(--row-selected-hover);
 }
 
 .tx-table__cell--end {
@@ -191,7 +201,7 @@
 }
 
 .tx-table__sort:hover {
-  background: var(--surface-2);
+  background: var(--fill);
   color: var(--ink);
 }
 
@@ -207,7 +217,7 @@
 
 .tx-table th[aria-sort='ascending'] .tx-table__sort-icon,
 .tx-table th[aria-sort='descending'] .tx-table__sort-icon {
-  color: var(--brand);
+  color: var(--link);
 }
 
 .tx-table__cell--end .tx-table__sort {
@@ -247,10 +257,13 @@
   min-inline-size: 0;
 }
 
+/* The row title of the scale: 15 px at weight 500. */
 .tx-namecell__name {
   overflow: hidden;
   color: var(--ink);
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 20px;
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -261,7 +274,7 @@ a.tx-namecell__name {
 }
 
 a.tx-namecell__name:hover {
-  color: var(--brand);
+  color: var(--link);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
@@ -322,11 +335,11 @@ a.tx-namecell__name:hover {
   min-block-size: 52px;
   margin-inline: auto;
   padding: 7px 8px 7px var(--s-5);
-  border: 1px solid var(--line-strong);
+  border: 0;
   border-radius: var(--r-pill);
   overflow-x: auto;
   background: var(--surface);
-  box-shadow: var(--shadow-2), var(--shadow-3);
+  box-shadow: var(--shadow-2);
   scrollbar-width: none;
 }
 

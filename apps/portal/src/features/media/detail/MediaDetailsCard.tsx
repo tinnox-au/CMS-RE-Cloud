@@ -272,18 +272,20 @@ export interface MediaDetailsCardProps {
 }
 
 /**
- * The narrow "details" card of the editor page: the preview, the facts about the file and
- * where it is used, as links to the playlists and the screens.
+ * The narrow "details" column of the editor page, as cards: the preview with the status in
+ * words, the facts about the file, and where it is used, as links to the playlists and the
+ * screens.
  */
 export function MediaDetailsCard({ media, name, usage }: MediaDetailsCardProps) {
   const factsId = useId();
   const usageId = useId();
   return (
-    <Card className="tx-media-detail-aside" data-testid="media-detail-details">
-      <div className="tx-media-detail-part">
+    <div className="tx-media-detail-aside" data-testid="media-detail-details">
+      <Card className="tx-media-detail-part tx-media-detail-part--preview">
         <MediaPreview media={media} name={name} />
-      </div>
-      <section
+      </Card>
+      <Card
+        as="section"
         className="tx-media-detail-part tx-media-detail-part--facts"
         aria-labelledby={factsId}
       >
@@ -293,9 +295,10 @@ export function MediaDetailsCard({ media, name, usage }: MediaDetailsCardProps) 
           </h2>
         </div>
         <MediaFacts media={media} />
-      </section>
+      </Card>
       {usage !== undefined && (
-        <section
+        <Card
+          as="section"
           className="tx-media-detail-part tx-media-detail-part--wide"
           aria-labelledby={usageId}
           data-testid="media-detail-usage"
@@ -316,8 +319,8 @@ export function MediaDetailsCard({ media, name, usage }: MediaDetailsCardProps) 
             </Button>
           </div>
           <UsageBody state={usage.state} onRetry={usage.onRetry} />
-        </section>
+        </Card>
       )}
-    </Card>
+    </div>
   );
 }
