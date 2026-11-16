@@ -27,6 +27,13 @@ async function run<T>(
 ): Promise<T> {
   const client = await pool.connect();
   let broken: Error | undefined;
+  // A connection that is lost while checked out emits 'error'; the pool listens only while a
+  // connection is idle, and an 'error' nobody listens to would end the process. The queries
+  // of the transaction reject by themselves; the connection is destroyed on release.
+  const onLost = (error: Error): void => {
+    broken = error;
+  };
+  client.on('error', onLost);
   try {
     await client.query('BEGIN');
     await begin(client);
@@ -42,6 +49,7 @@ async function run<T>(
     }
     throw error;
   } finally {
+    client.removeListener('error', onLost);
     client.release(broken);
   }
 }

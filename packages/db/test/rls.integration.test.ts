@@ -590,6 +590,29 @@ describe('transaction-scoped context on pooled connections', () => {
     }
   });
 
+  it('replaces a connection that was lost in the middle of a transaction', async () => {
+    const single = appPool(1);
+    try {
+      let lost: number | undefined;
+      await expect(
+        withOrg(single, a.orgId, async (tx) => {
+          lost = (await tx.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]?.pid;
+          // The server closes this connection, so the ROLLBACK that follows cannot succeed.
+          await tx.query('SELECT pg_terminate_backend(pg_backend_pid())');
+        }),
+      ).rejects.toThrow();
+      const after = await single.query<{ pid: number; setting: string | null; n: string }>(
+        "SELECT pg_backend_pid() AS pid, current_setting('app.org_id', true) AS setting, (SELECT count(*) FROM media) AS n",
+      );
+      expect(lost).toBeTypeOf('number');
+      expect(after.rows[0]?.pid).not.toBe(lost);
+      expect(after.rows[0]?.setting ?? '').toBe('');
+      expect(Number(after.rows[0]?.n)).toBe(0);
+    } finally {
+      await single.end();
+    }
+  });
+
   it('enters an organisation part-way through a transaction, and only for that transaction', async () => {
     const single = appPool(1);
     try {
