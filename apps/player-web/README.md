@@ -386,6 +386,8 @@ on 2026-11-14.
 - `DELETE /player/registration` → 204 or 200. Not in `ROUTES`; see the protocol document.
 - 401 on any bearer-authenticated call means revoked.
 - Redirects are refused on every call.
+- A JSON call is abandoned 15 s after it starts if the response, including its body, has
+  not finished. The loop then backs off. Shutting the loop down aborts that read as well.
 
 ## Tests
 

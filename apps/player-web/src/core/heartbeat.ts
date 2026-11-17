@@ -83,7 +83,8 @@ export interface HeartbeatDeps {
   readonly state: Pick<StateStore, 'nextHeartbeatSeq'>;
   /** Null when there is nothing to report (not registered). */
   snapshot(): Promise<HeartbeatSnapshot | null>;
-  send(heartbeat: HeartbeatV1): Promise<HeartbeatResponse>;
+  /** `signal` is the loop's lifetime: cancelling it abandons an in-flight report. */
+  send(heartbeat: HeartbeatV1, signal?: AbortSignal): Promise<HeartbeatResponse>;
   readonly clock: Clock;
   readonly sleep: Sleep;
   readonly random: () => number;
@@ -149,7 +150,7 @@ export class HeartbeatLoop {
     const nowMs = this.#deps.clock.now();
     const seq = await this.#deps.state.nextHeartbeatSeq(nowMs);
     const heartbeat = buildHeartbeat(snapshot, seq, new Date(nowMs).toISOString());
-    const response = await this.#deps.send(heartbeat);
+    const response = await this.#deps.send(heartbeat, this.#deps.signal);
     this.#status = {
       lastSeq: seq,
       lastAcceptedAt: new Date(this.#deps.clock.now()).toISOString(),

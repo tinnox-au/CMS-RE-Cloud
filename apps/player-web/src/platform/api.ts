@@ -17,6 +17,10 @@ import { z } from 'zod';
 import { AbortedError, PlayerFault, RevokedError } from '../core/errors.ts';
 import type { DeviceApi, ManifestFetchResult, MediaResponse } from '../core/types.ts';
 
+/**
+ * Deadline for one JSON call, from sending the request through reading or discarding
+ * the body. Headers arriving does not end it: a stalled body must still fail the call.
+ */
 export const JSON_TIMEOUT_MS = 15_000;
 /** A media transfer is abandoned when no bytes arrive for this long. */
 export const MEDIA_STALL_TIMEOUT_MS = 30_000;
@@ -71,6 +75,10 @@ async function discard(response: Response): Promise<void> {
   await response.body?.cancel().catch(() => undefined);
 }
 
+function callerAborted(signal: AbortSignal | null): boolean {
+  return signal?.aborted === true;
+}
+
 /** HTTP client for the player protocol (prototype-m0.md D9, D13). Holds no credential itself. */
 export class PlayerHttpApi {
   readonly #base: string;
@@ -85,31 +93,74 @@ export class PlayerHttpApi {
     return new URL(this.#base).origin;
   }
 
-  async #request(
+  /**
+   * One JSON call. `consume` reads or discards the body while the deadline is still
+   * armed, and the timer is cleared on every path out. A caller signal aborts the
+   * same operation, including a body read that has already started.
+   */
+  async #request<T>(
     what: string,
     path: string,
     init: RequestInit,
+    consume: (response: Response) => Promise<T>,
     timeoutMs: number = JSON_TIMEOUT_MS,
-  ): Promise<Response> {
-    const controller = new AbortController();
+  ): Promise<T> {
     const outer = init.signal ?? null;
-    const signal = outer === null ? controller.signal : AbortSignal.any([outer, controller.signal]);
-    const timer = setTimeout(() => {
-      controller.abort();
-    }, timeoutMs);
+    if (callerAborted(outer)) throw new AbortedError();
+
+    const timed = new AbortController();
+    const signal = outer === null ? timed.signal : AbortSignal.any([outer, timed.signal]);
+    let response: Response | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const work = (async (): Promise<T> => {
+      response = await this.#fetch(`${this.#base}${path}`, { ...BASE_INIT, ...init, signal });
+      return await consume(response);
+    })();
+
+    let onOuterAbort: (() => void) | undefined;
+    const cancelled =
+      outer === null
+        ? null
+        : new Promise<never>((_, reject) => {
+            onOuterAbort = (): void => {
+              reject(new AbortedError());
+            };
+            outer.addEventListener('abort', onOuterAbort);
+          });
+
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        timed.abort();
+        const body = response?.body;
+        if (body !== undefined && body !== null) void body.cancel().catch(() => undefined);
+        reject(new PlayerFault('network_error', `${what}: no answer within ${timeoutMs} ms`));
+      }, timeoutMs);
+    });
+
+    // A loser of the race can reject after the winner has settled. Observe it.
+    void work.catch(() => undefined);
+    void deadline.catch(() => undefined);
+    if (cancelled !== null) void cancelled.catch(() => undefined);
+
     try {
-      return await this.#fetch(`${this.#base}${path}`, { ...BASE_INIT, ...init, signal });
+      const contenders: Promise<T>[] = [work, deadline];
+      if (cancelled !== null) contenders.push(cancelled);
+      return await Promise.race(contenders);
     } catch (err) {
-      if (outer?.aborted === true) throw new AbortedError();
+      if (callerAborted(outer) || err instanceof AbortedError) throw new AbortedError();
+      if (err instanceof PlayerFault || err instanceof RevokedError) throw err;
       throw new PlayerFault(
         'network_error',
-        controller.signal.aborted
+        timed.signal.aborted
           ? `${what}: no answer within ${timeoutMs} ms`
           : `${what}: server unreachable`,
         { cause: err },
       );
     } finally {
-      clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
+      if (outer !== null && onOuterAbort !== undefined)
+        outer.removeEventListener('abort', onOuterAbort);
     }
   }
 
@@ -123,15 +174,18 @@ export class PlayerHttpApi {
   /** `POST /player/pairing`. No credential, no body. */
   async createPairing(signal?: AbortSignal): Promise<PairingCreateResponse> {
     const what = 'pairing request';
-    const response = await this.#request(what, ROUTES.playerPairing, {
-      method: 'POST',
-      ...(signal ? { signal } : {}),
-    });
-    if (response.status !== 200 && response.status !== 201) return this.#fail(what, response);
-    const parsed = PairingCreateResponseSchema.safeParse(await readJson(response, what));
-    if (!parsed.success)
-      throw new PlayerFault('internal_error', `${what}: unexpected response shape`);
-    return parsed.data;
+    return this.#request(
+      what,
+      ROUTES.playerPairing,
+      { method: 'POST', ...(signal ? { signal } : {}) },
+      async (response) => {
+        if (response.status !== 200 && response.status !== 201) return this.#fail(what, response);
+        const parsed = PairingCreateResponseSchema.safeParse(await readJson(response, what));
+        if (!parsed.success)
+          throw new PlayerFault('internal_error', `${what}: unexpected response shape`);
+        return parsed.data;
+      },
+    );
   }
 
   /** `GET /player/pairing/:id` with the polling token. `gone` means the session cannot be used any more. */
@@ -141,25 +195,31 @@ export class PlayerHttpApi {
     signal?: AbortSignal,
   ): Promise<PairingPollResult> {
     const what = 'pairing poll';
-    const response = await this.#request(what, ROUTES.playerPairingPoll(pairingId), {
-      method: 'GET',
-      headers: bearer(pollingToken),
-      ...(signal ? { signal } : {}),
-    });
-    if (response.status === 404 || response.status === 401 || response.status === 410) {
-      await discard(response);
-      return { status: 'gone' };
-    }
-    if (response.status !== 200) return this.#fail(what, response);
-    const parsed = PairingPollResponseSchema.safeParse(await readJson(response, what));
-    if (!parsed.success)
-      throw new PlayerFault('internal_error', `${what}: unexpected response shape`);
-    return parsed.data;
+    return this.#request(
+      what,
+      ROUTES.playerPairingPoll(pairingId),
+      {
+        method: 'GET',
+        headers: bearer(pollingToken),
+        ...(signal ? { signal } : {}),
+      },
+      async (response) => {
+        if (response.status === 404 || response.status === 401 || response.status === 410) {
+          await discard(response);
+          return { status: 'gone' };
+        }
+        if (response.status !== 200) return this.#fail(what, response);
+        const parsed = PairingPollResponseSchema.safeParse(await readJson(response, what));
+        if (!parsed.success)
+          throw new PlayerFault('internal_error', `${what}: unexpected response shape`);
+        return parsed.data;
+      },
+    );
   }
 
   /** Player calls bound to one device credential. */
   forDevice(deviceToken: string): DeviceApi & {
-    heartbeat(body: HeartbeatV1): Promise<HeartbeatResponse>;
+    heartbeat(body: HeartbeatV1, signal?: AbortSignal): Promise<HeartbeatResponse>;
     /**
      * `DELETE /player/registration`: the player gives up its own credential (local reset).
      * Best effort; resolves false when the server could not be told.
@@ -180,40 +240,51 @@ export class PlayerHttpApi {
     };
 
     return {
-      fetchManifest: async (ifNoneMatchPublicationId): Promise<ManifestFetchResult> => {
+      fetchManifest: async (ifNoneMatchPublicationId, signal): Promise<ManifestFetchResult> => {
         const what = 'manifest poll';
         const headers: Record<string, string> = { ...auth, accept: 'application/json' };
         if (ifNoneMatchPublicationId !== null) {
           headers['if-none-match'] = manifestEtag(ifNoneMatchPublicationId);
         }
-        const response = await guard(
+        return this.#request(
           what,
-          await this.#request(what, ROUTES.playerManifest, { method: 'GET', headers }),
+          ROUTES.playerManifest,
+          { method: 'GET', headers, ...(signal ? { signal } : {}) },
+          async (response) => {
+            const guarded = await guard(what, response);
+            if (guarded.status === 304 || guarded.status === 204) {
+              await discard(guarded);
+              return guarded.status === 304 ? { kind: 'not_modified' } : { kind: 'none' };
+            }
+            const body = await readJson(guarded, what);
+            const envelope = ManifestEnvelopeSchema.safeParse(body);
+            // A body without a manifest is passed on as-is so it is reported as a malformed manifest.
+            return { kind: 'manifest', raw: envelope.success ? envelope.data.manifest : body };
+          },
         );
-        if (response.status === 304) return { kind: 'not_modified' };
-        if (response.status === 204) return { kind: 'none' };
-        const body = await readJson(response, what);
-        const envelope = ManifestEnvelopeSchema.safeParse(body);
-        // A body without a manifest is passed on as-is so it is reported as a malformed manifest.
-        return { kind: 'manifest', raw: envelope.success ? envelope.data.manifest : body };
       },
 
-      requestMediaUrls: async (publicationId, assetIds): Promise<MediaUrlsResponse> => {
+      requestMediaUrls: async (publicationId, assetIds, signal): Promise<MediaUrlsResponse> => {
         const what = 'media URL request';
         const body = MediaUrlsRequestSchema.parse({ publicationId, assetIds: [...assetIds] });
-        const response = await guard(
+        return this.#request(
           what,
-          await this.#request(what, ROUTES.playerMediaUrls, {
+          ROUTES.playerMediaUrls,
+          {
             method: 'POST',
             headers: { ...auth, 'content-type': 'application/json' },
             body: JSON.stringify(body),
-          }),
+            ...(signal ? { signal } : {}),
+          },
+          async (response) => {
+            const guarded = await guard(what, response);
+            if (guarded.status !== 200) return this.#fail(what, response);
+            const parsed = MediaUrlsResponseSchema.safeParse(await readJson(guarded, what));
+            if (!parsed.success)
+              throw new PlayerFault('internal_error', `${what}: unexpected response shape`);
+            return parsed.data;
+          },
         );
-        if (response.status !== 200) return this.#fail(what, response);
-        const parsed = MediaUrlsResponseSchema.safeParse(await readJson(response, what));
-        if (!parsed.success)
-          throw new PlayerFault('internal_error', `${what}: unexpected response shape`);
-        return parsed.data;
       },
 
       fetchMedia: async (url, rangeStart, signal): Promise<MediaResponse> => {
@@ -278,34 +349,41 @@ export class PlayerHttpApi {
 
       releaseRegistration: async (timeoutMs): Promise<boolean> => {
         try {
-          const response = await this.#request(
+          return await this.#request(
             'registration release',
             `${PLAYER_PREFIX}/registration`,
             { method: 'DELETE', headers: auth },
+            async (response) => {
+              await discard(response);
+              return response.status === 204 || response.status === 200;
+            },
             timeoutMs,
           );
-          await discard(response);
-          return response.status === 204 || response.status === 200;
         } catch {
           return false;
         }
       },
 
-      heartbeat: async (heartbeat): Promise<HeartbeatResponse> => {
+      heartbeat: async (heartbeat, signal): Promise<HeartbeatResponse> => {
         const what = 'heartbeat';
-        const response = await guard(
+        return this.#request(
           what,
-          await this.#request(what, ROUTES.playerHeartbeat, {
+          ROUTES.playerHeartbeat,
+          {
             method: 'POST',
             headers: { ...auth, 'content-type': 'application/json' },
             body: JSON.stringify(heartbeat),
-          }),
+            ...(signal ? { signal } : {}),
+          },
+          async (response) => {
+            const guarded = await guard(what, response);
+            if (guarded.status !== 200) return this.#fail(what, response);
+            const parsed = HeartbeatResponseSchema.safeParse(await readJson(guarded, what));
+            if (!parsed.success)
+              throw new PlayerFault('internal_error', `${what}: unexpected response shape`);
+            return parsed.data;
+          },
         );
-        if (response.status !== 200) return this.#fail(what, response);
-        const parsed = HeartbeatResponseSchema.safeParse(await readJson(response, what));
-        if (!parsed.success)
-          throw new PlayerFault('internal_error', `${what}: unexpected response shape`);
-        return parsed.data;
       },
     };
   }

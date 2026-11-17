@@ -465,7 +465,7 @@ export class PlayerApp {
     const heartbeat = new HeartbeatLoop({
       state: store,
       snapshot: () => this.#heartbeatSnapshot(),
-      send: (body) => deviceApi.heartbeat(body),
+      send: (body, signal) => deviceApi.heartbeat(body, signal),
       clock: systemClock,
       sleep,
       random: Math.random,

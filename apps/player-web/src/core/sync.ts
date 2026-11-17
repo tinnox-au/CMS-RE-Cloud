@@ -57,7 +57,7 @@ export async function syncCycle(deps: SyncDeps): Promise<CycleResult> {
 
   let fetched;
   try {
-    fetched = await deps.api.fetchManifest(activeId);
+    fetched = await deps.api.fetchManifest(activeId, deps.signal);
   } catch (err) {
     if (err instanceof RevokedError || err instanceof AbortedError) throw err;
     const error = toPlayerError(err, {
