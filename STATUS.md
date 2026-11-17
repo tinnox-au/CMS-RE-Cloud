@@ -37,13 +37,13 @@ None.
 
 ## In progress
 
-| Id | Card | Agreed | PR | Since |
-|---|---|---|---|---|
-| CMS-1 | Schedules (stage B slice 3): choose which playlist a screen shows by day and time | Michael 17 Nov | - | 17 Nov |
+None.
 
 ## In review
 
-None.
+| Id | Card | Agreed | PR | Since |
+|---|---|---|---|---|
+| CMS-1 | Schedules (stage B slice 3): choose which playlist a screen shows by day and time | Michael 17 Nov | #13 | 17 Nov |
 
 ## Done, last 14 days
 
