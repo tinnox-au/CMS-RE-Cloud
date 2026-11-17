@@ -17,27 +17,43 @@ import { API_URL, PORTAL_URL, repoRoot } from './support/stack.ts';
 
 const runId = randomUUID().slice(0, 8);
 
-/** Holds the next request matching `url` and `method` until `release` is called. */
+/**
+ * Holds the next request matching `url` and `method` until `release` (sends it on, or with
+ * `answerNow` delivers the answer the server gave when it was held) or `fail` (aborts it). Later matching requests pass through. The route stays registered until the held
+ * request is settled: removing it earlier lets Playwright send the held request on by itself.
+ */
 async function hold(
   page: Page,
   url: string | RegExp,
   method: string,
+  { answerNow = false }: { readonly answerNow?: boolean } = {},
 ): Promise<{ held: Promise<Route>; release: () => Promise<void>; fail: () => Promise<void> }> {
   let resolveHeld!: (route: Route) => void;
   const held = new Promise<Route>((resolve) => (resolveHeld = resolve));
+  let taken = false;
+  let settle: () => void = () => undefined;
+  let answer: Awaited<ReturnType<Route['fetch']>> | null = null;
   await page.route(url, async (route) => {
-    if (route.request().method() !== method) return route.fallback();
-    await page.unroute(url);
+    if (taken || route.request().method() !== method) return route.fallback();
+    taken = true;
+    // answerNow: the server answers at once and the answer is delivered late, so it is the
+    // state from before anything the test does meanwhile (a stale read).
+    if (answerNow) answer = await route.fetch();
     resolveHeld(route);
+    // Keep this handler pending until the test settles the route.
+    await new Promise<void>((resolve) => (settle = resolve));
   });
+  const finish = async (action: (route: Route) => Promise<void>): Promise<void> => {
+    const route = await held;
+    await action(route);
+    settle();
+    await page.unroute(url);
+  };
   return {
     held,
-    release: async () => {
-      await (await held).continue();
-    },
-    fail: async () => {
-      await (await held).abort('failed');
-    },
+    release: () =>
+      finish((route) => (answer === null ? route.continue() : route.fulfill({ response: answer }))),
+    fail: () => finish((route) => route.abort('failed')),
   };
 }
 
@@ -98,7 +114,7 @@ test.describe('portal', () => {
 
     await page
       .getByRole('navigation', { name: 'Main' })
-      .getByRole('link', { name: 'Media' })
+      .getByRole('link', { name: 'Playlists' })
       .click();
     const leave = page.getByTestId('leave-dialog');
     await expect(leave).toBeVisible();
@@ -127,7 +143,7 @@ test.describe('portal', () => {
     ).json()) as {
       code: string;
     };
-    const read = await hold(page, `${PORTAL_URL}/api/displays/${id}`, 'GET');
+    const read = await hold(page, `${PORTAL_URL}/api/displays/${id}`, 'GET', { answerNow: true });
     await page.getByTestId('screen-detail-pairing-code').fill(pairing.code);
     await page.getByTestId('screen-detail-pair').click();
     await read.held;
@@ -169,7 +185,14 @@ test.describe('portal', () => {
         client: el.clientWidth,
       }));
       expect(scroll).toBeLessThanOrEqual(client);
-      for (const tab of await list.getByRole('tab').all()) await expect(tab).toBeInViewport();
+      // Every tab lies within the window's width (the page itself may scroll down to them).
+      const outside = await list.evaluate(
+        (el) =>
+          [...el.querySelectorAll('[role="tab"]')]
+            .map((tab) => tab.getBoundingClientRect())
+            .filter((box) => box.left < 0 || box.right > window.innerWidth).length,
+      );
+      expect(outside).toBe(0);
     } finally {
       await page.setViewportSize({ width: 1280, height: 720 });
     }
