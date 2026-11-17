@@ -183,6 +183,12 @@ One finding was refuted: claims left outstanding from before migration 0010. The
 
 **Proof on the code as reviewed.** Every new test was run with the product code taken from `f138439`, migration 0010 removed, and the tests from the branch. Each failed for the reason in its finding: 17 integration and 4 unit failures in all. These include three existing tests updated for the new function count, the new poll outcome and the new revoke answer, plus one existing test that failed only because the new test before it left files behind. All pass on the branch.
 
+**Test runs on the branch (macOS, Node 23.10).**
+- Unit: 1650 passed. Component: passed.
+- Integration: 328 passed. `production-refusal.test.ts` needs `.env` at the repository root.
+- Browser (`npm run test:e2e`, real Keycloak sign-in, API, worker and production builds): 108 of 109 passed. These include the journey's pairing, "revoking the player stops its access…" and "the audit trail records the journey without secrets".
+- The one failure is the offline-reload step of `01-journey.spec.ts` ("playback continues through a network outage, survives an offline reload…"), with `net::ERR_INTERNET_DISCONNECTED` on reload. It fails the same way on `main` at `f138439`, so these changes do not cause it. It passed in the round 2 run earlier the same day; why it now fails is open.
+
 **Severity.** Reviewer severities above are recorded unchanged. On re-checking, we would rate:
 - SCX-01 to SCX-04: Medium.
 - SCX-05 and SCX-06: Low.
