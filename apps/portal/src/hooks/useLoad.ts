@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isAbort } from '../api/client.ts';
+import { createReadOrder } from '../lib/readOrder.ts';
 
 export type LoadState<T> =
   | { readonly status: 'loading' }
@@ -17,7 +18,10 @@ export interface LoadResult<T> {
   readonly state: LoadState<T>;
   /** Fetches again now, keeping the current data on screen meanwhile. */
   readonly reload: () => void;
-  /** Replaces the data without a request, for example with the answer of a save. */
+  /**
+   * Replaces the data without a request, for example with the answer of a save. A read that
+   * was already in flight is then discarded, so it cannot put older data back.
+   */
   readonly setData: (data: T) => void;
 }
 
@@ -40,6 +44,8 @@ export function useLoad<T>(
   const [state, setState] = useState<LoadState<T>>({ status: 'loading' });
   const [nonce, setNonce] = useState(0);
   const pollRef = useRef(poll);
+  // setData invalidates reads already in flight, so a slower answer cannot undo a save.
+  const order = useRef(createReadOrder()).current;
 
   useEffect(() => {
     pollRef.current = poll;
@@ -63,14 +69,25 @@ export function useLoad<T>(
     };
 
     const run = async () => {
+      const ticket = order.begin();
       try {
         const data = await load(controller.signal);
         if (disposed) return;
+        if (!order.isCurrent(ticket)) {
+          // Started before setData: its answer may be older than the data shown. Drop it
+          // and keep the rhythm; the next poll or reload reads again.
+          schedule();
+          return;
+        }
         const current = pollRef.current;
         interval = typeof current === 'function' ? current(data) : current;
         setState({ status: 'ready', data, refreshError: null, fetchedAt: performance.now() });
       } catch (error) {
         if (disposed || isAbort(error)) return;
+        if (!order.isCurrent(ticket)) {
+          schedule();
+          return;
+        }
         // Keep the previous rhythm after a failed attempt; a fixed interval applies at once.
         const current = pollRef.current;
         if (typeof current !== 'function') interval = current;
@@ -89,15 +106,19 @@ export function useLoad<T>(
       controller.abort();
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [load, nonce]);
+  }, [load, nonce, order]);
 
   const reload = useCallback(() => {
     setNonce((value) => value + 1);
   }, []);
 
-  const setData = useCallback((data: T) => {
-    setState({ status: 'ready', data, refreshError: null, fetchedAt: performance.now() });
-  }, []);
+  const setData = useCallback(
+    (data: T) => {
+      order.invalidate();
+      setState({ status: 'ready', data, refreshError: null, fetchedAt: performance.now() });
+    },
+    [order],
+  );
 
   return { state, reload, setData };
 }
