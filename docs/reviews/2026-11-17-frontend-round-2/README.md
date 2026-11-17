@@ -189,3 +189,9 @@ Each of the seven portal checks in `09-review-round-2.spec.ts` was also run agai
 
 Not changed: the residuals of section 6 other than FCX-02 (time-rule boundaries, best-effort leadership, in-memory downloads, no supervisor, list reads, QR module size, rotation of information screens, the apps list), Codex hand-offs 1 and 2, and a CJK face for the player image.
 
+## 12. Fix verification (17 November 2026)
+
+The same check of `main` at `f138439` is recorded in [Fix verification for review rounds 1 and 2](../2026-11-17-fix-verification-r1-r2/README.md).
+Every finding in this round is fixed except FCX-06, which is partly fixed, because `Retry-After` is dropped after the last download attempt and near pairing expiry.
+`player-protocol-v1.md` still describes clipping below `shortSide/12`; that is a low documentation mismatch.
+
