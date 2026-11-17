@@ -113,15 +113,20 @@ body {
   object-fit: cover;
 }
 
-/* Full-window information screens (pairing, waiting, unregistered). */
+/*
+ * Full-window information screens (pairing, waiting, unregistered). They fill the window, not
+ * the content canvas, so they must stay readable on whatever window the player is opened in
+ * (FCU-01 in docs/reviews/2026-11-17-frontend-round-2): text wraps anywhere, and a card that is
+ * still taller than the window scrolls instead of being cut at both ends. The card is centred
+ * with auto margins, which (unlike align-items: center) never pushes its top out of reach.
+ */
 #screen {
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
   padding: 4vmin;
   box-sizing: border-box;
+  overflow: auto;
   background: #060a09;
   text-align: center;
 }
@@ -132,7 +137,11 @@ body {
 }
 
 .card {
+  margin: auto;
   max-width: 90vw;
+  min-width: 0;
+  /* A display name of 120 letters with no space still wraps. */
+  overflow-wrap: anywhere;
 }
 
 .card h1 {
@@ -157,12 +166,33 @@ body {
 .card .code {
   margin: 3vmin 0;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
-  font-size: clamp(3rem, 15vmin, 14rem);
+  /*
+   * The code is nine characters ("ABCD-EFGH"), about 6.2 em wide in this face with this
+   * spacing; 13vw keeps that inside the card's 90vw on a narrow window, and the 1.25rem floor
+   * still fits a 192 px window.
+   */
+  font-size: clamp(1.25rem, min(15vmin, 13vw), 14rem);
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--ink);
   line-height: 1;
   white-space: nowrap;
+}
+
+/*
+ * A very small window (a strip, or a 192×96 test window) has room for the essentials only:
+ * the pairing code or the screen's name, and a warning note. The rest is still in the page
+ * and scrolls into view on a larger window.
+ */
+@media (max-height: 240px) {
+  .card .brand,
+  .card:has(.code) > :not(.code, .note) {
+    display: none;
+  }
+
+  .card .code {
+    margin: 0;
+  }
 }
 
 .card .note {
