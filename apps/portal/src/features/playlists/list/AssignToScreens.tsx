@@ -10,6 +10,7 @@ import {
   canPushAfterAssign,
   failureText,
 } from '../../../lib/playlistsListActions.ts';
+import { anyHasSchedule, SCHEDULE_REPLACED_NOTE } from '../../../lib/screensList.ts';
 import { CircleCheck, Monitor, Send } from '../../../ui/icons.ts';
 import {
   Banner,
@@ -96,14 +97,17 @@ export function AssignToScreens({ playlist, onClose, onAssigned }: AssignToScree
         multiple
         title="Assign to screens"
         description={
-          shown === null ? undefined : (
-            <>
-              <strong className="tx-break">{shown.name}</strong> replaces the playlist that each
-              chosen screen has now. Nothing changes on a screen until you push.
-              {shown.itemCount === 0 &&
-                ' This playlist has no items yet, so it cannot be pushed until it has some.'}
-            </>
-          )
+          shown === null
+            ? undefined
+            : (chosen) => (
+                <>
+                  <strong className="tx-break">{shown.name}</strong> replaces the playlist that each
+                  chosen screen has now. Nothing changes on a screen until you push.
+                  {anyHasSchedule(chosen) && ` ${SCHEDULE_REPLACED_NOTE}`}
+                  {shown.itemCount === 0 &&
+                    ' This playlist has no items yet, so it cannot be pushed until it has some.'}
+                </>
+              )
         }
         confirmLabel={assignConfirmLabel}
         disabledReason={(display) =>

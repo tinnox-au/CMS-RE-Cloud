@@ -12,3 +12,5 @@ docs
 db/migrations
 # approved restyle mockups: kept byte for byte as the client approved them
 docs/portal-v2/restyle-mockups/
+# local git worktrees: second copies of the repository
+.claude/worktrees

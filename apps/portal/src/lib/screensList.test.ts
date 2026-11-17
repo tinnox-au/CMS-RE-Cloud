@@ -14,6 +14,7 @@ import { pruneSelection, selectedRows } from './selection.ts';
 import { SCREEN_STATUS_KINDS } from './screenStatus.ts';
 import { CANVAS_PRESETS } from './screenWizard.ts';
 import {
+  anyHasSchedule,
   assignedDetail,
   assignedDoneText,
   assignedMessage,
@@ -24,12 +25,14 @@ import {
   countByStatusFilter,
   formatStatusFilter,
   frameShape,
+  hasContentAssigned,
   hasUnlistedScreen,
   matchesStatusFilter,
   MIN_FRAME_SHARE,
   parseListView,
   parseStatusFilter,
   pushMarkerFor,
+  SCHEDULE_REPLACED_NOTE,
   SCREEN_SORT_ACCESSORS,
   SCREEN_STATUS_FILTER_HINTS,
   SCREEN_STATUS_FILTER_LABELS,
@@ -64,6 +67,7 @@ function display(n: number, change: Partial<DisplayDto> = {}): DisplayDto {
     player: null,
     tagIds: [],
     assignedPlaylist: null,
+    assignedSchedule: null,
     createdAt: T,
     updatedAt: T,
     ...change,
@@ -90,10 +94,16 @@ function view(displayId: string, change: Partial<DeliveryStatusView> = {}): Deli
   };
 }
 
-function planRow(displayId: string, state: PushState, playlistId: string | null): PushPlanRow {
+function planRow(
+  displayId: string,
+  state: PushState,
+  playlistId: string | null,
+  scheduleId: string | null = null,
+): PushPlanRow {
   return {
     display: { id: displayId, name: 'x' },
     playlist: playlistId === null ? null : { id: playlistId, name: 'Loop' },
+    schedule: scheduleId === null ? null : { id: scheduleId, name: 'Week' },
     state,
     issues: [],
     lastPushedAt: null,
@@ -102,6 +112,8 @@ function planRow(displayId: string, state: PushState, playlistId: string | null)
 
 const PLAYLIST = { id: ID(500), name: 'Reception loop' };
 const OTHER = { id: ID(501), name: 'Foyer loop' };
+/** A schedule whose default playlist is `PLAYLIST`. */
+const SCHEDULE = { id: ID(600), name: 'Opening hours', defaultPlaylist: PLAYLIST };
 
 describe('buildScreenRows', () => {
   const displays = [
@@ -182,6 +194,20 @@ describe('canvasLabel and search', () => {
     expect(texts).toContain('Reception loop');
     expect(texts).toContain('1920 × 1080 px');
     expect(texts).toContain('1920x1080');
+  });
+
+  it('searches and sorts a screen with a schedule by the name of the schedule', () => {
+    const [row] = buildScreenRows({
+      displays: [display(1, { assignedSchedule: SCHEDULE })],
+      sites: [MELBOURNE],
+      statuses: null,
+      plan: null,
+    });
+    if (row === undefined) throw new Error('no row');
+    expect(screenSearchTexts(row)).toContain('Opening hours');
+    // The default playlist is not what the Content column shows.
+    expect(screenSearchTexts(row)).not.toContain('Reception loop');
+    expect(SCREEN_SORT_ACCESSORS.content?.(row)).toBe('Opening hours');
   });
 });
 
@@ -384,6 +410,42 @@ describe('the push marker', () => {
       pushMarkerFor({ display: display(1), push: planRow(ID(1), 'changes', PLAYLIST.id) }),
     ).toBeNull();
   });
+
+  it('marks the assigned schedule when the plan is about it', () => {
+    const scheduled = display(1, { assignedSchedule: SCHEDULE });
+    expect(
+      pushMarkerFor({
+        display: scheduled,
+        push: planRow(ID(1), 'changes', PLAYLIST.id, SCHEDULE.id.toUpperCase()),
+      }),
+    ).toBe('changes');
+    expect(
+      pushMarkerFor({
+        display: scheduled,
+        push: planRow(ID(1), 'up_to_date', PLAYLIST.id, SCHEDULE.id),
+      }),
+    ).toBeNull();
+    // The plan is still about another schedule, or about the playlist that was assigned before.
+    expect(
+      pushMarkerFor({
+        display: scheduled,
+        push: planRow(ID(1), 'changes', PLAYLIST.id, ID(601)),
+      }),
+    ).toBeNull();
+    expect(
+      pushMarkerFor({ display: scheduled, push: planRow(ID(1), 'changes', PLAYLIST.id) }),
+    ).toBeNull();
+  });
+
+  it('does not take the plan row of a schedule for the playlist that is its default', () => {
+    const assigned = display(1, { assignedPlaylist: PLAYLIST });
+    expect(
+      pushMarkerFor({
+        display: assigned,
+        push: planRow(ID(1), 'changes', PLAYLIST.id, SCHEDULE.id),
+      }),
+    ).toBeNull();
+  });
 });
 
 describe('frameShape', () => {
@@ -496,6 +558,31 @@ describe('assigning content', () => {
     expect(screensToAssign([a, b, c, d], PLAYLIST.id).map((x) => x.id)).toEqual([ID(3), ID(4)]);
     expect(screensToAssign([a, c], null).map((x) => x.id)).toEqual([ID(1)]);
     expect(screensToAssign([c], null)).toEqual([]);
+  });
+
+  it('counts a screen with a schedule for any playlist, its default playlist included', () => {
+    const scheduled = display(5, { assignedSchedule: SCHEDULE });
+    expect(screensToAssign([a, scheduled], PLAYLIST.id).map((x) => x.id)).toEqual([ID(5)]);
+    expect(screensToAssign([scheduled], OTHER.id).map((x) => x.id)).toEqual([ID(5)]);
+    // "No playlist" alone would leave the schedule in place, so there is nothing to send.
+    expect(screensToAssign([scheduled], null)).toEqual([]);
+    expect(commonPlaylistId([scheduled])).toBeNull();
+  });
+
+  it('says that a playlist takes the place of a schedule only when a screen has one', () => {
+    const scheduled = display(5, { assignedSchedule: SCHEDULE });
+    expect(anyHasSchedule([a, c])).toBe(false);
+    expect(anyHasSchedule([a, scheduled])).toBe(true);
+    expect(anyHasSchedule([])).toBe(false);
+    expect(SCHEDULE_REPLACED_NOTE).toBe(
+      'A screen that has a schedule gets this playlist instead of its schedule.',
+    );
+  });
+
+  it('knows a screen with a schedule has content to push', () => {
+    expect(hasContentAssigned(a)).toBe(true);
+    expect(hasContentAssigned(display(5, { assignedSchedule: SCHEDULE }))).toBe(true);
+    expect(hasContentAssigned(c)).toBe(false);
   });
 
   it('starts on the playlist every screen shares', () => {

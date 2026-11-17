@@ -570,6 +570,9 @@ describe('forced row-level security after migration 0005', () => {
         'playlist_item',
         'publication',
         'publication_asset',
+        // 0008, applied with the rest.
+        'schedule',
+        'schedule_event',
         'session',
         'site',
         'tag',

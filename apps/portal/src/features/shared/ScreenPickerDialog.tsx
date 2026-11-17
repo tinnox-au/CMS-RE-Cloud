@@ -38,7 +38,11 @@ export interface ScreenPickerDialogProps {
   readonly multiple?: boolean;
   /** Default "Choose a screen" or "Choose screens". */
   readonly title?: string;
-  readonly description?: ReactNode;
+  /**
+   * A function gets the screens that are chosen now, for a sentence that depends on them:
+   * "A screen that has a schedule gets this playlist instead of its schedule."
+   */
+  readonly description?: ReactNode | ((chosen: readonly DisplayDto[]) => ReactNode);
   /**
    * Default "Choose screen" or "Choose N screens". A function gets the number chosen:
    * `(count) => \`Assign to ${count} screens\``.
@@ -84,6 +88,8 @@ async function loadScreens(signal: AbortSignal): Promise<ScreensData> {
 }
 
 function contentLabel(display: DisplayDto): string {
+  if (display.assignedSchedule !== null)
+    return `Assigned: schedule ${display.assignedSchedule.name}`;
   return display.assignedPlaylist === null
     ? 'Nothing assigned'
     : `Assigned: ${display.assignedPlaylist.name}`;
@@ -91,7 +97,7 @@ function contentLabel(display: DisplayDto): string {
 
 /**
  * Chooses one screen or several: a searchable list with each screen's status pill (what its
- * player last reported, and when) and the playlist assigned to it. Screens and statuses are
+ * player last reported, and when) and the playlist or schedule assigned to it. Screens and statuses are
  * loaded afresh each time the dialog opens. If only the statuses cannot be read, the screens
  * are still listed and a notice says so.
  */
@@ -131,7 +137,15 @@ export function ScreenPickerDialog({
   const displays = state.status === 'ready' ? state.data.displays : [];
   const reasonFor = (display: DisplayDto) => disabledReason?.(display) ?? null;
   const shown = displays.filter((display) =>
-    matchesSearch([display.name, display.assignedPlaylist?.name, display.description], query),
+    matchesSearch(
+      [
+        display.name,
+        display.assignedPlaylist?.name,
+        display.assignedSchedule?.name,
+        display.description,
+      ],
+      query,
+    ),
   );
   // Only screens that still exist and may be chosen count, whatever was ticked before.
   const chosen = displays.filter(
@@ -160,7 +174,7 @@ export function ScreenPickerDialog({
       open={open}
       onClose={onClose}
       title={title ?? (multiple ? 'Choose screens' : 'Choose a screen')}
-      description={description}
+      description={typeof description === 'function' ? description(chosen) : description}
       size="md"
       busy={busy}
       footerStart={

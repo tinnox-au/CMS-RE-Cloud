@@ -38,6 +38,9 @@ jobs:
       - run: npm run format:check
       - run: npm run typecheck
       - run: npm test
+      # Portal components render in real Chromium (the portal relies on the popover attribute).
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:component
       - run: npm run build
       # Fails on high or critical advisories. Lower-severity findings are tracked in the docs.
       - run: npm run audit

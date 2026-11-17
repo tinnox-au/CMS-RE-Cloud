@@ -205,7 +205,7 @@
   flex: none;
 }
 
-/* The first part (the playlist, or "No playlist assigned") gives way so the line never runs
+/* The first part (the playlist, the schedule, or "Nothing assigned") gives way so the line never runs
    under the status beside it. */
 .tx-push-row__meta > :first-child {
   flex: 0 1 auto;
@@ -219,7 +219,7 @@
   margin-inline-end: var(--s-2);
 }
 
-/* A long playlist name gives way first; when it was last pushed stays whole. */
+/* A long playlist or schedule name gives way first; when it was last pushed stays whole. */
 .tx-push-row__meta > .tx-push-row__playlist {
   flex: 0 1 auto;
   display: inline-flex;

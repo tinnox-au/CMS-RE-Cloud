@@ -1,5 +1,5 @@
 import type { DisplayDto } from '@tinnox/contracts';
-import type { ScreenRow } from '../../../lib/screensList.ts';
+import { hasContentAssigned, type ScreenRow } from '../../../lib/screensList.ts';
 import { Ellipsis, Eye, ListVideo, Send, Tags, Unlink } from '../../../ui/icons.ts';
 import { IconButton, Menu, MenuItem, MenuSeparator } from '../../../ui/index.ts';
 
@@ -18,6 +18,7 @@ export interface ScreenRowMenuProps {
  */
 export function ScreenRowMenu({ row, onAssign, onPush, onEditTags, onRevoke }: ScreenRowMenuProps) {
   const { display } = row;
+  const nothingAssigned = !hasContentAssigned(display);
   return (
     <Menu
       placement="bottom-end"
@@ -43,8 +44,8 @@ export function ScreenRowMenu({ row, onAssign, onPush, onEditTags, onRevoke }: S
       </MenuItem>
       <MenuItem
         icon={Send}
-        disabled={display.assignedPlaylist === null}
-        hint={display.assignedPlaylist === null ? 'Nothing assigned' : undefined}
+        disabled={nothingAssigned}
+        hint={nothingAssigned ? 'Nothing assigned' : undefined}
         onSelect={() => {
           onPush(display);
         }}

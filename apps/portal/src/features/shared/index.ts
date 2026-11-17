@@ -12,6 +12,7 @@ export {
 export { PlaylistMosaic, type PlaylistMosaicProps } from './PlaylistMosaic.tsx';
 export { PlaylistPickerDialog, type PlaylistPickerDialogProps } from './PlaylistPickerDialog.tsx';
 export { PushStatePill, type PushStatePillProps } from './PushStatePill.tsx';
+export { SchedulePickerDialog, type SchedulePickerDialogProps } from './SchedulePickerDialog.tsx';
 export { ScreenPickerDialog, type ScreenPickerDialogProps } from './ScreenPickerDialog.tsx';
 export { useLeaveGuard, type LeaveGuard } from './useLeaveGuard.tsx';
 export {

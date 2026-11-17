@@ -349,6 +349,55 @@ describe('audit actor and object', () => {
     expect(AUDIT_CATEGORY_LABELS.app).toBe('Apps');
   });
 
+  it('labels schedule events and points at the schedule and its playlists', () => {
+    const updated = event({
+      action: 'schedule.update',
+      objectType: 'schedule',
+      objectId: ID(7),
+      detail: { defaultPlaylistId: ID(3), eventCount: 2 },
+    });
+    expect(auditActionLabel(updated)).toBe('Schedule updated');
+    expect(AUDIT_CATEGORY_LABELS.schedule).toBe('Schedules');
+    expect(auditObjectTypeLabel('schedule')).toBe('Schedule');
+    expect(auditTargetLabel('schedule')).toBe('Schedule');
+    expect(auditTargetPath({ kind: 'schedule', id: ID(7) })).toBe(`/schedules/${ID(7)}`);
+    // The default playlist of the detail is a related playlist, so it gets a name and a link.
+    expect(auditTargets(updated)).toEqual({
+      primary: { kind: 'schedule', id: ID(7) },
+      related: [{ kind: 'playlist', id: ID(3) }],
+    });
+    expect(auditSubject(updated)).toEqual({ kind: 'schedule', id: ID(7) });
+
+    // A screen given a schedule, and the push that followed.
+    expect(
+      auditTargets(event({ detail: { fields: ['assignedScheduleId'], assignedScheduleId: ID(7) } }))
+        .related,
+    ).toEqual([{ kind: 'schedule', id: ID(7) }]);
+    expect(
+      auditTargets(
+        event({
+          action: 'publication.create',
+          objectType: 'publication',
+          objectId: ID(8),
+          detail: { displayId: ID(1), playlistId: ID(3), scheduleId: ID(7) },
+        }),
+      ).related,
+    ).toEqual([
+      { kind: 'display', id: ID(1) },
+      { kind: 'playlist', id: ID(3) },
+      { kind: 'schedule', id: ID(7) },
+    ]);
+
+    const names: AuditNames = { ...NO_AUDIT_NAMES, schedule: new Map([[ID(7), 'Opening hours']]) };
+    expect(resolveAuditTarget({ kind: 'schedule', id: ID(7) }, names)).toEqual({
+      state: 'found',
+      name: 'Opening hours',
+      path: `/schedules/${ID(7)}`,
+    });
+    expect(resolveAuditTarget({ kind: 'schedule', id: ID(9) }, names)).toEqual({ state: 'gone' });
+    expect(auditObjectText(updated, names)).toBe('Opening hours');
+  });
+
   it('resolves an object against the lists that were read', () => {
     const names: AuditNames = {
       ...NO_AUDIT_NAMES,

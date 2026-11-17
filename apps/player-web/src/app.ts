@@ -1,4 +1,9 @@
-import { manifestV2Facts, type PairingPollResponse, type PlayerError } from '@tinnox/contracts';
+import {
+  manifestPlaylists,
+  manifestV2Facts,
+  type PairingPollResponse,
+  type PlayerError,
+} from '@tinnox/contracts';
 import { API_ORIGIN, IS_PRODUCTION_BUILD, PLAYER_VERSION } from './config.ts';
 import { backoffDelay, type BackoffPolicy } from './core/backoff.ts';
 import { describeError, ErrorLog, sanitiseMessage, toPlayerError } from './core/errors.ts';
@@ -12,7 +17,7 @@ import {
 import { heartbeatStateFor, PlayerMachine, type PlayerPhase } from './core/machine.ts';
 import { PlaybackLoop, type PlaybackEvent } from './core/playback.ts';
 import { SyncLoop } from './core/sync.ts';
-import { localWallClock } from './core/time-rules.ts';
+import { coveringSlices, localWallClock } from './core/time-rules.ts';
 import { sleep, systemClock } from './core/timing.ts';
 import type { PairingRecord, RegistrationRecord, StagingRecord } from './core/types.ts';
 import { PlayerHttpApi } from './platform/api.ts';
@@ -695,8 +700,19 @@ export class PlayerApp {
       const manifest = active?.manifest ?? null;
       const facts = manifest === null ? null : manifestV2Facts(manifest);
       const timeZone = facts?.timeZone ?? null;
-      const there =
-        timeZone === null ? null : localWallClock(Date.now() + this.#clockOffsetMs, timeZone);
+      // One instant for "Local time there" and "Schedule picks".
+      const correctedNow = Date.now() + this.#clockOffsetMs;
+      const there = timeZone === null ? null : localWallClock(correctedNow, timeZone);
+      // What the events ask for at the corrected clock, so "wrong content at 9" can be told
+      // apart from a wrong clock or zone on the device; "On screen" says what is really showing.
+      // shortcut: the row names the first covering event's playlist, not the one on air after a fallback; derive it from the item on screen if support needs it.
+      const picked = manifest === null ? undefined : coveringSlices(manifest, correctedNow)[0];
+      const schedulePicks =
+        manifest === null || manifest.schemaVersion !== 4
+          ? '— (no schedule)'
+          : picked === undefined || picked === 0
+            ? 'default playlist'
+            : `playlist ${picked + 1} of ${manifestPlaylists(manifest).length}`;
       sections.push({
         title: 'Content',
         rows: [
@@ -726,6 +742,7 @@ export class PlayerApp {
               : (there?.stamp.replace('T', ' ') ?? 'zone unknown to this browser'),
           ],
           ['Clock offset', `${(this.#clockOffsetMs / 1000).toFixed(1)} s from server time`],
+          ['Schedule picks', schedulePicks],
           [
             'On screen',
             session.rendering === null

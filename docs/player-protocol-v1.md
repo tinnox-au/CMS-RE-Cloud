@@ -109,7 +109,7 @@ A player that is paired to a display of another organisation must first delete e
 | Response | Meaning |
 |---|---|
 | `204` | Nothing is published to this display |
-| `200 {"manifest": Manifest}` with `ETag: "<publicationId>"` | The current (desired) publication, version 1, 2 or 3 (below) |
+| `200 {"manifest": Manifest}` with `ETag: "<publicationId>"` | The current (desired) publication, version 1, 2, 3 or 4 (below) |
 | `304` with the same `ETag` | `If-None-Match` named the current publication |
 | `401` | Credential revoked or invalid |
 
@@ -191,6 +191,53 @@ Required player behaviour (`player-web/0.3.0`, `apps/player-web/src/ui/presenter
 - Ticker: one line at 0.6 of the box height (at most 0.25 of its width) scrolls right to left at 2, 3 or 4.5 character heights per second (slow, medium, fast), measured in canvas pixels, so rotation does not change it. With `prefers-reduced-motion: reduce` the text stands still and wraps.
 - QR code: error correction M, black modules on white with a 4-module quiet zone whatever the colours. A box at least 1.6 times as wide as high puts the caption beside the code; otherwise it goes below.
 - Text sizes are fitted to the app's own box, with a floor of 1/12 of its short side; below that text is clipped. Single lines (clock, date, the countdown value, the QR caption, the Text heading) wrap only when they would overflow at that floor. Locale is `en-AU`.
+
+### Manifest v4 (stage B, slice 3: schedules)
+
+`ManifestV4Schema` is the v3 document with `schemaVersion: 4` and one added field, `schedule`. It keeps every v3 field. The server writes v4 only when the screen has a schedule assigned in which at least one event uses a playlist other than the schedule's default playlist (section 9).
+
+The fields that differ from v3 (every other v3 field is present as before; here `assets` holds five items, the default playlist's three and then the event playlist's two):
+
+```json
+{
+  "schemaVersion": 4,
+  "transition": "cut",
+  "shuffle": false,
+  "schedule": {
+    "playlists": [
+      { "count": 3, "transition": "cut", "shuffle": false },
+      { "count": 2, "transition": "fade", "shuffle": true }
+    ],
+    "events": [
+      { "playlist": 1, "days": [true, true, true, true, true, false, false], "start": "11:30", "end": "14:00" }
+    ]
+  }
+}
+```
+
+- `assets` stays one flat list. `schedule.playlists` cuts it into consecutive slices: the first `count` items are playlist 0, the next `count` items are playlist 1, and so on. The counts add up to `assets.length`. Playlist 0 is the **default playlist**; a playlist that several events use appears once. There are 1 to 51 playlists; the server only writes the block with two or more.
+- Each playlist carries its own `transition` and `shuffle`. The top-level `transition` and `shuffle` equal those of playlist 0.
+- `schedule.events` (1 to 50) are weekly events **in priority order**. `playlist` is an index into `schedule.playlists` and may be 0. `days` has 7 entries, index 0 = Monday, at least one `true`; a day is the day on which the event **starts**. `start` and `end` are `HH:mm`; `start` is never `24:00`, `end` is never `00:00` (`24:00` is the only way to say midnight at the end) and the two differ.
+- An event covers a moment as `eventCovers` in `packages/contracts/src/schedule.ts` says: with `end` after `start`, on a ticked day while `start <= time < end`; with `end` before `start` it runs past midnight, so it covers a ticked day from `start` and the following day before `end`. `00:00` to `24:00` is the whole day.
+- The manifest holds no playlist id, no schedule id and no slice start. `activeItemIndex` in the heartbeat stays the index into the flat `assets`, counted across all playlists, default playlist first. `POST /player/media-urls` and the media route cover the media of every playlist.
+
+Required player behaviour (`player-web/0.4.0`, `apps/player-web/src/core/time-rules.ts` and `core/playback.ts`). All of it is decided on the player, from the server-corrected clock in `timeZone`; nothing is fetched at a change of playlist.
+
+Which items may play at a moment, in this order:
+
+1. (v1 only: every item.)
+2. Fail open: when the corrected clock is more than 5 minutes before `createdAt`, or the browser does not know `timeZone`, every item of the **default playlist** plays, windows ignored. Playlists are never mixed.
+3. Outside working hours nothing plays. Working hours outrank the schedule.
+4. The events are checked from the top. Each covering event's playlist is a candidate, in order, each playlist once, and the default playlist is the last candidate. The first candidate that has an item to show now plays: an item of that playlist inside its availability window (apps always count). So a higher event whose playlist has nothing to show at that moment lets the next covering event play, and the default playlist plays only when no covering event has anything.
+5. No candidate has anything: nothing is due, as in v2.
+
+At any moment every item on air comes from one playlist.
+
+- **Change of playlist.** A playlist starts at its first item (or a new shuffle round) each time it comes on, and its own `transition` decides how its items are shown. There is no resume at the interrupted item. A change of playlist is not a change of publication: nothing is downloaded and `activePublicationId` does not change.
+- **Moment of change.** For v4 the hold of an image or an app is checked at every wall-clock minute and ends early when the item may no longer be shown, so images and apps change on the minute, at an event edge and also at a working-hours or window edge. A video is never cut: it finishes first. For v1 to v3 nothing changes: rules are checked at item boundaries.
+- **A broken event playlist.** When every playable item of an event's playlist fails in a row, that playlist is skipped and the next candidate plays (rule 4); each failure is reported as `playback_error` as usual, the last good item stays on screen meanwhile, and the player does not report a playback fault. The skipped playlist is tried again after five minutes while its event still covers the moment, at the next item boundary at which the playlist on air is not part-way through a run of failures; the skip ends when the event ends, so the playlist is tried afresh the next time its event comes on. Only the default playlist failing completely is the playback fault of v2 (`playerState: error`).
+- **Daylight saving.** The rule is the wall clock, as for working hours: an event wholly inside the skipped hour does not play that day, one that starts inside it starts when the clock resumes, and in the repeated hour an event edge applies twice.
+- A clock that is wrong but not behind the publication picks the wrong event with no signal to the server. The diagnostics overlay of the browser player shows what the events ask for at its corrected clock ("Schedule picks").
 
 ## 6. Media download
 
@@ -297,11 +344,14 @@ M0 negotiates on the server, at publish time, not with each device.
 
 - Every display has a `route` (only `browser` exists). Each route has a capability profile (`CapabilityProfileSchema`, `packages/delivery`). For the browser route, profile version 1: JPEG, PNG and MP4 with H.264 (8-bit 4:2:0); `contain` and `cover`; one full-frame region; muted; optional content rectangle; canvas up to 16384 px per side; video up to 3840x2160; assets up to the upload limit; up to 200 items.
 - `POST /api/playlists/:id/publish` checks the playlist against the profile of the target display's route. A playlist the route cannot show is refused with `422 publication_rejected` and one readable reason per item (`PUBLISH_REJECTION_CODES`). Nothing unsupported reaches a manifest.
+- A schedule (stage B, slice 3) is checked the same way when it is pushed: the item total of all its playlists is checked first (over the limit it is the only issue), then each playlist on its own, then the combined list, so the item limit of the profile applies to **all playlists of a schedule together** (`too_many_items`, issue path `schedule`). There is no separate limit for schedules.
 - A player declares nothing about itself except `player.version`. If a device cannot play an asset that the profile allows (for example a browser build without H.264), it reports `unsupported_media` or `decode_failed` in the heartbeat and keeps the previous version. Per-device capability reports are a later addition and would be a new field in a new heartbeat schema version.
-- Version handling: `schemaVersion` is explicit in the manifest and the heartbeat. There is no per-player version negotiation. The server writes manifest v3 when any item is an app; otherwise v2 when the publication needs it (a transition other than `cut`, shuffle, a rotation other than 0, working hours, or an availability window on any item); otherwise v1. So a screen whose settings did not change keeps getting the same kind of document, and removing every app makes the next push v2 or v1 again. The ETag stays the publication id; there is no request header, `Vary` or down-conversion.
+- Version handling: `schemaVersion` is explicit in the manifest and the heartbeat. There is no per-player version negotiation. The server writes manifest v4 exactly when the screen's assigned schedule has an event that uses a playlist other than its default; a schedule without such an event (no events, or events that all name the default playlist) is sent as its default playlist, v1 to v3. Otherwise it writes v3 when any item is an app; otherwise v2 when the publication needs it (a transition other than `cut`, shuffle, a rotation other than 0, working hours, or an availability window on any item); otherwise v1. So a screen whose settings did not change keeps getting the same kind of document; removing every app makes the next push v2 or v1 again, and removing the schedule, or its last event that uses another playlist, makes it v1 to v3 again. The ETag stays the publication id; there is no request header, `Vary` or down-conversion.
 - A v1 player (before `player-web/0.2.0`) that receives v2 reports `manifest_unsupported_version` and keeps playing its last content. Nothing reloads a running player: it moves to v2 only when its page is reloaded. The portal says so under that error on the screen's Overview tab.
 - A player before `player-web/0.3.0` that receives v3 reports `manifest_unsupported_version` and keeps playing its last content, or its waiting slate when it has none; the same Overview hint applies.
-- Version rule: a new manifest schema version is cut whenever a released player would reject the document. Players parse every version with strict objects, so any new field or item shape needs a new version. v2 is frozen. v3 is frozen when `player-web/0.3.0` is released, so the next addition is v4.
+- A player before `player-web/0.4.0` that receives v4 reports `manifest_unsupported_version` and keeps playing its last content, or its waiting slate when it has none; the same Overview hint applies. Such a player also fetches the manifest again and sends a heartbeat about every 2 seconds until its page is reloaded (read from the 0.3.0 code, not measured): it does not remember a publication it refused, so every heartbeat reply that names it starts another attempt. Both stay under the route limits. Reload every screen before the first push of a schedule with events.
+- From `player-web/0.4.0` a player remembers the publication of a manifest it refused (unsupported version or malformed, when the id can be read) and retries it on its update backoff, not after every heartbeat. This is for the next version's rollout; a released 0.3.0 cannot be fixed.
+- Version rule: a new manifest schema version is cut whenever a released player would reject the document. Players parse every version with strict objects, so any new field or item shape needs a new version. v2 and v3 are frozen. v4 is frozen when `player-web/0.4.0` is released, so the next addition is v5.
 
 A later LED route (a dedicated player over HDMI, or controller-native playback) gets its own profile and its own `route` id. Nothing in this protocol claims compatibility with any LED controller.
 

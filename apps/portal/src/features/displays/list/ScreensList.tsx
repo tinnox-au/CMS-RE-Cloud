@@ -10,6 +10,7 @@ import {
   type SortState,
 } from '../../../lib/listView.ts';
 import {
+  anyHasSchedule,
   assignedDetail,
   assignedMessage,
   buildScreenRows,
@@ -21,6 +22,7 @@ import {
   parseListView,
   parseStatusFilter,
   pushMarkerFor,
+  SCHEDULE_REPLACED_NOTE,
   SCREEN_SORT_ACCESSORS,
   SCREEN_STATUS_FILTER_HINTS,
   SCREEN_STATUS_FILTER_LABELS,
@@ -291,6 +293,19 @@ export function ScreensList() {
       const first = outcome.failed[0];
       if (first === undefined) {
         setAssign((state) => ({ ...state, open: false, busy: false }));
+        // "No playlist" leaves a schedule in place (the API clears only the side it is sent). The
+        // list's copy may predate a schedule assigned elsewhere: then nothing was removed.
+        const kept =
+          playlist === null
+            ? outcome.done.find((entry) => entry.result.assignedSchedule !== null)
+            : undefined;
+        if (kept !== undefined) {
+          toast.info(`${kept.result.name} now has a schedule`, {
+            detail:
+              'Its schedule stays assigned. To remove it, use "Remove content" on the screen\'s page.',
+          });
+          return;
+        }
         toast.success(
           assignedMessage(
             outcome.done.map((entry) => entry.item),
@@ -395,12 +410,19 @@ export function ScreensList() {
 
   const contentCell = (row: ScreenRow) => {
     const playlist = row.display.assignedPlaylist;
+    const schedule = row.display.assignedSchedule;
     const marker = pushMarkerFor(row);
     return (
       <span className="tx-screens-content" data-testid="screens-content">
-        {playlist === null ? (
-          <span className="tx-muted">Nothing assigned</span>
-        ) : (
+        {schedule !== null ? (
+          <Link
+            className="tx-screens-content__link"
+            to={`/schedules/${schedule.id}`}
+            title={`Schedule: ${schedule.name}`}
+          >
+            Schedule: {schedule.name}
+          </Link>
+        ) : playlist !== null ? (
           <Link
             className="tx-screens-content__link"
             to={`/playlists/${playlist.id}`}
@@ -408,6 +430,8 @@ export function ScreensList() {
           >
             {playlist.name}
           </Link>
+        ) : (
+          <span className="tx-muted">Nothing assigned</span>
         )}
         {marker !== null && <PushStatePill state={marker} testId="screens-push-state" />}
       </span>
@@ -886,18 +910,19 @@ export function ScreensList() {
               ? 'Assign content'
               : `Assign content to ${screensLabel(assignTargets.length)}`
           }
-          description={
+          description={`${
             assignSingle !== null
               ? `Choose the playlist for ${assignSingle.name}. Nothing changes on the screen until you push.`
               : 'Every chosen screen gets this playlist. Nothing changes on a screen until you push.'
-          }
+          }${anyHasSchedule(assignTargets) ? ` ${SCHEDULE_REPLACED_NOTE}` : ''}`}
           confirmLabel={
             assignSingle !== null || assignTargets.length === 0
               ? 'Assign playlist'
               : `Assign to ${screensLabel(assignTargets.length)}`
           }
           currentId={assignCurrentId}
-          allowNone={assignSingle !== null}
+          // shortcut: content cannot be removed from a scheduled screen in the list; send both ids null and say "Content removed" if operators ask.
+          allowNone={assignSingle !== null && assignSingle.assignedSchedule === null}
           noneHint="The screen keeps what it was last given."
           disabledReason={(playlist) =>
             screensToAssign(assignTargets, playlist.id).length > 0

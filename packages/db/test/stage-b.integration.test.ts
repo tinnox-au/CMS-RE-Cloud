@@ -136,7 +136,7 @@ describe('display rotation and working hours', () => {
     expect(await set(Array(7).fill(padded))).toBe(PG.check);
   });
 
-  it('grants the runtime role exactly rotation and working_hours on top of stage A', async () => {
+  it('grants the runtime role exactly rotation, working_hours and (0008) assigned_schedule_id on top of stage A', async () => {
     const { rows } = await migrator.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.column_privileges
        WHERE table_schema = 'public' AND table_name = 'display'
@@ -160,13 +160,15 @@ describe('display rotation and working hours', () => {
         // 0006
         'rotation',
         'working_hours',
+        // 0008
+        'assigned_schedule_id',
       ].sort(),
     );
   });
 });
 
 describe('publication manifest version', () => {
-  it('accepts schema versions 1 to 3 and refuses 4', async () => {
+  it('accepts schema versions 1 to 4 and refuses 5', async () => {
     const insert = (version: number) => {
       const id = randomUUID();
       const manifest = {
@@ -191,6 +193,7 @@ describe('publication manifest version', () => {
     expect(await insert(1)).toBe('no error');
     expect(await insert(2)).toBe('no error');
     expect(await insert(3)).toBe('no error');
-    expect(await insert(4)).toBe(PG.check);
+    expect(await insert(4)).toBe('no error');
+    expect(await insert(5)).toBe(PG.check);
   });
 });

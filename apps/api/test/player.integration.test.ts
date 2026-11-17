@@ -1,12 +1,19 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ManifestSchema, PushResponseSchema, manifestPlaylists } from '@tinnox/contracts';
 import {
+  assignSchedule,
   createDisplay,
   createOrg,
+  createPlaylist,
+  createSchedule,
+  imageItem,
   pairPlayer,
   PLAYER_ORIGIN,
   publishImages,
+  push,
   readyImage,
+  scheduleEvent,
   signIn,
   startTestApp,
   type Operator,
@@ -241,6 +248,52 @@ describe('player protocol', () => {
       headers: { ...player.headers, origin: 'http://localhost:5173' },
     });
     expect(foreignOrigin.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('serves a version 4 manifest and the media of every playlist of the schedule', async () => {
+    const display = await createDisplay(operator, org, 'scheduled');
+    const usual = await readyImage(t, operator, { width: 30, height: 10 });
+    // In the event playlist only: not in the default playlist, nor anywhere else.
+    const special = await readyImage(t, operator, { width: 10, height: 30 });
+    const schedule = await createSchedule(
+      operator,
+      'Week',
+      await createPlaylist(operator, 'Usual', [imageItem(usual.id)]),
+      [scheduleEvent(await createPlaylist(operator, 'Special', [imageItem(special.id)]))],
+    );
+    await assignSchedule(operator, display.id, schedule.id);
+    const player = await pairPlayer(t, operator, display.id);
+    const [result] = PushResponseSchema.parse(
+      await (await push(operator, [display.id])).json(),
+    ).results;
+    const publicationId = result?.publicationId ?? '';
+    expect(result?.outcome).toBe('published');
+
+    const response = await fetch(`${t.url}/player/manifest`, { headers: player.headers });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('etag')).toBe(`"${publicationId}"`);
+    const manifest = ManifestSchema.parse(
+      ((await response.json()) as { manifest: unknown }).manifest,
+    );
+    expect(manifest).toMatchObject({ schemaVersion: 4, publicationId, displayId: display.id });
+    expect(manifest.assets.map((asset) => ('assetId' in asset ? asset.assetId : null))).toEqual([
+      usual.id,
+      special.id,
+    ]);
+    expect(manifestPlaylists(manifest).map((slice) => [slice.from, slice.count])).toEqual([
+      [0, 1],
+      [1, 1],
+    ]);
+
+    // The player stages every playlist before it activates, so each file has a URL.
+    const issued = await mediaUrls(player, publicationId, [usual.id, special.id]);
+    expect(issued.status).toBe(200);
+    const { urls } = (await issued.json()) as { urls: { assetId: string; url: string }[] };
+    expect(urls.map((entry) => entry.assetId)).toEqual([usual.id, special.id]);
+    const file = await fetch(local(urls[1]?.url ?? ''));
+    expect(file.status).toBe(200);
+    const bytes = Buffer.from(await file.arrayBuffer());
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(special.sha256);
   });
 
   it('binds signed media URLs to registration, publication, asset and expiry', async () => {

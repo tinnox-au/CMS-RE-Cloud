@@ -32,6 +32,7 @@ const display: DisplayDto = {
   player: null,
   tagIds: [],
   assignedPlaylist: null,
+  assignedSchedule: null,
   createdAt: '2026-11-15T00:00:00.000Z',
   updatedAt: '2026-11-15T00:00:00.000Z',
 };

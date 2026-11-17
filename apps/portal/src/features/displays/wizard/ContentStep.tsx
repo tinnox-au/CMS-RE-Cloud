@@ -144,6 +144,15 @@ export function ContentStep({
           </Banner>
         )}
 
+        {display.assignedSchedule !== null && (
+          <Banner tone="info">
+            <span data-testid="screen-wizard-schedule-note">
+              This screen has a schedule. It gets the playlist you assign here instead of its
+              schedule.
+            </span>
+          </Banner>
+        )}
+
         {error !== null && <ErrorNotice error={error} title="The playlist was not assigned" />}
 
         <section className="tx-screen-wizard__playlists" aria-labelledby={`${groupName}-title`}>

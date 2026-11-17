@@ -1,13 +1,17 @@
 // In-memory stand-ins for the browser storage and the player API, with failure injection.
 // Used only by unit tests.
 import type {
+  Manifest,
   ManifestAppItem,
   ManifestAssetV1,
+  ManifestScheduleEvent,
   ManifestV1,
   ManifestV2,
   ManifestV3,
+  ManifestV4,
   MediaUrlsResponse,
   PlayerError,
+  Transition,
 } from '@tinnox/contracts';
 import { AbortedError, PlayerFault, RevokedError } from './errors.ts';
 import type {
@@ -140,6 +144,42 @@ export function makeManifestV3(
   };
 }
 
+/** One playlist of a v4 test manifest; cut and listed order unless said otherwise. */
+export interface TestPlaylist {
+  readonly items: readonly (ManifestAssetV1 | ManifestAppItem)[];
+  readonly transition?: Transition;
+  readonly shuffle?: boolean;
+}
+
+/** All seven days of a schedule event, Monday first. */
+export const EVERY_DAY: boolean[] = [true, true, true, true, true, true, true];
+
+/**
+ * A v4 manifest (v3 defaults plus a schedule). `playlists[0]` is the default playlist; an
+ * event's `playlist` is an index into `playlists`. Media items get no windows.
+ */
+export function makeManifestV4(
+  playlists: readonly TestPlaylist[],
+  events: readonly ManifestScheduleEvent[],
+  overrides: Partial<ManifestV4> = {},
+): ManifestV4 {
+  return {
+    ...makeManifestV3(playlists.flatMap((playlist) => playlist.items)),
+    schemaVersion: 4,
+    transition: playlists[0]?.transition ?? 'cut',
+    shuffle: playlists[0]?.shuffle ?? false,
+    schedule: {
+      playlists: playlists.map((playlist) => ({
+        count: playlist.items.length,
+        transition: playlist.transition ?? 'cut',
+        shuffle: playlist.shuffle ?? false,
+      })),
+      events: events.map((event) => ({ ...event, days: [...event.days] })),
+    },
+    ...overrides,
+  };
+}
+
 export function makeRegistration(overrides: Partial<RegistrationRecord> = {}): RegistrationRecord {
   return {
     registrationId: REGISTRATION_ID,
@@ -217,11 +257,7 @@ export class MemoryStateStore implements StateStore {
     this.#guard('clearStaging');
     this.staging = null;
   }
-  async activate(
-    registrationId: string,
-    manifest: ManifestV1 | ManifestV2,
-    at: string,
-  ): Promise<boolean> {
+  async activate(registrationId: string, manifest: Manifest, at: string): Promise<boolean> {
     this.#guard('activate');
     if (
       this.registration === null ||

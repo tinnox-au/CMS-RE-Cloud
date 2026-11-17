@@ -650,13 +650,19 @@ function sameId(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
 
-/** The screens that have this playlist assigned, in the order of the push plan. */
+/**
+ * The screens that have this playlist assigned directly, in the order of the push plan. The
+ * row of a screen with a schedule carries the schedule's default playlist as its playlist;
+ * such a screen is not one of this playlist's, so it is left out.
+ */
 export function rowsForPlaylist(
   plan: PushPlanResponse | null,
   playlistId: string,
 ): readonly PushPlanRow[] {
   if (plan === null) return [];
-  return plan.items.filter((row) => row.playlist !== null && sameId(row.playlist.id, playlistId));
+  return plan.items.filter(
+    (row) => row.schedule === null && row.playlist !== null && sameId(row.playlist.id, playlistId),
+  );
 }
 
 /** How many of the rows a push would act on (changes waiting, or never pushed). */
@@ -670,7 +676,7 @@ function screens(count: number): string {
 
 /** One sentence under the card's title: how many screens play this playlist and what is waiting. */
 export function pushSummary(rows: readonly PushPlanRow[]): string {
-  if (rows.length === 0) return 'No screen has this playlist assigned.';
+  if (rows.length === 0) return 'No screen has this playlist assigned directly.';
   const waiting = waitingCount(rows);
   const blocked = rows.filter((row) => row.state === 'blocked').length;
   const has = rows.length === 1 ? '1 screen has' : `${rows.length} screens have`;
@@ -697,7 +703,9 @@ export function pushSummary(rows: readonly PushPlanRow[]): string {
  */
 export function pushHoldReason(dirty: boolean, rows: readonly PushPlanRow[]): string | null {
   if (dirty) return 'Save the draft first. Only the saved playlist can be pushed.';
-  if (rows.length === 0) return 'Assign this playlist to a screen first.';
+  if (rows.length === 0) {
+    return 'No screen has this playlist assigned directly. Screens that play it through a schedule are pushed with Push to screens.';
+  }
   return null;
 }
 

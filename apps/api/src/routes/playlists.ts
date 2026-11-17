@@ -426,21 +426,17 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
   /**
    * Deletes a playlist. Refused while a display has it assigned: the operator
    * assigns something else first, so no display is left pointing at nothing by
-   * accident. Otherwise the row is kept but hidden (`deleted_at`), because its
-   * publications refer to it for good, and its items are removed, so the media
-   * it used is free to be deleted. What displays are playing is not affected:
-   * a publication is a snapshot.
+   * accident. Refused while a schedule uses it, as its default or in an event,
+   * for the same reason. Otherwise the row is kept but hidden (`deleted_at`),
+   * because its publications refer to it for good, and its items are removed,
+   * so the media it used is free to be deleted. What displays are playing is
+   * not affected: a publication is a snapshot.
    */
   app.delete(ROUTES.playlistPattern, async (request, reply) => {
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
-    const inUse = (details?: { path: string; message: string }[]): HttpError =>
-      new HttpError(
-        409,
-        'playlist_in_use',
-        'This playlist is assigned to a screen. Assign other content to the screen first.',
-        details === undefined ? {} : { details },
-      );
+    const inUse = (message: string, details?: { path: string; message: string }[]): HttpError =>
+      new HttpError(409, 'playlist_in_use', message, details === undefined ? {} : { details });
     try {
       await withOrg(pool, session.orgId, async (tx) => {
         const locked = await tx.query(
@@ -456,7 +452,26 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
           [id],
         );
         if (assigned.rows.length > 0) {
-          throw inUse(assigned.rows.map((r) => ({ path: 'display', message: r.name })));
+          throw inUse(
+            'This playlist is assigned to a screen. Assign other content to the screen first.',
+            assigned.rows.map((r) => ({ path: 'display', message: r.name })),
+          );
+        }
+        const scheduled = await tx.query<{ name: string }>(
+          `SELECT s.name FROM schedule s
+           WHERE s.org_id = app_org_id()
+             AND (s.default_playlist_id = $1
+                  OR EXISTS (SELECT 1 FROM schedule_event e
+                             WHERE e.schedule_id = s.id AND e.org_id = s.org_id
+                               AND e.playlist_id = $1))
+           ORDER BY lower(s.name), s.id LIMIT 5`,
+          [id],
+        );
+        if (scheduled.rows.length > 0) {
+          throw inUse(
+            'This playlist is used by a schedule. Choose another playlist in the schedule first.',
+            scheduled.rows.map((r) => ({ path: 'schedule', message: r.name })),
+          );
         }
         const removed = await tx.query(
           'DELETE FROM playlist_item WHERE playlist_id = $1 AND org_id = app_org_id()',
@@ -477,13 +492,15 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
         });
       });
     } catch (error) {
-      // A display was given this playlist between the check above and the delete;
-      // the database guard refuses, and the answer is the same.
+      // A display was given this playlist, or a schedule took it, between the checks
+      // above and the delete; the database guard refuses.
       if (
         pgErrorCode(error) === '23001' &&
         violatedConstraint(error) === STAGE_A_CONSTRAINTS.playlistStillAssigned
       ) {
-        throw inUse();
+        throw inUse(
+          'This playlist has just been assigned to a screen or added to a schedule. Try again.',
+        );
       }
       throw error;
     }
@@ -497,7 +514,8 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
    *
    * Publishing a playlist to a display also assigns it to that display, in the
    * same transaction (decision P2-05), so "assigned" never lags behind what an
-   * operator last published there.
+   * operator last published there. A schedule the display had assigned is taken
+   * off it: a display has a playlist or a schedule, never both.
    */
   app.post(
     ROUTES.playlistPublishPattern,
@@ -519,7 +537,13 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
             await lockPublishKey(tx, displayId, key);
             const previous = await findPublicationByKey(tx, displayId, key);
             if (previous !== null) {
-              if (previous.playlist_id !== playlistId) {
+              // A push of a schedule records its default playlist; one that can play other
+              // playlists (a `schedule` block) is not what publishing this playlist made.
+              const scheduled =
+                typeof previous.manifest === 'object' &&
+                previous.manifest !== null &&
+                'schedule' in previous.manifest;
+              if (previous.playlist_id !== playlistId || scheduled) {
                 return refuse(
                   new HttpError(
                     409,
@@ -544,6 +568,7 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
               await auditRejectedPublication(tx, {
                 membershipId: session.membershipId,
                 playlistId,
+                scheduleId: null,
                 displayId,
                 issues: plan.issues,
                 via: 'publish',
@@ -554,13 +579,15 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
             const row = await createPublication(tx, ctx, {
               display,
               playlistId,
+              scheduleId: null,
               draft: plan.draft,
               idempotencyKey: key,
               membershipId: session.membershipId,
               via: 'publish',
             });
+            // With a schedule assigned the playlist column is null, so the row matches.
             await tx.query(
-              `UPDATE display SET assigned_playlist_id = $2::uuid
+              `UPDATE display SET assigned_playlist_id = $2::uuid, assigned_schedule_id = NULL
                WHERE id = $1 AND org_id = app_org_id()
                  AND assigned_playlist_id IS DISTINCT FROM $2::uuid`,
               [displayId, playlistId],

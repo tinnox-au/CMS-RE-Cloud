@@ -4,12 +4,14 @@ import {
   API_ORIGIN,
   bytesOf,
   digestBlob,
+  EVERY_DAY,
   FakeDeviceApi,
   instantSleep,
   makeAppItem,
   makeAsset,
   makeManifest,
   makeManifestV3,
+  makeManifestV4,
   MemoryAssetStore,
   MemoryStateStore,
   REGISTRATION_ID,
@@ -176,6 +178,48 @@ describe('stagePublication: success', () => {
     expect(w.api.calls.requestMediaUrls).toEqual([]);
     expect(w.api.calls.fetchMedia).toEqual([]);
     expect(w.probed).toEqual([]);
+  });
+
+  it('stages the media of every playlist of a v4 manifest before activation, and keeps the files of a playlist that is not on air', async () => {
+    // The default playlist (shared) and two event playlists, one with an app.
+    const scheduled = makeManifestV4(
+      [
+        { items: [w.shared.asset] },
+        { items: [w.fresh1.asset, makeAppItem()] },
+        { items: [w.fresh2.asset] },
+      ],
+      [
+        { playlist: 1, days: EVERY_DAY, start: '09:00', end: '17:00' },
+        { playlist: 2, days: EVERY_DAY, start: '22:00', end: '02:00' },
+      ],
+    );
+    const everyHash = [w.shared, w.fresh1, w.fresh2].map((asset) => asset.asset.sha256).sort();
+    // What is in the cache at the moment the version is activated.
+    let cachedAtActivation: string[] = [];
+    const activate = w.state.activate.bind(w.state);
+    w.state.activate = async (registrationId, manifest, at) => {
+      cachedAtActivation = [...w.assets.blobs.keys()];
+      return activate(registrationId, manifest, at);
+    };
+
+    const outcome = await stagePublication(scheduled, w.deps);
+    expect(outcome).toEqual({ kind: 'activated', publicationId: scheduled.publicationId });
+    expect(w.state.active?.manifest).toEqual(scheduled);
+    expect(w.api.calls.requestMediaUrls).toEqual([
+      [w.fresh1.asset.assetId, w.fresh2.asset.assetId],
+    ]);
+    expect(w.probed).toEqual([
+      w.shared.asset.assetId,
+      w.fresh1.asset.assetId,
+      w.fresh2.asset.assetId,
+    ]);
+    for (const sha256 of everyHash) expect(cachedAtActivation).toContain(sha256);
+
+    // Only the default playlist is on screen. The event playlists' files stay all the same.
+    w.inUse.add(w.shared.asset.sha256);
+    expect((await collectGarbage(w.deps)).removed).toEqual([]);
+    expect(w.assets.deleted).toEqual([w.oldOnly.asset.sha256]);
+    expect([...w.assets.blobs.keys()].sort()).toEqual(everyHash);
   });
 
   it('replaces a cached entry whose size is wrong instead of trusting it', async () => {

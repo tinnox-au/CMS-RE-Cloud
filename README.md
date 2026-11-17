@@ -78,6 +78,7 @@ The one-time code changes every 30 seconds, and Keycloak accepts each code once.
 |---|---|---|
 | Type check, lint, format | `npm run typecheck && npm run lint && npm run format:check` | nothing running |
 | Unit tests | `npm test` | nothing running |
+| Portal component tests (headless Chromium) | `npm run test:component` | nothing running; `npx playwright install chromium` once |
 | Builds | `npm run build` | nothing running |
 | Integration and security-boundary tests | `npm run fixtures && npm run test:integration` | `npm run infra:up`; rebuilds the database `tinnox_test` itself |
 | Browser end-to-end tests (Playwright, Chromium) | `npm run test:e2e` | infra up; the API, portal and player must **not** be running (Playwright starts them); about 6.5 minutes. It rebuilds its own database `tinnox_e2e_test` and uses `tests/.run/media`, so the development data is not touched, but it **restarts the shared PostgreSQL container** once (restart test) and shares `data/jobs` with the development worker |

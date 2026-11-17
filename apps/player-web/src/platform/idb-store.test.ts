@@ -1,9 +1,11 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  EVERY_DAY,
   makeAsset,
   makeManifest,
   makeManifestV2,
+  makeManifestV4,
   makeRegistration,
   REGISTRATION_ID,
 } from '../core/fakes.test-support.ts';
@@ -192,6 +194,23 @@ describe('IdbStateStore (against fake-indexeddb)', () => {
     expect(await reopened.activate(REGISTRATION_ID, v2, '2026-11-14T03:01:00.000Z')).toBe(true);
     expect((await reopened.getActive())?.manifest).toEqual(v2);
     reopened.close();
+  });
+
+  it('loads a stored v4 active version (a schedule) after a reopen', async () => {
+    const v4 = makeManifestV4(
+      [
+        { items: [(await makeAsset(1)).asset] },
+        { items: [(await makeAsset(2)).asset], transition: 'fade', shuffle: true },
+      ],
+      [{ playlist: 1, days: EVERY_DAY, start: '22:00', end: '02:00' }],
+    );
+    let store = await open();
+    await store.replaceRegistration(makeRegistration());
+    expect(await store.activate(REGISTRATION_ID, v4, '2026-11-14T03:00:00.000Z')).toBe(true);
+    store.close();
+    store = await open();
+    expect((await store.getActive())?.manifest).toEqual(v4);
+    store.close();
   });
 
   it('wipe and destroy remove everything (local reset)', async () => {

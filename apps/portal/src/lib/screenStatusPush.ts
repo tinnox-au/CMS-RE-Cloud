@@ -20,12 +20,12 @@ const PRESENTATIONS: { readonly [K in PushState]: Omit<PushStatePresentation, 's
   nothing_assigned: {
     tone: 'neutral',
     label: 'Nothing assigned',
-    detail: 'No playlist is assigned to this screen, so there is nothing to push.',
+    detail: 'No playlist or schedule is assigned to this screen, so there is nothing to push.',
   },
   never_pushed: {
     tone: 'warn',
     label: 'Not pushed yet',
-    detail: 'A playlist is assigned, but nothing has been pushed to this screen yet.',
+    detail: 'Content is assigned, but nothing has been pushed to this screen yet.',
   },
   changes: {
     tone: 'warn',
@@ -41,7 +41,7 @@ const PRESENTATIONS: { readonly [K in PushState]: Omit<PushStatePresentation, 's
   blocked: {
     tone: 'danger',
     label: 'Blocked',
-    detail: 'The assigned playlist cannot be pushed to this screen until its problems are fixed.',
+    detail: 'The assigned content cannot be pushed to this screen until its problems are fixed.',
   },
 };
 

@@ -1,16 +1,18 @@
 import type { PlayerError } from '@tinnox/contracts';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PlayerFault, RevokedError } from './errors.ts';
 import {
   API_ORIGIN,
   digestBlob,
   DISPLAY_ID,
+  EVERY_DAY,
   FakeDeviceApi,
   instantSleep,
   makeAsset,
   makeManifest,
   makeManifestV2,
   makeManifestV3,
+  makeManifestV4,
   makeAppItem,
   MemoryAssetStore,
   MemoryStateStore,
@@ -18,6 +20,7 @@ import {
   type TestAsset,
 } from './fakes.test-support.ts';
 import { SyncLoop, syncCycle, type CycleResult, type SyncDeps } from './sync.ts';
+import { sleep } from './timing.ts';
 
 interface World {
   state: MemoryStateStore;
@@ -167,14 +170,56 @@ describe('syncCycle', () => {
     expect(w.api.calls.requestMediaUrls).toEqual([[w.a.asset.assetId, w.b.asset.assetId]]);
   });
 
+  it('downloads and activates a v4 manifest with the media of every playlist', async () => {
+    const manifest = makeManifestV4(
+      [{ items: [w.a.asset] }, { items: [w.b.asset] }],
+      [{ playlist: 1, days: EVERY_DAY, start: '09:00', end: '17:00' }],
+    );
+    w.api.manifestResults = [{ kind: 'manifest', raw: manifest }];
+    const result = await syncCycle(w.deps);
+    expect(result).toEqual({ kind: 'activated', publicationId: manifest.publicationId });
+    expect(w.state.active?.manifest).toEqual(manifest);
+    expect(w.api.calls.requestMediaUrls).toEqual([[w.a.asset.assetId, w.b.asset.assetId]]);
+  });
+
   it('reports an unsupported manifest version separately', async () => {
     w.api.manifestResults = [
-      { kind: 'manifest', raw: { ...makeManifestV3([w.a.asset]), schemaVersion: 4 } },
+      { kind: 'manifest', raw: { ...makeManifestV3([w.a.asset]), schemaVersion: 5 } },
     ];
     const result = await syncCycle(w.deps);
     expect(result.kind).toBe('update_failed');
     expect(w.reported.map((e) => e.code)).toEqual(['manifest_unsupported_version']);
     expect(w.state.active).toBeNull();
+  });
+
+  it("remembers the publication of a manifest it refuses, when the document's id can be read", async () => {
+    const unsupported = { ...makeManifestV3([w.a.asset]), schemaVersion: 5 };
+    const malformed = { ...makeManifest([w.b.asset]), script: 'alert(1)' };
+    w.api.manifestResults = [
+      { kind: 'manifest', raw: unsupported },
+      { kind: 'manifest', raw: malformed },
+    ];
+    // The answer and the report stay as they were: no publication id in either.
+    expect(await syncCycle(w.deps)).toMatchObject({ kind: 'update_failed', publicationId: null });
+    expect(await syncCycle(w.deps)).toMatchObject({ kind: 'update_failed', publicationId: null });
+    expect(w.reported.map((e) => [e.code, e.publicationId])).toEqual([
+      ['manifest_unsupported_version', null],
+      ['manifest_malformed', null],
+    ]);
+    expect(w.attempts).toEqual([unsupported.publicationId, malformed.publicationId]);
+  });
+
+  it.each([
+    ['not an object', 'just text'],
+    ['null', null],
+    ['an array', [{ publicationId: crypto.randomUUID() }]],
+    ['no publication id', { schemaVersion: 5 }],
+    ['an id that is not a UUID', { schemaVersion: 5, publicationId: 'x' }],
+    ['an id that is not a string', { schemaVersion: 5, publicationId: { id: 1 } }],
+  ])('remembers nothing for a refused document without a usable id (%s)', async (_name, raw) => {
+    w.api.manifestResults = [{ kind: 'manifest', raw }];
+    expect((await syncCycle(w.deps)).kind).toBe('update_failed');
+    expect(w.attempts).toEqual([]);
   });
 
   it('refuses a manifest addressed to another display', async () => {
@@ -267,5 +312,40 @@ describe('SyncLoop', () => {
       { kind: 'activated', publicationId: manifest.publicationId },
       { kind: 'up_to_date' },
     ]);
+  });
+});
+
+describe('SyncLoop.hintDesired', () => {
+  it("an unsupported manifest's publication is remembered; a heartbeat hint for it does not wake the loop", async () => {
+    const w = await world();
+    const refused = { ...makeManifestV3([w.a.asset]), schemaVersion: 5 };
+    w.api.defaultManifestResult = { kind: 'manifest', raw: refused };
+    const abort = new AbortController();
+    // The real sleep: after the refusal the loop waits out its update backoff (30 s or more).
+    const loop = new SyncLoop(
+      { ...w.deps, sleep, signal: abort.signal },
+      { onRevoked: () => undefined, onActivated: () => undefined },
+    );
+    try {
+      loop.start();
+      await vi.waitFor(() => {
+        expect(loop.status.lastResult).toBe('update_failed');
+      });
+      expect(w.api.calls.fetchManifest).toHaveLength(1);
+      expect(loop.status.lastAttemptedPublicationId).toBe(refused.publicationId);
+
+      // Every heartbeat answer names the refused publication again: the backoff is left alone.
+      loop.hintDesired(refused.publicationId, null);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(w.api.calls.fetchManifest).toHaveLength(1);
+
+      // Another publication is news: the loop looks at once.
+      loop.hintDesired(crypto.randomUUID(), null);
+      await vi.waitFor(() => {
+        expect(w.api.calls.fetchManifest).toHaveLength(2);
+      });
+    } finally {
+      abort.abort();
+    }
   });
 });

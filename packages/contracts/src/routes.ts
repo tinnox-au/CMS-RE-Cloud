@@ -63,7 +63,7 @@ export const ROUTES = Object.freeze({
   app: (id: string) => `/api/apps/${enc(id)}`,
 
   playlists: '/api/playlists',
-  /** GET, PUT, DELETE (204, or 409 `playlist_in_use` while a display has it assigned). */
+  /** GET, PUT, DELETE (204, or 409 `playlist_in_use` while a display has it assigned or a schedule uses it). */
   playlistPattern: '/api/playlists/:id',
   playlist: (id: string) => `/api/playlists/${enc(id)}`,
   playlistPublishPattern: '/api/playlists/:id/publish',
@@ -71,6 +71,12 @@ export const ROUTES = Object.freeze({
   /** POST: copy a playlist with its items. */
   playlistDuplicatePattern: '/api/playlists/:id/duplicate',
   playlistDuplicate: (id: string) => `/api/playlists/${enc(id)}/duplicate`,
+
+  /** GET, POST. */
+  schedules: '/api/schedules',
+  /** GET, PUT, DELETE (409 `schedule_in_use` while a display has it assigned). */
+  schedulePattern: '/api/schedules/:id',
+  schedule: (id: string) => `/api/schedules/${enc(id)}`,
 
   /** GET: the push plan. POST: push to the chosen displays (needs `Idempotency-Key`). */
   push: '/api/push',
