@@ -121,3 +121,30 @@ These are not additional newly discovered defects. See [Codex section 5](codex-a
 - Real Keycloak MFA and the manual end-to-end job remain unverified. That is a provider-flow and shared-environment question, not a backend design defect found here. Session-factory tests do not establish it.
 - Do not introduce a repository layer on the strength of this review. If structure is revisited, the useful work is preserving shared query and DTO ownership as route modules evolve, and being precise about what the delivery fake actually proves.
 - Expand into the portal, the browser player, or scheduling and DST only if that is a deliberately wider brief. Those areas were out of scope here and have not been reviewed.
+
+## 9. Fixes made after this round (17 November 2026)
+
+Sections 1 to 8 are the review record as written and are unchanged. The findings were then fixed on one branch, one commit per root cause. Where a finding can be tested, the fix comes with a test that fails on the code as reviewed.
+
+| ID | Change | Evidence |
+|---|---|---|
+| CU-01 | `scripts/backup-restore-check.sh` selects media items by kind, counts app items without looking them up, and requires every thumbnail a media row names to be restored as a non-empty file (presence only; no thumbnail hash is stored). | Run end to end on a development database with 51 publications, 96 media items and 6 app items: passed, where the script as reviewed failed. That database had no thumbnails, so the check was also run against the end-to-end suite's database after a run (30 publications, 51 media items, 7 app items, 19 thumbnails, migration 0008 applied): passed. |
+| CX-01 | Pairing completion, sign-in and sign-out run the credential change and its audit event in one transaction (`withResolvedOrg` in `packages/db/src/tx.ts`). A failed audit insert rolls a pairing completion or a sign-in back, and the pairing stays collectable. Sign-out is the deliberate exception: ending a session is the safe direction, so if its audit insert fails the session is still ended, the failure is logged and the request reports an error. | `tests/integration/credential-audit.test.ts` makes the audit insert fail for each of the three actions. This is also the focused reproduction section 4 left open: all three cases fail on the code as reviewed. |
+| CX-02 | Migration `0008_null_safe_checks.sql` re-creates `publication_manifest_shape` and `media_ready_is_complete` so that SQL NULL no longer passes. | `packages/db/test/rls.integration.test.ts`, as `tinnox_app`: `{}`, each required field missing or null, and a ready media row with `bytes` NULL are refused; without 0008 the first is accepted. |
+| CX-03 | The migration runner checks the directory against `schema_migrations` before applying anything. It also refuses a new file numbered before an applied one, a gap the review did not list. | `packages/db/test/migrate.integration.test.ts`; on the runner as reviewed, the later migration is applied before the missing file is reported. |
+| CX-04 | `removeStaleTempFiles` is part of `ObjectStorage`; housekeeping calls it without a cast. | Type check. |
+| CU-02 | The job spec is `chmod`'d to `0644` before it is renamed into the inbox. | `apps/api/test/upload.integration.test.ts` uploads under umask `077`; without the fix the spec is `0600`. |
+| CU-03 | The validation, M0, control-matrix and operations pages now state what CI run 43835309136 showed, including the skipped end-to-end job. The threat model and the code comment on the thumbnail uid check say what the check does not stop (section 5). | Documentation only. |
+
+The runtime questions section 8 left open were then taken up:
+
+| Question | Outcome |
+|---|---|
+| Rollback-failure connection disposal | Supported. `packages/db/src/tx.test.ts` uses a pool whose ROLLBACK fails: all three transaction helpers release the connection with an error, which makes pg destroy it. `rls.integration.test.ts` has the server terminate a connection in mid-transaction: the pool replaces it and the next user has no tenant context. |
+| New finding from that test | A connection lost while checked out emitted an `error` event nobody listened to, so the API's `uncaughtException` handler exited the process. The transaction helper now listens while it holds the connection; the request fails and the process stays up. Neither reviewer raised this. |
+| Populated 0006/0007 upgrade, as distinct from a fresh schema | Supported. `migration-0005.integration.test.ts` already upgraded its populated 0004 database through every later migration; it now asserts that explicitly for 0006, 0007 and 0008 (existing rows keep their defaults, version 1 manifests pass the re-created checks). |
+| Real Keycloak flow | `npm run verify:oidc` passed against the local realm on 17 November 2026: PKCE code flow, one-time code redemption, and a user without an authenticator is refused a code. The development realm's ID token still carries no usable `acr` or `amr` (`acr=0`), so MFA there rests on the realm's flow, not on claims. |
+
+| Browser end-to-end suite | `npm run test:e2e` passed locally on 17 November 2026 with these changes (53 tests, macOS, Node 23.10): real Keycloak sign-in with TOTP, pairing, sign-out and the PostgreSQL restart, on a database migrated through 0008. |
+
+Still open: the end-to-end job has not run in CI (it needs a manual dispatch or `RUN_E2E`), so there is no end-to-end result on Node 22.

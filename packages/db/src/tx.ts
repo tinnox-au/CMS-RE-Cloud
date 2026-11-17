@@ -27,6 +27,13 @@ async function run<T>(
 ): Promise<T> {
   const client = await pool.connect();
   let broken: Error | undefined;
+  // A connection that is lost while checked out emits 'error'; the pool listens only while a
+  // connection is idle, and an 'error' nobody listens to would end the process. The queries
+  // of the transaction reject by themselves; the connection is destroyed on release.
+  const onLost = (error: Error): void => {
+    broken = error;
+  };
+  client.on('error', onLost);
   try {
     await client.query('BEGIN');
     await begin(client);
@@ -42,6 +49,7 @@ async function run<T>(
     }
     throw error;
   } finally {
+    client.removeListener('error', onLost);
     client.release(broken);
   }
 }
@@ -80,6 +88,32 @@ export async function withOrg<T>(
  */
 export async function withoutOrg<T>(pool: Pool, fn: (tx: Tx) => Promise<T>): Promise<T> {
   return run(pool, async () => undefined, fn);
+}
+
+/**
+ * Runs `fn` in one transaction whose organisation is not known when it starts:
+ * pairing completion, sign-in and sign-out, where a sec.* call resolves a
+ * credential to its organisation. `fn` calls `enterOrg` with that organisation
+ * to set the tenant context for the rest of the transaction, so the credential
+ * change and its audit event commit or roll back together. The same rule as
+ * `withOrg` applies: the id must come from a verified credential, never from
+ * request input.
+ */
+export async function withResolvedOrg<T>(
+  pool: Pool,
+  fn: (tx: Tx, enterOrg: (orgId: string) => Promise<void>) => Promise<T>,
+): Promise<T> {
+  return run(
+    pool,
+    async () => undefined,
+    (tx) =>
+      fn(tx, async (orgId) => {
+        if (typeof orgId !== 'string' || !UUID_PATTERN.test(orgId)) {
+          throw new Error('enterOrg requires a lower-case UUID organisation id');
+        }
+        await tx.query("SELECT set_config('app.org_id', $1, true)", [orgId]);
+      }),
+  );
 }
 
 /** Minimal query interface satisfied by Pool, PoolClient and Tx. */

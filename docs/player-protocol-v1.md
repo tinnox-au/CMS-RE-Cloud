@@ -373,6 +373,11 @@ A later LED route (a dedicated player over HDMI, or controller-native playback) 
 | 429 | `rate_limited` | any | Wait for `Retry-After`, then continue |
 | 5xx | `internal_error`, `service_unavailable` | any | Keep playing from cache; retry with backoff |
 
+`Retry-After` is delay-seconds or an HTTP-date (RFC 9110). The browser player waits at least
+that long and at least its ordinary backoff. A value above 10 minutes is read as 10 minutes
+(the longest window this API sends); a missing or unreadable header keeps the ordinary backoff.
+A 5xx answer keeps the backoff even when it also carries `Retry-After`.
+
 ## 11. What was verified, and how
 
 Run on 2026-11-14 against PostgreSQL 17 and the real application:

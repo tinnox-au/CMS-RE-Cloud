@@ -429,6 +429,7 @@ export class FakeDeviceApi implements DeviceApi {
     ): MediaResponse => ({
       status,
       rangeStart: start,
+      retryAfterMs: null,
       chunks: chunked(data, 16, breakAfter),
       cancel: () => undefined,
     });

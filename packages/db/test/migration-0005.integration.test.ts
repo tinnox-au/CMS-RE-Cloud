@@ -538,6 +538,48 @@ describe('migration 0005 on a database that already holds publications', () => {
       }
     }
   });
+
+  // The same populated database then goes through every later migration, so this is an
+  // upgrade of existing rows, not the fresh schema the stage B suites start from.
+  it('carries the existing rows through 0006, 0007 and 0008', async () => {
+    expect(upgrade.applied).toEqual(
+      expect.arrayContaining([
+        '0006_stage_b_slice1.sql',
+        '0007_stage_b_apps.sql',
+        '0008_null_safe_checks.sql',
+      ]),
+    );
+    for (const org of [a, b]) {
+      const count = async (sql: string): Promise<number> =>
+        Number(
+          (await asOwnerIn<{ n: string }>(org.orgId, `SELECT count(*) AS n FROM ${sql}`))[0]?.n,
+        );
+      // 0006: new display and media columns take their defaults.
+      expect(await count('display')).toBeGreaterThan(0);
+      expect(await count('display WHERE rotation <> 0 OR working_hours IS NOT NULL')).toBe(0);
+      expect(
+        await count(
+          'media WHERE available_from IS NOT NULL OR available_until IS NOT NULL OR thumb_storage_key IS NOT NULL',
+        ),
+      ).toBe(0);
+      // 0007: no apps yet, and every publication from before is still a version 1 manifest
+      // that the re-created CHECK accepted.
+      expect(await count('app')).toBe(0);
+      expect(await count('publication')).toBeGreaterThan(0);
+      expect(await count("publication WHERE manifest ->> 'schemaVersion' <> '1'")).toBe(0);
+    }
+    // 0008: the NULL-safe definitions are the ones in force after the upgrade.
+    const checks = await migrator.query<{ conname: string; def: string }>(
+      `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
+       WHERE conname IN ('publication_manifest_shape', 'media_ready_is_complete') ORDER BY conname`,
+    );
+    expect(checks.rows.map((row) => row.conname)).toEqual([
+      'media_ready_is_complete',
+      'publication_manifest_shape',
+    ]);
+    expect(checks.rows[0]?.def).toContain('bytes IS NOT NULL');
+    expect(checks.rows[1]?.def).toContain('IS TRUE');
+  });
 });
 
 describe('forced row-level security after migration 0005', () => {

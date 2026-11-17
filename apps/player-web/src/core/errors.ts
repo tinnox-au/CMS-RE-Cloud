@@ -6,17 +6,25 @@ export class PlayerFault extends Error {
   readonly assetId: string | null;
   /** HTTP status when the fault came from an HTTP response. */
   readonly status: number | null;
+  /** Capped `Retry-After` from a 429, or null when the response did not say. */
+  readonly retryAfterMs: number | null;
 
   constructor(
     code: PlayerErrorCode,
     message: string,
-    options: { assetId?: string | null; status?: number | null; cause?: unknown } = {},
+    options: {
+      assetId?: string | null;
+      status?: number | null;
+      cause?: unknown;
+      retryAfterMs?: number | null;
+    } = {},
   ) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = 'PlayerFault';
     this.code = code;
     this.assetId = options.assetId ?? null;
     this.status = options.status ?? null;
+    this.retryAfterMs = options.retryAfterMs ?? null;
   }
 }
 

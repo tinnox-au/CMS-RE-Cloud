@@ -81,12 +81,12 @@ describe('sync loop delay', () => {
       assetId: null,
     } as const;
     let counters = { networkFailures: 0, updateFailures: 0 };
-    counters = nextCounters(counters, { kind: 'unreachable', error });
-    counters = nextCounters(counters, { kind: 'unreachable', error });
+    counters = nextCounters(counters, { kind: 'unreachable', error, retryAfterMs: null });
+    counters = nextCounters(counters, { kind: 'unreachable', error, retryAfterMs: null });
     expect(counters).toEqual({ networkFailures: 2, updateFailures: 0 });
     counters = nextCounters(counters, { kind: 'update_failed', error, publicationId: null });
     expect(counters).toEqual({ networkFailures: 0, updateFailures: 1 });
-    counters = nextCounters(counters, { kind: 'unreachable', error });
+    counters = nextCounters(counters, { kind: 'unreachable', error, retryAfterMs: null });
     expect(counters).toEqual({ networkFailures: 1, updateFailures: 1 });
     expect(nextCounters(counters, { kind: 'up_to_date' })).toEqual({
       networkFailures: 0,

@@ -23,7 +23,9 @@ const ADVISORY_LOCK_KEY = 7_411_660_001;
 /**
  * Applies pending SQL migrations in file-name order. Each file runs in its own
  * transaction together with its schema_migrations row, so a failure leaves no
- * partial migration. An applied file whose content changed is an error.
+ * partial migration. The directory is checked against the recorded history first:
+ * an applied file that is missing or changed, or a new file numbered before an
+ * applied one, is an error and nothing is applied.
  */
 export async function runMigrations(options: MigrationOptions): Promise<MigrationResult> {
   const log = options.log ?? (() => undefined);
@@ -62,19 +64,35 @@ export async function runMigrations(options: MigrationOptions): Promise<Migratio
     );
     const doneByName = new Map(done.rows.map((r) => [r.name, r.sha256]));
 
+    // Check the whole bundle against the recorded history before anything is applied, so a
+    // bundle that does not fit this database is refused with the schema exactly as it was.
+    for (const name of doneByName.keys()) {
+      if (!names.includes(name))
+        throw new Error(`database has migration ${name} that is missing from ${options.directory}`);
+    }
+    const lastApplied = [...doneByName.keys()].sort().at(-1);
+    const pending: { name: string; sql: string; digest: string }[] = [];
     for (const name of names) {
       const sql = await readFile(join(options.directory, name), 'utf8');
       const digest = createHash('sha256').update(sql).digest('hex');
       const previous = doneByName.get(name);
-      if (previous !== undefined) {
-        if (previous !== digest) {
+      if (previous === undefined) {
+        if (lastApplied !== undefined && name < lastApplied) {
           throw new Error(
-            `migration ${name} was changed after it was applied; add a new migration instead`,
+            `migration ${name} is new but sorts before ${lastApplied}, which is already applied; give it the next number`,
           );
         }
+        pending.push({ name, sql, digest });
+      } else if (previous !== digest) {
+        throw new Error(
+          `migration ${name} was changed after it was applied; add a new migration instead`,
+        );
+      } else {
         alreadyApplied.push(name);
-        continue;
       }
+    }
+
+    for (const { name, sql, digest } of pending) {
       log(`applying ${name}`);
       await client.query('BEGIN');
       try {
@@ -90,10 +108,6 @@ export async function runMigrations(options: MigrationOptions): Promise<Migratio
         throw new Error(`migration ${name} failed: ${message}`, { cause: error });
       }
       applied.push(name);
-    }
-    for (const name of doneByName.keys()) {
-      if (!names.includes(name))
-        throw new Error(`database has migration ${name} that is missing from ${options.directory}`);
     }
   } finally {
     await client.query('SELECT pg_advisory_unlock($1)', [ADVISORY_LOCK_KEY]).catch(() => undefined);

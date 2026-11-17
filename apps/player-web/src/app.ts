@@ -7,6 +7,7 @@ import {
 import { API_ORIGIN, IS_PRODUCTION_BUILD, PLAYER_VERSION } from './config.ts';
 import { backoffDelay, type BackoffPolicy } from './core/backoff.ts';
 import { describeError, ErrorLog, sanitiseMessage, toPlayerError } from './core/errors.ts';
+import { retryAfterMsOf, retryDelay } from './core/retry-after.ts';
 import { HeartbeatLoop, type HeartbeatSnapshot } from './core/heartbeat.ts';
 import {
   canReusePairing,
@@ -241,6 +242,7 @@ export class PlayerApp {
     const { signal } = abort;
     let failures = 0;
     let note: string | null = null;
+    let retryAfterMs: number | null = null;
 
     while (!signal.aborted) {
       let record = await store.getPairing().catch(() => null);
@@ -254,10 +256,14 @@ export class PlayerApp {
         this.#screens.unpaired(note);
         if (failures > 0) {
           try {
-            await sleep(backoffDelay(PAIRING_BACKOFF, failures, Math.random), signal);
+            await sleep(
+              retryDelay(backoffDelay(PAIRING_BACKOFF, failures, Math.random), retryAfterMs),
+              signal,
+            );
           } catch {
             return;
           }
+          retryAfterMs = null;
         }
         try {
           const created = await this.#api.createPairing(signal);
@@ -274,6 +280,7 @@ export class PlayerApp {
         } catch (err) {
           if (signal.aborted) return;
           failures += 1;
+          retryAfterMs = retryAfterMsOf(err);
           note = `Could not get a pairing code (${sanitiseMessage(describeError(err))}). Trying again.`;
           continue;
         }
@@ -320,9 +327,13 @@ export class PlayerApp {
           pollFailures += 1;
           note = `The server cannot be reached (${sanitiseMessage(describeError(err))}). Still trying.`;
           paint();
-          const wait = Math.max(
-            record.pollIntervalMs,
-            backoffDelay(PAIRING_BACKOFF, pollFailures, Math.random),
+          // Still bounded by the code's own deadline: an expired code is replaced, not held.
+          const wait = retryDelay(
+            Math.max(
+              record.pollIntervalMs,
+              backoffDelay(PAIRING_BACKOFF, pollFailures, Math.random),
+            ),
+            retryAfterMsOf(err),
           );
           await sleep(Math.min(wait, Math.max(1_000, deadlineMs - Date.now())), signal).catch(
             () => undefined,
@@ -470,7 +481,7 @@ export class PlayerApp {
     const heartbeat = new HeartbeatLoop({
       state: store,
       snapshot: () => this.#heartbeatSnapshot(),
-      send: (body) => deviceApi.heartbeat(body),
+      send: (body, signal) => deviceApi.heartbeat(body, signal),
       clock: systemClock,
       sleep,
       random: Math.random,

@@ -5,8 +5,11 @@
 # restores both into a scratch database and a scratch directory, and verifies that
 #   - row counts match,
 #   - every ready media row has its file with the recorded size and SHA-256,
-#   - every asset of every publication manifest resolves to a restored file whose SHA-256
-#     and size equal the values frozen in the manifest,
+#   - every thumbnail a media row names is a restored, non-empty file (the row stores no
+#     thumbnail hash, so presence is all that can be checked),
+#   - every media item of every publication manifest resolves to a restored file whose
+#     SHA-256 and size equal the values frozen in the manifest (app items carry their
+#     content in the manifest and have no file; they are counted, not looked up),
 #   - forced row-level security and the immutability triggers survived the restore.
 # Stop the API first so the database and the files agree. Nothing is restored over the
 # working database. The backup set is kept in BACKUP_ROOT (default ~/tinnox-backups);
@@ -93,20 +96,42 @@ echo "== b. ready media rows against restored files"
 psql_in "$RESTORE_DB" -F ' ' \
   -c "SELECT sha256, storage_key, bytes FROM media WHERE status = 'ready' AND storage_key IS NOT NULL ORDER BY storage_key" \
   | check_files "media rows" || FAIL=1
+# Thumbnails are optional (images only, none before migration 0006), so none is not a failure.
+THUMB_KEYS=$(psql_in "$RESTORE_DB" -c "SELECT thumb_storage_key FROM media WHERE thumb_storage_key IS NOT NULL ORDER BY 1")
+THUMBS=0; THUMBS_BAD=0
+while read -r key; do
+  [ -n "$key" ] || continue
+  THUMBS=$((THUMBS + 1))
+  [ -f "$RESTORE_ROOT/objects/$key" ] && [ -s "$RESTORE_ROOT/objects/$key" ] || THUMBS_BAD=$((THUMBS_BAD + 1))
+done <<< "$THUMB_KEYS"
+echo "thumbnails: checked $THUMBS; missing or empty $THUMBS_BAD"
+[ "$THUMBS_BAD" -eq 0 ] || FAIL=1
 
 echo "== c. publication manifests against restored files"
 # The hash and size come from the immutable manifest JSON, not from the media row.
-psql_in "$RESTORE_DB" -F ' ' \
-  -c "SELECT a->>'sha256', m.storage_key, a->>'bytes'
-        FROM publication p
-        CROSS JOIN LATERAL jsonb_array_elements(p.manifest->'assets') AS a
-        JOIN media m ON m.org_id = p.org_id AND m.id = (a->>'assetId')::uuid
-       ORDER BY p.created_at, 2" \
-  | check_files "publication assets" || FAIL=1
+# An item is a media file unless its kind is "app" (manifest v3, the same rule as isMediaItem
+# in packages/contracts): an app has no assetId and no stored object.
+ITEMS="FROM publication p CROSS JOIN LATERAL jsonb_array_elements(p.manifest->'assets') AS a"
+IS_MEDIA="a->>'kind' IS DISTINCT FROM 'app'"
 PUBS=$(psql_in "$RESTORE_DB" -c "SELECT count(*) FROM publication")
-UNRESOLVED=$(psql_in "$RESTORE_DB" -c "SELECT count(*) FROM publication p CROSS JOIN LATERAL jsonb_array_elements(p.manifest->'assets') AS a LEFT JOIN media m ON m.org_id = p.org_id AND m.id = (a->>'assetId')::uuid WHERE m.storage_key IS NULL")
+MEDIA_ITEMS=$(psql_in "$RESTORE_DB" -c "SELECT count(*) $ITEMS WHERE $IS_MEDIA")
+APP_ITEMS=$(psql_in "$RESTORE_DB" -c "SELECT count(*) $ITEMS WHERE NOT ($IS_MEDIA)")
+if [ "$PUBS" = "0" ]; then
+  echo "publication assets: nothing to check (empty database?)"; FAIL=1
+elif [ "$MEDIA_ITEMS" = "0" ]; then
+  echo "publication assets: no media items to check (every item is an app)"
+else
+  psql_in "$RESTORE_DB" -F ' ' \
+    -c "SELECT a->>'sha256', m.storage_key, a->>'bytes'
+          $ITEMS
+          JOIN media m ON m.org_id = p.org_id AND m.id = (a->>'assetId')::uuid
+         WHERE $IS_MEDIA
+         ORDER BY p.created_at, 2" \
+    | check_files "publication assets" || FAIL=1
+fi
+UNRESOLVED=$(psql_in "$RESTORE_DB" -c "SELECT count(*) $ITEMS LEFT JOIN media m ON m.org_id = p.org_id AND m.id = (a->>'assetId')::uuid WHERE $IS_MEDIA AND m.storage_key IS NULL")
 ORPHANS=$(psql_in "$RESTORE_DB" -c "SELECT count(*) FROM publication_asset pa LEFT JOIN media m ON m.id = pa.media_id AND m.org_id = pa.org_id WHERE m.id IS NULL")
-echo "publications: $PUBS; manifest assets without a stored object: $UNRESOLVED; publication_asset rows without media: $ORPHANS"
+echo "publications: $PUBS; media items: $MEDIA_ITEMS; app items (no file): $APP_ITEMS; media items without a stored object: $UNRESOLVED; publication_asset rows without media: $ORPHANS"
 [ "$UNRESOLVED" = "0" ] && [ "$ORPHANS" = "0" ] || FAIL=1
 
 echo "== d. controls after restore"

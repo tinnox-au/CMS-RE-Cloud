@@ -7,6 +7,7 @@ import {
   RevokedError,
   throwIfAborted,
 } from './errors.ts';
+import { retryAfterMsOf, retryDelay } from './retry-after.ts';
 import type { DeviceApi, Sleep } from './types.ts';
 
 export const DOWNLOAD_BACKOFF: BackoffPolicy = {
@@ -49,6 +50,7 @@ export async function downloadAsset(asset: ManifestAssetV1, deps: DownloadDeps):
   let received = 0;
   let failures = 0;
   let refresh = false;
+  let retryAfterMs: number | null = null;
   let last: { code: 'download_failed' | 'size_mismatch' | 'network_error'; detail: string } = {
     code: 'download_failed',
     detail: 'no attempt made',
@@ -68,7 +70,13 @@ export async function downloadAsset(asset: ManifestAssetV1, deps: DownloadDeps):
         { assetId: asset.assetId },
       );
     }
-    if (failures > 0) await deps.sleep(backoffDelay(policy, failures, deps.random), deps.signal);
+    if (failures > 0) {
+      await deps.sleep(
+        retryDelay(backoffDelay(policy, failures, deps.random), retryAfterMs),
+        deps.signal,
+      );
+      retryAfterMs = null;
+    }
 
     let url: string;
     try {
@@ -86,6 +94,7 @@ export async function downloadAsset(asset: ManifestAssetV1, deps: DownloadDeps):
         );
       }
       failures += 1;
+      retryAfterMs = retryAfterMsOf(err);
       last = {
         code: 'download_failed',
         detail: `could not get a media URL: ${describeError(err)}`,
@@ -129,6 +138,7 @@ export async function downloadAsset(asset: ManifestAssetV1, deps: DownloadDeps):
     if (status !== 200 && status !== 206) {
       response.cancel();
       failures += 1;
+      retryAfterMs = status === 429 ? response.retryAfterMs : null;
       last = { code: 'download_failed', detail: `unexpected HTTP ${status}` };
       continue;
     }

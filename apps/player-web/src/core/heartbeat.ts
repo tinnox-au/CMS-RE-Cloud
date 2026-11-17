@@ -8,6 +8,7 @@ import {
 } from '@tinnox/contracts';
 import { backoffDelay, jitteredInterval, type BackoffPolicy } from './backoff.ts';
 import { AbortedError, RevokedError, toPlayerError } from './errors.ts';
+import { heldRetryMs, retryAfterMsOf, retryDelay } from './retry-after.ts';
 import type { Clock, Sleep, StagingRecord, StateStore } from './types.ts';
 
 /** Everything a heartbeat says, gathered at the moment of sending. Nothing is queued. */
@@ -83,7 +84,8 @@ export interface HeartbeatDeps {
   readonly state: Pick<StateStore, 'nextHeartbeatSeq'>;
   /** Null when there is nothing to report (not registered). */
   snapshot(): Promise<HeartbeatSnapshot | null>;
-  send(heartbeat: HeartbeatV1): Promise<HeartbeatResponse>;
+  /** `signal` is the loop's lifetime: cancelling it abandons an in-flight report. */
+  send(heartbeat: HeartbeatV1, signal?: AbortSignal): Promise<HeartbeatResponse>;
   readonly clock: Clock;
   readonly sleep: Sleep;
   readonly random: () => number;
@@ -149,7 +151,7 @@ export class HeartbeatLoop {
     const nowMs = this.#deps.clock.now();
     const seq = await this.#deps.state.nextHeartbeatSeq(nowMs);
     const heartbeat = buildHeartbeat(snapshot, seq, new Date(nowMs).toISOString());
-    const response = await this.#deps.send(heartbeat);
+    const response = await this.#deps.send(heartbeat, this.#deps.signal);
     this.#status = {
       lastSeq: seq,
       lastAcceptedAt: new Date(this.#deps.clock.now()).toISOString(),
@@ -167,6 +169,7 @@ export class HeartbeatLoop {
       this.#dirty = false;
       const startedAt = this.#deps.clock.now();
       let delay: number;
+      let held = 0;
       try {
         const suggested = await this.sendOnce();
         if (suggested !== null) interval = suggested;
@@ -189,15 +192,25 @@ export class HeartbeatLoop {
           consecutiveFailures: failures,
         };
         this.#deps.onSendFailure?.(error);
-        delay = backoffDelay(this.#timings.backoff, failures, random);
+        held = heldRetryMs(retryAfterMsOf(err));
+        delay = retryDelay(backoffDelay(this.#timings.backoff, failures, random), held);
       }
 
+      // A 429's Retry-After is not cut short by a state change. The rest of the backoff is.
+      if (held > 0) {
+        try {
+          await sleep(held, signal);
+        } catch {
+          return;
+        }
+      }
+      const rest = delay - held;
       // Wait for the interval, or until a change is flagged; then respect the minimum gap.
-      if (!this.#dirty) {
+      if (!this.#dirty && rest > 0) {
         const wake = new AbortController();
         this.#wake = wake;
         try {
-          await sleep(delay, AbortSignal.any([signal, wake.signal]));
+          await sleep(rest, AbortSignal.any([signal, wake.signal]));
         } catch {
           // Woken by a change, or shut down.
         } finally {
