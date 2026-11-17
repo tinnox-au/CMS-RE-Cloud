@@ -200,6 +200,7 @@ function Attention({ displays, statuses, onRetry }: AttentionCardProps) {
             <Link
               to={`/screens/${row.display.id}`}
               className="tx-dashboard-row__title tx-row-title tx-truncate"
+              title={row.display.name}
             >
               {row.display.name}
             </Link>

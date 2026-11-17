@@ -355,7 +355,10 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
                               <Icon icon={Plus} size={16} />
                             </span>
                           </span>
-                          <span className="tx-playlist-editor-media__name tx-truncate">
+                          <span
+                            className="tx-playlist-editor-media__name tx-truncate"
+                            title={app.name}
+                          >
                             {app.name}
                           </span>
                           <span id={metaId} className="tx-playlist-editor-media__details">
@@ -408,7 +411,9 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
                             <Icon icon={Plus} size={16} />
                           </span>
                         </span>
-                        <span className="tx-playlist-editor-media__name tx-truncate">{name}</span>
+                        <span className="tx-playlist-editor-media__name tx-truncate" title={name}>
+                          {name}
+                        </span>
                         <span id={metaId} className="tx-playlist-editor-media__details">
                           <span className="tx-playlist-editor-media__meta">
                             {libraryMetaLabel(item)}

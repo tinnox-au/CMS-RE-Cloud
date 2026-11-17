@@ -98,11 +98,15 @@ function PushSummary({ summary }: { readonly summary: PushOverview }) {
                 <Link
                   to={`/screens/${row.display.id}`}
                   className="tx-dashboard-row__title tx-row-title tx-truncate"
+                  title={row.display.name}
                 >
                   {row.display.name}
                 </Link>
                 {row.playlist !== null && (
-                  <span className="tx-dashboard-row__caption tx-small tx-truncate">
+                  <span
+                    className="tx-dashboard-row__caption tx-small tx-truncate"
+                    title={row.playlist.name}
+                  >
                     {row.playlist.name}
                   </span>
                 )}

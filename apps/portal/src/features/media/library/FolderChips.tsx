@@ -165,6 +165,7 @@ export function FolderChips({
         >
           <Chip
             icon={Folder}
+            title={folder.name}
             selected={value === folder.id}
             onToggle={() => {
               pick(folder.id);

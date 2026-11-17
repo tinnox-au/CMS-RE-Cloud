@@ -35,6 +35,11 @@ export interface ChipProps {
   readonly removeLabel?: string;
   readonly disabled?: boolean;
   readonly className?: string;
+  /**
+   * The full label for a pointer when the chip cuts it short. A plain text label is used by
+   * default; pass it when the label is not plain text (a name with a count).
+   */
+  readonly title?: string;
 }
 
 /**
@@ -52,6 +57,7 @@ export function Chip({
   removeLabel,
   disabled = false,
   className,
+  title,
 }: ChipProps) {
   const classes = cx(
     'tx-chip',
@@ -67,7 +73,13 @@ export function Chip({
       )}
       {colour !== undefined && <span className="tx-chip__dot" aria-hidden="true" />}
       {icon !== undefined && <Icon icon={icon} size={14} className="tx-chip__icon" />}
-      <span className="tx-chip__label">{children}</span>
+      {/* The label is cut short at its maximum width; `title` lets a pointer read the rest. */}
+      <span
+        className="tx-chip__label"
+        title={title ?? (typeof children === 'string' ? children : undefined)}
+      >
+        {children}
+      </span>
     </>
   );
 

@@ -417,7 +417,12 @@ export function NameCell({ name, to, media, meta }: NameCellProps) {
             {name}
           </Link>
         )}
-        {meta !== undefined && <span className="tx-namecell__meta">{meta}</span>}
+        {meta !== undefined && (
+          // A plain-text second line (a description) is cut short too; give it the same `title`.
+          <span className="tx-namecell__meta" title={typeof meta === 'string' ? meta : undefined}>
+            {meta}
+          </span>
+        )}
       </div>
     </div>
   );

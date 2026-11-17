@@ -117,7 +117,9 @@ export function SequenceTile({
       <div className="tx-playlist-editor-tile__body">
         <h3 className="tx-playlist-editor-tile__name">
           <VisuallyHidden>{`Item ${position} of ${count}: `}</VisuallyHidden>
-          <span className="tx-truncate">{name}</span>
+          <span className="tx-truncate" title={name}>
+            {name}
+          </span>
         </h3>
         <p className="tx-playlist-editor-tile__meta tx-truncate">
           {item.source === 'app' ? appMetaLabel(item.app) : libraryMetaLabel(item.media)}
