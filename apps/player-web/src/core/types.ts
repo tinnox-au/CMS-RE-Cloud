@@ -144,6 +144,8 @@ export interface MediaResponse {
   readonly status: number;
   /** First byte position from `Content-Range`, or null when absent or unreadable. */
   readonly rangeStart: number | null;
+  /** Capped `Retry-After` when `status` is 429; otherwise null. */
+  readonly retryAfterMs: number | null;
   /** Body chunks; iteration rejects when the transfer breaks or stalls. */
   readonly chunks: AsyncIterable<Uint8Array<ArrayBuffer>>;
   /** Releases the connection without reading the rest. */
@@ -155,10 +157,19 @@ export interface MediaResponse {
  * throw RevokedError on 401. `fetchMedia` uses only the signed URL and returns the
  * status instead: a rejected URL may merely have expired, and asking for new URLs
  * is what tells expiry and revocation apart.
+ *
+ * `signal` cancels the call, including a body read that has already started.
  */
 export interface DeviceApi {
-  fetchManifest(ifNoneMatchPublicationId: string | null): Promise<ManifestFetchResult>;
-  requestMediaUrls(publicationId: string, assetIds: readonly string[]): Promise<MediaUrlsResponse>;
+  fetchManifest(
+    ifNoneMatchPublicationId: string | null,
+    signal?: AbortSignal,
+  ): Promise<ManifestFetchResult>;
+  requestMediaUrls(
+    publicationId: string,
+    assetIds: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<MediaUrlsResponse>;
   fetchMedia(url: string, rangeStart: number | null, signal: AbortSignal): Promise<MediaResponse>;
 }
 

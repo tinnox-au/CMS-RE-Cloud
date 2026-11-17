@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import type { HeartbeatV1 } from '@tinnox/contracts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AbortedError, PlayerFault, RevokedError } from '../core/errors.ts';
-import { parseRangeStart, PlayerHttpApi, type FetchLike } from './api.ts';
+import { JSON_TIMEOUT_MS, parseRangeStart, PlayerHttpApi, type FetchLike } from './api.ts';
 
 const ORIGIN = 'http://api.test';
 const TOKEN = 'T'.repeat(43);
@@ -187,6 +188,156 @@ describe('releaseRegistration (local reset)', () => {
     expect(await down.client.forDevice(TOKEN).releaseRegistration(1000)).toBe(false);
     const rejected = api(() => new Response('{}', { status: 401 }));
     expect(await rejected.client.forDevice(TOKEN).releaseRegistration(1000)).toBe(false);
+  });
+});
+
+/** A JSON body that never yields a byte and never ends. */
+function stalledJson(): Response {
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      pull() {
+        return new Promise<void>(() => undefined);
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+}
+
+describe('JSON deadline covers the body (FCX-01)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function atDeadline(
+    run: (client: PlayerHttpApi) => Promise<unknown>,
+    response: () => Response = stalledJson,
+  ): Promise<unknown> {
+    const { client } = api(() => response());
+    let error: unknown = 'pending';
+    void run(client).then(
+      (value) => {
+        error = value;
+      },
+      (err: unknown) => {
+        error = err;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(error).toBe('pending');
+    await vi.advanceTimersByTimeAsync(JSON_TIMEOUT_MS - 1);
+    expect(error).toBe('pending');
+    await vi.advanceTimersByTimeAsync(1);
+    return error;
+  }
+
+  it('rejects a stalled manifest body when the deadline elapses', async () => {
+    const error = await atDeadline((client) => client.forDevice(TOKEN).fetchManifest(null));
+    expect(error).toBeInstanceOf(PlayerFault);
+    expect((error as PlayerFault).message).toContain(`no answer within ${JSON_TIMEOUT_MS} ms`);
+  });
+
+  it('rejects a stalled heartbeat body when the deadline elapses', async () => {
+    const error = await atDeadline((client) =>
+      client.forDevice(TOKEN).heartbeat({} as HeartbeatV1),
+    );
+    expect(error).toBeInstanceOf(PlayerFault);
+    expect((error as PlayerFault).message).toContain(`no answer within ${JSON_TIMEOUT_MS} ms`);
+  });
+
+  it('rejects a stalled media-URL body when the deadline elapses', async () => {
+    const error = await atDeadline((client) =>
+      client.forDevice(TOKEN).requestMediaUrls(PUB, [PUB]),
+    );
+    expect(error).toBeInstanceOf(PlayerFault);
+    expect((error as PlayerFault).message).toContain(`no answer within ${JSON_TIMEOUT_MS} ms`);
+  });
+
+  it('rejects a stalled pairing body when the deadline elapses', async () => {
+    const error = await atDeadline((client) => client.createPairing());
+    expect(error).toBeInstanceOf(PlayerFault);
+    expect((error as PlayerFault).message).toContain(`no answer within ${JSON_TIMEOUT_MS} ms`);
+    const poll = await atDeadline((client) => client.pollPairing(PUB, 'p'.repeat(43)));
+    expect(poll).toBeInstanceOf(PlayerFault);
+  });
+
+  it('settles a stalled registration release when discarding the body does not finish', async () => {
+    const error = await atDeadline(
+      (client) => client.forDevice(TOKEN).releaseRegistration(JSON_TIMEOUT_MS),
+      () =>
+        new Response(
+          new ReadableStream({
+            cancel() {
+              return new Promise<void>(() => undefined);
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    // The call reports that the server was not told, instead of hanging.
+    expect(error).toBe(false);
+  });
+
+  it('aborts a stalled credentialed read when the session signal aborts', async () => {
+    const abort = new AbortController();
+    const { client } = api(() => stalledJson());
+    const device = client.forDevice(TOKEN);
+    const runs = [
+      device.fetchManifest(null, abort.signal),
+      device.requestMediaUrls(PUB, [PUB], abort.signal),
+      device.heartbeat({} as HeartbeatV1, abort.signal),
+    ];
+    const errors: unknown[] = runs.map(() => 'pending');
+    runs.forEach((run, index) => {
+      void run.then(
+        () => {
+          errors[index] = 'resolved';
+        },
+        (err: unknown) => {
+          errors[index] = err;
+        },
+      );
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(errors).toEqual(['pending', 'pending', 'pending']);
+    abort.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    for (const error of errors) expect(error).toBeInstanceOf(AbortedError);
+  });
+
+  it('aborts a stalled body when the caller cancels, and the deadline does not fire later', async () => {
+    const abort = new AbortController();
+    const { client } = api(() => stalledJson());
+    let error: unknown = 'pending';
+    void client.createPairing(abort.signal).then(
+      () => {
+        error = 'resolved';
+      },
+      (err: unknown) => {
+        error = err;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(error).toBe('pending');
+    abort.abort();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(error).toBeInstanceOf(AbortedError);
+    await vi.advanceTimersByTimeAsync(JSON_TIMEOUT_MS);
+    expect(error).toBeInstanceOf(AbortedError);
+  });
+
+  it('does not fail a finished call when the deadline later elapses', async () => {
+    const { client } = api(
+      () => new Response(JSON.stringify({ manifest: { schemaVersion: 1 } }), { status: 200 }),
+    );
+    await expect(client.forDevice(TOKEN).fetchManifest(null)).resolves.toEqual({
+      kind: 'manifest',
+      raw: { schemaVersion: 1 },
+    });
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(JSON_TIMEOUT_MS + 5_000);
   });
 });
 

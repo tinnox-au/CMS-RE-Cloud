@@ -76,7 +76,11 @@ class UrlBook {
       known !== undefined && known.expiresAtMs - this.#deps.clock.now() > URL_EXPIRY_MARGIN_MS;
     if (known !== undefined && fresh && !refresh) return known.url;
 
-    const response = await this.#deps.api.requestMediaUrls(this.#publicationId, this.#assetIds);
+    const response = await this.#deps.api.requestMediaUrls(
+      this.#publicationId,
+      this.#assetIds,
+      this.#deps.signal,
+    );
     if (response.publicationId !== this.#publicationId) {
       throw new PlayerFault('download_failed', 'media URLs were issued for another publication');
     }
@@ -299,7 +303,7 @@ export async function stagePublication(
 
 async function newerManifest(deps: StagingDeps, staged: Manifest): Promise<Manifest | null> {
   try {
-    const result = await deps.api.fetchManifest(staged.publicationId);
+    const result = await deps.api.fetchManifest(staged.publicationId, deps.signal);
     if (result.kind !== 'manifest') return null;
     const parsed = parseManifest(result.raw);
     if (!parsed.ok) return null;

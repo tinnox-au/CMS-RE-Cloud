@@ -1,6 +1,7 @@
 import { parseManifest, type Manifest, type PlayerError } from '@tinnox/contracts';
 import { backoffDelay, jitteredInterval, type BackoffPolicy } from './backoff.ts';
 import { AbortedError, PlayerFault, RevokedError, toPlayerError } from './errors.ts';
+import { heldRetryMs, retryAfterMsOf, retryDelay } from './retry-after.ts';
 import { collectGarbage, stagePublication, type StagingDeps } from './staging.ts';
 
 export interface SyncTimings {
@@ -26,7 +27,11 @@ export type CycleResult =
   | { readonly kind: 'up_to_date' }
   | { readonly kind: 'activated'; readonly publicationId: string }
   /** The server could not be reached or answered with an error. Nothing changed. */
-  | { readonly kind: 'unreachable'; readonly error: PlayerError }
+  | {
+      readonly kind: 'unreachable';
+      readonly error: PlayerError;
+      readonly retryAfterMs: number | null;
+    }
   /** A manifest arrived but was rejected or could not be completed. The old version stays. */
   | {
       readonly kind: 'update_failed';
@@ -57,7 +62,7 @@ export async function syncCycle(deps: SyncDeps): Promise<CycleResult> {
 
   let fetched;
   try {
-    fetched = await deps.api.fetchManifest(activeId);
+    fetched = await deps.api.fetchManifest(activeId, deps.signal);
   } catch (err) {
     if (err instanceof RevokedError || err instanceof AbortedError) throw err;
     const error = toPlayerError(err, {
@@ -66,7 +71,7 @@ export async function syncCycle(deps: SyncDeps): Promise<CycleResult> {
       fallbackCode: 'network_error',
     });
     deps.report(error);
-    return { kind: 'unreachable', error };
+    return { kind: 'unreachable', error, retryAfterMs: retryAfterMsOf(err) };
   }
   if (fetched.kind !== 'manifest') return { kind: 'up_to_date' };
 
@@ -134,14 +139,22 @@ export function nextCounters(previous: SyncCounters, result: CycleResult): SyncC
   }
 }
 
-/** Delay before the next cycle, given the counters AFTER applying the last result. */
+/**
+ * Delay before the next cycle, given the counters AFTER applying the last result.
+ * `retryAfterMs` is the capped wait from a 429. The result is at least the ordinary
+ * backoff and at least that wait.
+ */
 export function nextSyncDelay(
   counters: SyncCounters,
   timings: SyncTimings,
   random: () => number,
+  retryAfterMs: number | null = null,
 ): number {
   if (counters.networkFailures > 0) {
-    return backoffDelay(timings.networkBackoff, counters.networkFailures, random);
+    return retryDelay(
+      backoffDelay(timings.networkBackoff, counters.networkFailures, random),
+      retryAfterMs,
+    );
   }
   if (counters.updateFailures > 0) {
     return backoffDelay(timings.updateBackoff, counters.updateFailures, random);
@@ -282,7 +295,9 @@ export class SyncLoop {
       this.#onSettled(result);
 
       counters = nextCounters(counters, result);
-      const delay = nextSyncDelay(counters, this.#timings, this.#deps.random);
+      const retryAfterMs = result.kind === 'unreachable' ? result.retryAfterMs : null;
+      const delay = nextSyncDelay(counters, this.#timings, this.#deps.random, retryAfterMs);
+      const held = heldRetryMs(retryAfterMs);
       this.#status = {
         ...this.#status,
         lastCycleAt: new Date(this.#deps.clock.now()).toISOString(),
@@ -291,11 +306,22 @@ export class SyncLoop {
         counters,
       };
 
+      // A 429's Retry-After is not cut short by a wake (the network returned, or a publish hint).
+      if (held > 0) {
+        try {
+          await this.#deps.sleep(held, signal);
+        } catch {
+          return;
+        }
+      }
+      if (signal.aborted) return;
       if (this.#wakeRequested) continue;
+      const rest = delay - held;
+      if (rest <= 0) continue;
       const wake = new AbortController();
       this.#wake = wake;
       try {
-        await this.#deps.sleep(delay, AbortSignal.any([signal, wake.signal]));
+        await this.#deps.sleep(rest, AbortSignal.any([signal, wake.signal]));
       } catch {
         // Woken early or shut down; the loop condition decides which.
       } finally {
