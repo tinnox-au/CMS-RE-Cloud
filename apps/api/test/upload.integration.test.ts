@@ -13,6 +13,7 @@ import {
   createDisplay,
   createOrg,
   listDir,
+  losingCommitAnswers,
   pairPlayer,
   pngBytes,
   publishImages,
@@ -465,6 +466,136 @@ describe('upload limits and validation results', () => {
     await actAsWorker(t, accepted(media.id));
     await t.ctx.media.tick();
     expect((await get(media.id)).status).toBe('ready');
+  });
+
+  it('never sweeps the files of a pending job, however long the queue is (round 3, SCX-02)', async () => {
+    /** Adds rows waiting for validation, older than any upload of this test. */
+    const queue = (count: number): Promise<void> =>
+      withOrg(t.pool, org.orgId, async (tx) => {
+        await tx.query(
+          `INSERT INTO media (org_id, kind, status, original_name, created_at)
+           SELECT app_org_id(), 'image', 'processing', 'queued', now() - interval '1 hour'
+           FROM generate_series(1, $1::int)`,
+          [count],
+        );
+      });
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const age = (path: string): Promise<void> => utimes(path, fiveMinutesAgo, fiveMinutesAgo);
+    const inbox = join(t.jobsDir, 'inbox');
+    try {
+      // 500 jobs ahead of this one: more than one scan looks at.
+      await queue(500);
+      const { media } = await uploadPng();
+      await age(join(inbox, media.id));
+      await age(join(inbox, `${media.id}.json`));
+      await t.ctx.media.sweep();
+      expect(await listDir(inbox)).toEqual(expect.arrayContaining([media.id, `${media.id}.json`]));
+      expect((await get(media.id)).status).toBe('processing');
+
+      // As many pending jobs as one lookup returns: the list may be cut off, so the sweep
+      // cannot tell an orphan from a pending job's file and removes nothing.
+      await queue(4500);
+      const orphan = join(inbox, `${randomUUID()}.part`);
+      await writeFile(orphan, 'x');
+      await age(orphan);
+      expect(await t.ctx.media.sweep()).toBe(0);
+      expect(await listDir(inbox)).toEqual(
+        expect.arrayContaining([media.id, `${media.id}.json`, orphan.slice(-41)]),
+      );
+    } finally {
+      // Fail the queued rows (and the upload), then let the sweep clear the old files.
+      await settleStrayMediaJobs(t.pool);
+      await t.ctx.media.sweep();
+    }
+    expect(await listDir(inbox)).toEqual([]);
+  });
+
+  it('keeps validated media whose commit went through when the answer to COMMIT was lost (round 3, SCX-03)', async () => {
+    const { media } = await uploadPng();
+    await actAsWorker(t, accepted(media.id));
+    const silent = { info: () => undefined, warn: () => undefined, error: () => undefined };
+    const pipeline = new MediaPipeline({
+      jobsDir: t.jobsDir,
+      pool: losingCommitAnswers(t.pool, /SET status = 'ready'/),
+      storage: await LocalObjectStorage.create({ root: t.mediaRoot }),
+      limits: t.config.limits,
+      logger: silent,
+    });
+    await pipeline.prepare();
+    await pipeline.tick();
+
+    // Read through a connection that did not lose anything: the row is ready...
+    const row = await withOrg(t.pool, org.orgId, async (tx) => {
+      const { rows } = await tx.query<{ status: string; storage_key: string | null }>(
+        'SELECT status, storage_key FROM media WHERE id = $1',
+        [media.id],
+      );
+      return rows[0];
+    });
+    expect(row?.status).toBe('ready');
+    // ...and the object it names was kept, so the media can still be shown.
+    const storage = await LocalObjectStorage.create({ root: t.mediaRoot });
+    expect(await storage.stat(row?.storage_key ?? 'missing')).not.toBeNull();
+    expect((await operator.fetch(`/api/media/${media.id}/preview`)).status).toBe(200);
+
+    // The job's files stay behind (the row is ready, so no scan cleans them up); the sweep
+    // removes them once they are old enough.
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    for (const dir of ['inbox', 'outbox']) {
+      for (const name of await listDir(join(t.jobsDir, dir))) {
+        if (name.startsWith(media.id)) {
+          await utimes(join(t.jobsDir, dir, name), fiveMinutesAgo, fiveMinutesAgo);
+        }
+      }
+    }
+    expect(await t.ctx.media.sweep()).toBeGreaterThan(0);
+    expect(await listDir(join(t.jobsDir, 'inbox'))).toEqual([]);
+  });
+
+  it('keeps the bytes of an upload whose row was committed when the answer to COMMIT was lost (round 3, SCX-03)', async () => {
+    const lossy = await startTestApp(
+      {
+        LIMIT_MAX_UPLOAD_BYTES: String(UPLOAD_LIMIT),
+        LIMIT_MAX_ORG_STORAGE_BYTES: String(QUOTA),
+      },
+      1000,
+      { wrapPool: (pool) => losingCommitAnswers(pool, /INSERT INTO media AS m/) },
+    );
+    try {
+      const owner = await signIn(lossy, org);
+      const bytes = await pngBytes();
+      expect((await uploadBytes(owner, bytes)).status).toBe(500);
+      const sha256 = createHash('sha256').update(bytes).digest('hex');
+      const row = await withOrg(t.pool, org.orgId, async (tx) => {
+        const { rows } = await tx.query<{ id: string; status: string }>(
+          // Newest first: an earlier upload of this file may have drawn the same colour.
+          'SELECT id, status FROM media WHERE sha256 = $1 ORDER BY created_at DESC LIMIT 1',
+          [sha256],
+        );
+        return rows[0];
+      });
+      if (row === undefined) throw new Error('the upload row was not committed');
+      expect(row.status).toBe('processing');
+      // The received bytes were kept for the committed row...
+      const inbox = join(lossy.jobsDir, 'inbox');
+      expect(await listDir(inbox)).toContain(`${row.id}.part`);
+      // ...so the scan queues them once the queueing grace has passed, and validation finishes.
+      lossy.advanceClock(31_000);
+      await lossy.ctx.media.tick();
+      expect(await listDir(inbox)).toContain(`${row.id}.json`);
+      await actAsWorker(lossy, accepted(row.id));
+      await lossy.ctx.media.tick();
+      const ready = await withOrg(t.pool, org.orgId, async (tx) => {
+        const { rows } = await tx.query<{ status: string }>(
+          'SELECT status FROM media WHERE id = $1',
+          [row.id],
+        );
+        return rows[0]?.status;
+      });
+      expect(ready).toBe('ready');
+    } finally {
+      await lossy.close();
+    }
   });
 
   it('times a job out when the worker never answers, and survives an API restart', async () => {

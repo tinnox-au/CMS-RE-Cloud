@@ -323,10 +323,25 @@ export function pairingAcceptedText(replacedPrevious: boolean): string {
 }
 
 /** What is said after a revocation, by what the API answered. */
-export function revokeOutcomeText(revokedRegistrationId: string | null): string {
-  return revokedRegistrationId === null
-    ? 'This screen had no active player credential. Nothing was changed.'
-    : 'The player credential was revoked. That player can no longer fetch manifests or media. Content it already cached stays on the device until it is reset there.';
+export function revokeOutcomeText(
+  revokedRegistrationId: string | null,
+  cancelledPairingCount: number,
+): string {
+  const cancelled =
+    cancelledPairingCount === 0
+      ? null
+      : cancelledPairingCount === 1
+        ? 'A pairing code accepted for this screen but not yet collected by a player was cancelled.'
+        : `${cancelledPairingCount} pairing codes accepted for this screen but not yet collected by a player were cancelled.`;
+  if (revokedRegistrationId === null) {
+    return cancelled === null
+      ? 'This screen had no active player credential. Nothing was changed.'
+      : `This screen had no active player credential. ${cancelled}`;
+  }
+  return [
+    'The player credential was revoked. That player can no longer fetch manifests or media. Content it already cached stays on the device until it is reset there.',
+    ...(cancelled === null ? [] : [cancelled]),
+  ].join(' ');
 }
 
 /** The sentence about who holds a credential now. `since` is an already formatted time. */

@@ -48,7 +48,7 @@ import {
   type MediaJobResult,
   type MediaJobSpec,
 } from '@tinnox/contracts';
-import { auditScoped, poolAsTx, withOrg, type Pool } from '@tinnox/db';
+import { auditScoped, CommitOutcomeUnknownError, poolAsTx, withOrg, type Pool } from '@tinnox/db';
 import { newObjectKey, type ObjectStorage } from '@tinnox/storage';
 import { SNIFF_BYTES, sniffMediaType } from './sniff.ts';
 
@@ -66,6 +66,10 @@ const ENQUEUE_GRACE_MS = 30_000;
 const ORPHAN_GRACE_MS = 2 * 60 * 1000;
 /** An upload still marked "in progress" after this long is treated as abandoned. */
 const IN_FLIGHT_MAX_MS = 60 * 60 * 1000;
+/** Pending jobs looked at by one scan, oldest first. */
+const SCAN_BATCH = 500;
+/** sec.media_processing_jobs never returns more rows than this (migration 0003). */
+const PENDING_LIST_CAP = 5000;
 /** Name of the file the worker touches to show it is running (informational only). */
 export const WORKER_ALIVE_FILE = '.worker-alive';
 
@@ -346,17 +350,18 @@ export class MediaPipeline {
     await this.#ticking;
   }
 
-  async #pending(): Promise<PendingJob[]> {
+  /** The oldest `limit` jobs still waiting for validation, in every organisation. */
+  async #pending(limit: number): Promise<PendingJob[]> {
     const { rows } = await poolAsTx(this.#pool).query<{
       media_id: string;
       org_id: string;
       created_at: Date;
-    }>('SELECT media_id, org_id, created_at FROM sec.media_processing_jobs($1)', [500]);
+    }>('SELECT media_id, org_id, created_at FROM sec.media_processing_jobs($1)', [limit]);
     return rows.map((r) => ({ mediaId: r.media_id, orgId: r.org_id, createdAt: r.created_at }));
   }
 
   async #scan(): Promise<void> {
-    const jobs = await this.#pending();
+    const jobs = await this.#pending(SCAN_BATCH);
     const now = this.#now().getTime();
     const perJob = this.#limits.mediaInspectionTimeoutMs + this.#perJobGraceMs;
     for (const [index, job] of jobs.entries()) {
@@ -620,9 +625,12 @@ export class MediaPipeline {
       }
     }
 
-    let updated = false;
+    // The stored copies are removed unless the ready row that references them committed,
+    // or may have: when COMMIT did not confirm, deleting could leave a ready row without
+    // its bytes. At worst an unreferenced object stays (review round 3, SCX-03).
+    let keep = false;
     try {
-      updated = await withOrg(this.#pool, job.orgId, async (tx) => {
+      keep = await withOrg(this.#pool, job.orgId, async (tx) => {
         const done = await tx.query(
           `UPDATE media
            SET status = 'ready', kind = $2, mime_type = $3, bytes = $4, sha256 = $5,
@@ -662,8 +670,11 @@ export class MediaPipeline {
         });
         return true;
       });
+    } catch (error) {
+      keep = error instanceof CommitOutcomeUnknownError;
+      throw error;
     } finally {
-      if (!updated) {
+      if (!keep) {
         await this.#storage.delete(key).catch(() => undefined);
         if (thumbKey !== null) await this.#storage.delete(thumbKey).catch(() => undefined);
       }
@@ -715,9 +726,21 @@ export class MediaPipeline {
   /**
    * Removes leftovers that belong to no pending job and no upload in progress
    * (interrupted uploads after a crash, files of finished jobs). Returns the count.
+   *
+   * A file is removed only when the complete list of pending jobs shows it has no owner.
+   * When the list may be cut off (as many pending jobs as one lookup returns), nothing
+   * is removed and the sweep waits for the backlog to drain (review round 3, SCX-02).
    */
   async sweep(): Promise<number> {
-    const pending = new Set((await this.#pending()).map((job) => job.mediaId));
+    const jobs = await this.#pending(PENDING_LIST_CAP);
+    if (jobs.length >= PENDING_LIST_CAP) {
+      this.#log.warn(
+        { pending: jobs.length },
+        'media job sweep skipped: too many pending jobs to tell which files are orphaned',
+      );
+      return 0;
+    }
+    const pending = new Set(jobs.map((job) => job.mediaId));
     const now = this.#now().getTime();
     for (const [jobId, since] of this.#inFlight) {
       if (now - since > IN_FLIGHT_MAX_MS) this.#inFlight.delete(jobId);

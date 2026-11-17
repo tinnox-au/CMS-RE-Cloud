@@ -14,6 +14,7 @@ import {
   loginStatePut,
   loginStateTake,
   membershipByOidcSub,
+  pairingCancelClaims,
   pairingClaim,
   pairingComplete,
   pairingCreate,
@@ -72,6 +73,71 @@ const claim = (org: TestOrg, code: string, displayId = org.displayId) =>
   withOrg(pool, org.orgId, (tx) =>
     pairingClaim(tx, { code, displayId, membershipId: org.membershipId, ...claimLimits }),
   );
+const pollOutcome = async (p: { pairingId: string; pollingTokenHash: Buffer }) =>
+  (await pairingPoll(db, { ...p, maxWrongAttempts: 5 })).outcome;
+
+/** Runs one statement as the owner of the security functions (non-tenant tables). */
+async function asDefiner<R extends pg.QueryResultRow>(
+  text: string,
+  values: readonly unknown[] = [],
+): Promise<R[]> {
+  await migrator.query('BEGIN');
+  try {
+    await migrator.query('SET LOCAL ROLE tinnox_definer');
+    const { rows } = await migrator.query<R>(text, [...values]);
+    await migrator.query('COMMIT');
+    return rows;
+  } catch (error) {
+    await migrator.query('ROLLBACK');
+    throw error;
+  }
+}
+
+/** Adds a second operator to an organisation; returns the membership id. */
+async function addMember(org: TestOrg): Promise<string> {
+  const id = randomUUID();
+  await migrator.query('BEGIN');
+  await migrator.query("SELECT set_config('app.org_id', $1, true)", [org.orgId]);
+  await migrator.query('INSERT INTO membership (id, org_id, oidc_sub) VALUES ($1, $2, $3)', [
+    id,
+    org.orgId,
+    `sec-test-${id}`,
+  ]);
+  await migrator.query('COMMIT');
+  return id;
+}
+
+/** Resolves to true when the promise is still pending after a short wait. */
+async function stillWaiting(promise: Promise<unknown>): Promise<boolean> {
+  let settled = false;
+  const mark = () => {
+    settled = true;
+  };
+  promise.then(mark, mark);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  return !settled;
+}
+
+/** Two tinnox_app connections, each in an open transaction for `orgId`. */
+async function twoTransactions(
+  orgId: string,
+  work: (first: pg.PoolClient, second: pg.PoolClient) => Promise<void>,
+): Promise<void> {
+  const first = await pool.connect();
+  const second = await pool.connect();
+  try {
+    for (const client of [first, second]) {
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.org_id', $1, true)", [orgId]);
+    }
+    await work(first, second);
+  } finally {
+    for (const client of [first, second]) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      client.release();
+    }
+  }
+}
 
 describe('function hardening', () => {
   it('every sec function is SECURITY DEFINER, owned by tinnox_definer, with a locked search_path, and not executable by PUBLIC', async () => {
@@ -81,20 +147,24 @@ describe('function hardening', () => {
       owner: string;
       proconfig: string[] | null;
       public_exec: boolean;
+      app_exec: boolean;
     }>(
       `SELECT p.proname, p.prosecdef, pg_get_userbyid(p.proowner) AS owner, p.proconfig,
-              has_function_privilege('public', p.oid, 'EXECUTE') AS public_exec
+              has_function_privilege('public', p.oid, 'EXECUTE') AS public_exec,
+              has_function_privilege('tinnox_app', p.oid, 'EXECUTE') AS app_exec
        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'sec' ORDER BY 1`,
     );
-    // 14 from migration 0002, two lookups from 0003_api_lookups.sql and
-    // heartbeat_log_purge from 0004_review_hardening.sql.
-    expect(rows.length).toBe(17);
+    // 14 from migration 0002, two lookups from 0003_api_lookups.sql,
+    // heartbeat_log_purge from 0004_review_hardening.sql and pairing_cancel_claims from
+    // 0010_pairing_hardening.sql.
+    expect(rows.length).toBe(18);
     for (const r of rows) {
       expect(r, r.proname).toMatchObject({
         prosecdef: true,
         owner: 'tinnox_definer',
         proconfig: ['search_path=pg_catalog, pg_temp'],
         public_exec: false,
+        app_exec: true,
       });
     }
     const role = await migrator.query<{
@@ -506,7 +576,7 @@ describe('pairing', () => {
         deviceTokenHash: hash(),
       }),
     ).toEqual({ outcome: 'not_claimable' });
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < 4; i += 1) {
       expect(
         (
           await pairingPoll(db, {
@@ -517,6 +587,16 @@ describe('pairing', () => {
         ).outcome,
       ).toBe('wrong_token');
     }
+    // The attempt that locks the session says so, once, for its audit event (round 3, SCX-04).
+    expect(
+      (
+        await pairingPoll(db, {
+          pairingId: p.pairingId,
+          pollingTokenHash: thief,
+          maxWrongAttempts: 5,
+        })
+      ).outcome,
+    ).toBe('wrong_token_locked');
     expect(
       (
         await pairingPoll(db, {
@@ -624,6 +704,161 @@ describe('pairing', () => {
     });
     expect(two.outcome).toBe('completed');
     expect((await deviceByTokenHash(db, secondToken))?.displayId).toBe(org.displayId);
+  });
+
+  it('a newer claim cancels an older one no player collected: the older one can neither complete nor take the screen back (round 3, SCX-01)', async () => {
+    const org = await createOrg(migrator, 'Supersede');
+    const older = await newPairing();
+    const newer = await newPairing();
+    expect(await claim(org, older.code)).toMatchObject({
+      outcome: 'claimed',
+      cancelledPairingIds: [],
+    });
+    expect(await claim(org, newer.code)).toMatchObject({
+      outcome: 'claimed',
+      cancelledPairingIds: [older.pairingId],
+    });
+    const newerToken = hash();
+    expect(
+      (
+        await pairingComplete(db, {
+          pairingId: newer.pairingId,
+          pollingTokenHash: newer.pollingTokenHash,
+          deviceTokenHash: newerToken,
+        })
+      ).outcome,
+    ).toBe('completed');
+
+    // The older player comes back within its code's lifetime: told to start again.
+    expect(await pollOutcome(older)).toBe('expired');
+    expect(
+      await pairingComplete(db, {
+        pairingId: older.pairingId,
+        pollingTokenHash: older.pollingTokenHash,
+        deviceTokenHash: hash(),
+      }),
+    ).toEqual({ outcome: 'not_claimable' });
+    expect((await deviceByTokenHash(db, newerToken))?.displayId).toBe(org.displayId);
+  });
+
+  it('revoking the player cancels claims no player has collected, in its own organisation only (round 3, SCX-01)', async () => {
+    const org = await createOrg(migrator, 'Revoke cancels');
+    const p = await newPairing();
+    expect((await claim(org, p.code)).outcome).toBe('claimed');
+
+    // Another organisation naming this display, or no organisation, cancels nothing.
+    expect(await withOrg(pool, b.orgId, (tx) => pairingCancelClaims(tx, org.displayId))).toEqual(
+      [],
+    );
+    expect(await pgCode(withoutOrg(pool, (tx) => pairingCancelClaims(tx, org.displayId)))).toBe(
+      PG.insufficientPrivilege,
+    );
+    expect(await pollOutcome(p)).toBe('claimed');
+
+    expect(await withOrg(pool, org.orgId, (tx) => pairingCancelClaims(tx, org.displayId))).toEqual([
+      p.pairingId,
+    ]);
+    expect(await pollOutcome(p)).toBe('expired');
+    expect(
+      await pairingComplete(db, {
+        pairingId: p.pairingId,
+        pollingTokenHash: p.pollingTokenHash,
+        deviceTokenHash: hash(),
+      }),
+    ).toEqual({ outcome: 'not_claimable' });
+    expect(await withOrg(pool, org.orgId, (tx) => pairingCancelClaims(tx, org.displayId))).toEqual(
+      [],
+    );
+  });
+
+  it('completing a pairing never replaces an active registration (round 3, SCX-01)', async () => {
+    const org = await createOrg(migrator, 'No displacement');
+    const first = await newPairing();
+    expect((await claim(org, first.code)).outcome).toBe('claimed');
+    const firstToken = hash();
+    expect(
+      (
+        await pairingComplete(db, {
+          pairingId: first.pairingId,
+          pollingTokenHash: first.pollingTokenHash,
+          deviceTokenHash: firstToken,
+        })
+      ).outcome,
+    ).toBe('completed');
+
+    // A claimed session that no later claim cancelled, as one claimed before
+    // migration 0010 could be.
+    const stray = await newPairing();
+    await asDefiner(
+      `UPDATE public.pairing_session
+       SET status = 'claimed', org_id = $2, display_id = $3, claimed_at = now(),
+           expires_at = now() + interval '5 minutes'
+       WHERE id = $1`,
+      [stray.pairingId, org.orgId, org.displayId],
+    );
+    expect(
+      await pairingComplete(db, {
+        pairingId: stray.pairingId,
+        pollingTokenHash: stray.pollingTokenHash,
+        deviceTokenHash: hash(),
+      }),
+    ).toEqual({ outcome: 'not_claimable' });
+    expect(await pollOutcome(stray)).toBe('expired');
+    expect((await deviceByTokenHash(db, firstToken))?.displayId).toBe(org.displayId);
+  });
+
+  it('of two claims for one screen at the same time, the later waits and cancels the earlier (round 3, SCX-01)', async () => {
+    const org = await createOrg(migrator, 'Claim race');
+    const colleague = await addMember(org);
+    const p1 = await newPairing();
+    const p2 = await newPairing();
+    const sql = 'SELECT outcome, cancelled_pairing_ids FROM sec.pairing_claim($1, $2, $3, 5, 600)';
+    await twoTransactions(org.orgId, async (first, second) => {
+      const one = await first.query(sql, [p1.code, org.displayId, org.membershipId]);
+      expect(one.rows[0]).toEqual({ outcome: 'claimed', cancelled_pairing_ids: [] });
+      const late = second
+        .query(sql, [p2.code, org.displayId, colleague])
+        .then((result) => result.rows[0] as unknown);
+      expect(await stillWaiting(late)).toBe(true);
+      await first.query('COMMIT');
+      expect(await late).toEqual({ outcome: 'claimed', cancelled_pairing_ids: [p1.pairingId] });
+      await second.query('COMMIT');
+    });
+    expect(await pollOutcome(p1)).toBe('expired');
+    expect(await pollOutcome(p2)).toBe('claimed');
+  });
+
+  it("checks and uses an operator's wrong-code budget in one step, also across concurrent claims (round 3, SCX-05)", async () => {
+    const guesser = await createOrg(migrator, 'Concurrent guesser');
+    for (let i = 0; i < 4; i += 1)
+      expect(await claim(guesser, pairingCode())).toEqual({ outcome: 'invalid_code' });
+    const real = await newPairing();
+    const sql = 'SELECT outcome FROM sec.pairing_claim($1, $2, $3, 5, 600)';
+    await twoTransactions(guesser.orgId, async (first, second) => {
+      // The fifth wrong code, not committed yet.
+      const fifth = await first.query(sql, [
+        pairingCode(),
+        guesser.displayId,
+        guesser.membershipId,
+      ]);
+      expect(fifth.rows[0]).toEqual({ outcome: 'invalid_code' });
+      // The same operator with the right code must wait, then count the fifth failure.
+      const late = second
+        .query(sql, [real.code, guesser.displayId, guesser.membershipId])
+        .then((result) => result.rows[0] as unknown);
+      expect(await stillWaiting(late)).toBe(true);
+      await first.query('COMMIT');
+      expect(await late).toEqual({ outcome: 'rate_limited' });
+      await second.query('COMMIT');
+    });
+    const failures = await asDefiner<{ n: string }>(
+      'SELECT count(*) AS n FROM public.pairing_claim_failure WHERE membership_id = $1',
+      [guesser.membershipId],
+    );
+    expect(Number(failures[0]?.n)).toBe(5);
+    // The throttled attempt did not use up the code.
+    const other = await createOrg(migrator, 'Not throttled either');
+    expect((await claim(other, real.code)).outcome).toBe('claimed');
   });
 });
 

@@ -28,6 +28,7 @@ import {
 } from '@tinnox/contracts';
 import {
   auditScoped,
+  pairingCancelClaims,
   pairingClaim,
   STAGE_A_CONSTRAINTS,
   STAGE_B_CONSTRAINTS,
@@ -552,7 +553,11 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
             objectType: 'display',
             objectId: id,
             result: 'success',
-            detail: { pairingId: result.pairingId },
+            // Older claims of this screen that were never collected; they can no longer complete.
+            detail: {
+              pairingId: result.pairingId,
+              cancelledPairingIds: result.cancelledPairingIds,
+            },
           });
           if (result.replacedRegistrationId !== null) {
             await auditScoped(tx, {
@@ -605,6 +610,11 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     return withOrg(pool, session.orgId, async (tx) => {
+      // First, before the display row is locked: claims of this screen that no player has
+      // collected yet are cancelled, so none of them can bring a player back after the
+      // revocation (round 3, SCX-01). Only this organisation's rows are touched, so an
+      // unknown or foreign id changes nothing and is answered with 404 below.
+      const cancelledPairingIds = await pairingCancelClaims(tx, id);
       const display = await tx.query(
         'SELECT 1 FROM display WHERE id = $1 AND org_id = app_org_id() FOR UPDATE',
         [id],
@@ -629,9 +639,13 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
           reason: 'operator',
           displayId: id,
           hadActiveRegistration: registrationId !== null,
+          cancelledPairingIds,
         },
       });
-      return { revokedRegistrationId: registrationId };
+      return {
+        revokedRegistrationId: registrationId,
+        cancelledPairingCount: cancelledPairingIds.length,
+      };
     });
   });
 

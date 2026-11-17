@@ -16,9 +16,14 @@ export interface CreatePoolOptions {
 }
 
 /**
- * Creates a connection pool. The API passes DATABASE_URL (role tinnox_app);
- * only migration and seed scripts pass DATABASE_MIGRATOR_URL.
+ * Creates a connection pool for the runtime role tinnox_app (DATABASE_URL). Migrations
+ * and the seed connect as tinnox_migrator with their own clients, never through this.
  * int8 values (bigint ids, seq, bytes) are returned as strings by pg; convert deliberately.
+ *
+ * The timeouts and row security are sent as connection startup parameters, which take
+ * precedence over role and database defaults. tinnox_app can change its own role
+ * defaults (ALTER ROLE ... SET; PostgreSQL always allows that), so the API does not rely
+ * on the defaults set in infra/postgres/init/01-roles.sh (review round 3, SCU-02).
  */
 export function createPool(options: CreatePoolOptions): Pool {
   if (typeof options.connectionString !== 'string' || options.connectionString === '') {
@@ -31,7 +36,9 @@ export function createPool(options: CreatePoolOptions): Pool {
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
     statement_timeout: options.statementTimeoutMs ?? 15_000,
+    lock_timeout: 5_000,
     idle_in_transaction_session_timeout: 30_000,
+    options: '-c row_security=on',
   });
   // An idle client that errors (server restart, network drop) must not crash the process;
   // pg removes it from the pool and the next query gets a fresh connection.

@@ -2,13 +2,20 @@
  * What the transaction helpers do with the pooled connection when a transaction ends,
  * including the case the integration tests cannot produce on demand: a ROLLBACK that fails.
  */
+import pg from 'pg';
 import { describe, expect, it } from 'vitest';
-import { withOrg, withoutOrg, withResolvedOrg, type Pool } from './index.ts';
+import {
+  CommitOutcomeUnknownError,
+  withOrg,
+  withoutOrg,
+  withResolvedOrg,
+  type Pool,
+} from './index.ts';
 
 const ORG = '00000000-0000-4000-8000-000000000001';
 
 /** A pool with one connection that records its statements and how it was released. */
-function fakePool(failing: readonly string[] = []) {
+function fakePool(failing: readonly string[] = [], failure?: (text: string) => Error) {
   const statements: string[] = [];
   const released: (Error | undefined)[] = [];
   const listeners = new Set<(error: Error) => void>();
@@ -19,7 +26,7 @@ function fakePool(failing: readonly string[] = []) {
     query: (text: string) => {
       statements.push(text);
       return failing.includes(text)
-        ? Promise.reject(new Error(`${text} failed`))
+        ? Promise.reject(failure?.(text) ?? new Error(`${text} failed`))
         : Promise.resolve({ rows: [] });
     },
     release: (error?: Error) => {
@@ -85,13 +92,71 @@ describe('pooled connection after a transaction', () => {
   it('rolls back when the commit fails, and is destroyed if that fails too', async () => {
     const committing = fakePool(['COMMIT']);
     await expect(withoutOrg(committing.pool, () => Promise.resolve(1))).rejects.toThrow(
-      'COMMIT failed',
+      CommitOutcomeUnknownError,
     );
     expect(committing.statements).toEqual(['BEGIN', 'COMMIT', 'ROLLBACK']);
     expect(committing.released).toEqual([undefined]);
 
     const both = fakePool(['COMMIT', 'ROLLBACK']);
-    await expect(withoutOrg(both.pool, () => Promise.resolve(1))).rejects.toThrow('COMMIT failed');
+    await expect(withoutOrg(both.pool, () => Promise.resolve(1))).rejects.toThrow(
+      CommitOutcomeUnknownError,
+    );
     expect(both.released[0]).toBeInstanceOf(Error);
+  });
+});
+
+/** What PostgreSQL sends when it refuses a statement, as the pg driver parses it. */
+function serverError(code: string, severity = 'ERROR'): pg.DatabaseError {
+  const error = new pg.DatabaseError(`server refused (${code})`, 0, 'error');
+  error.code = code;
+  error.severity = severity;
+  return error;
+}
+
+describe('a COMMIT that does not confirm (review round 3, SCX-03)', () => {
+  const runs = [
+    (pool: Pool) => withOrg(pool, ORG, () => Promise.resolve('done')),
+    (pool: Pool) => withoutOrg(pool, () => Promise.resolve('done')),
+    (pool: Pool) =>
+      withResolvedOrg(pool, async (_tx, enterOrg) => {
+        await enterOrg(ORG);
+        return 'done';
+      }),
+  ];
+
+  it('reports an unknown outcome, not a rollback, when the answer to COMMIT is lost', async () => {
+    for (const run of runs) {
+      const lost = new Error('Connection terminated unexpectedly');
+      const { pool } = fakePool(['COMMIT'], () => lost);
+      const error: unknown = await run(pool).catch((thrown: unknown) => thrown);
+      // Callers must not undo work outside the database: the transaction may have committed.
+      expect(error).toBeInstanceOf(CommitOutcomeUnknownError);
+      expect((error as Error).cause).toBe(lost);
+    }
+  });
+
+  it('treats a shutdown or other server error at COMMIT as unknown too', async () => {
+    const { pool } = fakePool(['COMMIT'], () => serverError('57P01', 'FATAL'));
+    await expect(withoutOrg(pool, () => Promise.resolve(1))).rejects.toThrow(
+      CommitOutcomeUnknownError,
+    );
+  });
+
+  it('passes on a refusal that rolled the transaction back: a deferred constraint or a serialization failure', async () => {
+    for (const code of ['23505', '40001']) {
+      const refusal = serverError(code);
+      const { pool } = fakePool(['COMMIT'], () => refusal);
+      await expect(withoutOrg(pool, () => Promise.resolve(1))).rejects.toBe(refusal);
+    }
+  });
+
+  it('does not touch the error of work that failed before COMMIT', async () => {
+    const { pool, statements } = fakePool();
+    const error: unknown = await withoutOrg(pool, () => Promise.reject(new Error('boom'))).catch(
+      (thrown: unknown) => thrown,
+    );
+    expect(error).not.toBeInstanceOf(CommitOutcomeUnknownError);
+    expect((error as Error).message).toBe('boom');
+    expect(statements).toEqual(['BEGIN', 'ROLLBACK']);
   });
 });

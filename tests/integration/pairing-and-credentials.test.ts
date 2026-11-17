@@ -231,9 +231,10 @@ describe('pairing codes and device credentials', () => {
       method: 'POST',
     });
     expect(revoke.status).toBe(200);
-    expect(((await revoke.json()) as { revokedRegistrationId: string }).revokedRegistrationId).toBe(
-      setup.player.registrationId,
-    );
+    expect(await revoke.json()).toEqual({
+      revokedRegistrationId: setup.player.registrationId,
+      cancelledPairingCount: 0,
+    });
     await expectNoAccess(setup);
 
     const status = (await (
@@ -255,6 +256,65 @@ describe('pairing codes and device credentials', () => {
       items: { action: string; objectId: string | null }[];
     };
     expect(audit.items.some((event) => event.action === 'player.revoke')).toBe(true);
+  });
+
+  it('an older claim no player collected cannot take the screen back after a replacement or a revocation (round 3, SCX-01)', async () => {
+    const display = await createDisplay(alice, orgA, 'Supersede screen');
+    const manifestStatus = async (player: PairedPlayer) =>
+      (await fetch(`${t.url}/player/manifest`, { headers: player.headers })).status;
+    type AuditItem = {
+      action: string;
+      objectId: string | null;
+      detail: Record<string, unknown> | null;
+    };
+    const auditItems = async () =>
+      ((await (await alice.fetch('/api/audit?limit=200')).json()) as { items: AuditItem[] }).items;
+
+    // Replacement: a code is claimed but its player does not collect; another player is paired.
+    const older = await newPairing(t);
+    expect((await claim(alice, display.id, older.code)).status).toBe(200);
+    const current = await pairPlayer(t, alice, display.id);
+    // The first player comes back within its code's lifetime: it is told to start again,
+    // and the current player keeps the screen.
+    const late = await pollPairing(t, older);
+    expect(late.status).toBe(200);
+    expect(await late.json()).toEqual({ status: 'expired' });
+    expect(await manifestStatus(current)).not.toBe(401);
+
+    // Revocation: a claim the player has not collected is cancelled by revoking.
+    const dormant = await newPairing(t);
+    expect((await claim(alice, display.id, dormant.code)).status).toBe(200);
+    expect(await manifestStatus(current)).toBe(401); // replaced by the claim, as before
+    const revoke = await alice.fetch(`/api/displays/${display.id}/revoke-player`, {
+      method: 'POST',
+    });
+    expect(revoke.status).toBe(200);
+    expect(await revoke.json()).toEqual({ revokedRegistrationId: null, cancelledPairingCount: 1 });
+    const afterRevoke = await pollPairing(t, dormant);
+    expect(afterRevoke.status).toBe(200);
+    expect(await afterRevoke.json()).toEqual({ status: 'expired' });
+    const statusAfter = (await (
+      await alice.fetch(`/api/displays/${display.id}/status`)
+    ).json()) as {
+      paired: boolean;
+    };
+    expect(statusAfter.paired).toBe(false);
+
+    // Both cancellations are in the audit trail, with the operator's action that caused them.
+    const items = await auditItems();
+    const claims = items.filter(
+      (item) => item.action === 'pairing.claim' && item.objectId === display.id,
+    );
+    expect(claims.map((item) => item.detail?.['cancelledPairingIds'])).toContainEqual([
+      older.pairingId,
+    ]);
+    const revocation = items.find(
+      (item) =>
+        item.action === 'player.revoke' &&
+        item.detail?.['reason'] === 'operator' &&
+        item.detail['displayId'] === display.id,
+    );
+    expect(revocation?.detail?.['cancelledPairingIds']).toEqual([dormant.pairingId]);
   });
 
   it('a player that is reset and paired with another organisation gets nothing of the first', async () => {

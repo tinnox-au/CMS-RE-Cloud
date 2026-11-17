@@ -36,6 +36,8 @@ CREATE DATABASE tinnox_test OWNER tinnox_migrator ENCODING 'UTF8';
 REVOKE ALL ON DATABASE tinnox, tinnox_test FROM PUBLIC;
 GRANT CONNECT ON DATABASE tinnox, tinnox_test TO tinnox_app;
 
+-- Defaults for ad-hoc sessions. A role may change its own defaults, so the API also
+-- sends the same timeouts (and row_security = on) when it connects (packages/db createPool).
 ALTER ROLE tinnox_app      SET statement_timeout = '15s';
 ALTER ROLE tinnox_app      SET idle_in_transaction_session_timeout = '30s';
 ALTER ROLE tinnox_app      SET lock_timeout = '5s';

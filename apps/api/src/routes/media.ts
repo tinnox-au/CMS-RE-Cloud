@@ -17,7 +17,14 @@ import {
   type MediaUploadResponse,
   type MediaUsageResponse,
 } from '@tinnox/contracts';
-import { auditScoped, STAGE_A_CONSTRAINTS, violatedConstraint, withOrg, type Tx } from '@tinnox/db';
+import {
+  auditScoped,
+  CommitOutcomeUnknownError,
+  STAGE_A_CONSTRAINTS,
+  violatedConstraint,
+  withOrg,
+  type Tx,
+} from '@tinnox/db';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { operatorOf, type OperatorSession } from '../auth/session.ts';
 import { perMinute, type AppContext } from '../context.ts';
@@ -340,7 +347,12 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
           return accept(toMediaDto(row));
         });
       } catch (error) {
-        await ctx.media.discard(received.jobId).catch(() => undefined);
+        // When COMMIT did not confirm, the row may exist: keep the bytes. The scan queues
+        // them if it does (they are still marked in progress for up to an hour), and the
+        // sweep removes them if it does not (review round 3, SCX-03).
+        if (!(error instanceof CommitOutcomeUnknownError)) {
+          await ctx.media.discard(received.jobId).catch(() => undefined);
+        }
         throw error;
       }
 

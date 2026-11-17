@@ -123,7 +123,7 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
           confirming: false,
           busy: false,
           error: null,
-          result: revokeOutcomeText(result.revokedRegistrationId),
+          result: revokeOutcomeText(result.revokedRegistrationId, result.cancelledPairingCount),
         });
         afterPlayerChange();
       })
