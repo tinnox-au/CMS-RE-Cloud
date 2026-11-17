@@ -90,8 +90,9 @@ is not allowed in the current phase is ignored and logged to the console.
 The player asks for a pairing session (`POST /player/pairing`) and shows the 8-character
 code. It polls with a secret polling token that never appears on screen. When the code
 expires, is consumed or the session disappears, a new code is requested automatically;
-repeated quick failures back off (5 s doubling to 2 min). The session is kept in
-IndexedDB so a reload shows the same code while it has at least 20 s left.
+repeated quick failures back off (5 s doubling to 2 min). A 429 waits at least the
+server's `Retry-After` (capped at 10 min) and never less than that backoff. The session is
+kept in IndexedDB so a reload shows the same code while it has at least 20 s left.
 
 When an operator claims the code, one poll response carries the device token. The player
 then, in this order: deletes every media cache of this origin, replaces all stored state
@@ -119,9 +120,11 @@ builds HTML from strings.
 
 Every 15 s (±20 %) the player polls `GET /player/manifest` with `If-None-Match` set to
 the active publication. While the server is unreachable the delay backs off from 5 s to
-5 min; while an update keeps failing it backs off from 30 s to 10 min. Coming back
-online, the tab becoming visible, and a heartbeat reply naming a publication the player
-has not tried yet all trigger an immediate poll.
+5 min; while an update keeps failing it backs off from 30 s to 10 min. A 429 waits at
+least the server's `Retry-After` (capped at 10 min) as well as that backoff, and a
+publish hint does not cut that wait short. Coming back online, the tab becoming visible,
+and a heartbeat reply naming a publication the player has not tried yet all trigger an
+immediate poll.
 
 A manifest is validated with the shared schema (`parseManifest`). A malformed manifest,
 an unsupported schema version or a manifest for another display is reported and
@@ -137,9 +140,9 @@ A new publication goes through `stagePublication` (`src/core/staging.ts`):
    rejects one (401, 403 or 410).
 4. Download each asset as a stream. A broken or short transfer is resumed with a `Range`
    request; if the server ignores the range, the transfer starts over. Up to 6 attempts
-   with backoff (1 s doubling to 30 s); an attempt that added 1 MiB or more resets the
-   count. A transfer with no bytes for 30 s is abandoned. More bytes than the manifest
-   states stops the transfer at once.
+   with backoff (1 s doubling to 30 s), and at least a 429 `Retry-After`; an attempt that
+   added 1 MiB or more resets the count. A transfer with no bytes for 30 s is abandoned.
+   More bytes than the manifest states stops the transfer at once.
 5. Check the exact length and the SHA-256 digest (WebCrypto). Only then store the bytes.
 6. When all assets are stored, read each one back and probe it: images with
    `createImageBitmap`, videos by reaching `canplay` in a detached muted element within
@@ -260,8 +263,9 @@ error list (newest first, bounded by the contract), the build identifier, the
 transaction that reads it, so it increases across reloads and when the clock steps back.
 
 Nothing is queued. While the server is unreachable, reports are not sent (backoff 5 s to
-60 s) and the next one that gets through describes the state at that moment. A failed
-send is shown in diagnostics; it is not added to the reported error list.
+60 s, and at least a 429 `Retry-After`) and the next one that gets through describes the
+state at that moment. A failed send is shown in diagnostics; it is not added to the
+reported error list.
 
 The heartbeat contract (`HeartbeatV1Schema`) is strict and has no field for the storage
 estimate, so usage and quota are shown in diagnostics only.
@@ -372,7 +376,8 @@ Written against `packages/contracts` and checked by reading `apps/api/src/routes
 on 2026-11-14.
 
 - CORS for `/player/*` allows the player origin, the request headers `authorization`,
-  `content-type`, `if-none-match` and `range`, and exposes `content-range`. No cookies.
+  `content-type`, `if-none-match` and `range`, and exposes `content-range` and
+  `retry-after`. No cookies.
 - `POST /player/pairing` → 200 or 201 with `PairingCreateResponse`.
 - `GET /player/pairing/:id` with the polling token as bearer → 200 with
   `PairingPollResponse`; 404, 401 or 410 mean the session is gone.
@@ -396,7 +401,7 @@ fakes for the state store, the asset store, the API and the presenter, plus
 `fake-indexeddb` for the real IndexedDB store. Covered:
 
 - the phase table (allowed and refused transitions, heartbeat state per phase);
-- backoff and jitter bounds;
+- backoff and jitter bounds, including waiting out `Retry-After` on 429;
 - staging: success path, reuse of cached assets, URL renewal, resume, and a failure
   injected at every step (storage, quota estimate, URLs, missing asset, broken and
   truncated transfer, oversize response, digest mismatch, `QuotaExceededError`, eviction

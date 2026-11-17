@@ -15,6 +15,7 @@ import {
 } from '@tinnox/contracts';
 import { z } from 'zod';
 import { AbortedError, PlayerFault, RevokedError } from '../core/errors.ts';
+import { parseRetryAfter } from '../core/retry-after.ts';
 import type { DeviceApi, ManifestFetchResult, MediaResponse } from '../core/types.ts';
 
 /**
@@ -165,9 +166,12 @@ export class PlayerHttpApi {
   }
 
   async #fail(what: string, response: Response): Promise<never> {
+    const retryAfterMs =
+      response.status === 429 ? parseRetryAfter(response.headers.get('retry-after')) : null;
     await discard(response);
     throw new PlayerFault('network_error', `${what}: HTTP ${response.status}`, {
       status: response.status,
+      retryAfterMs,
     });
   }
 
@@ -324,6 +328,8 @@ export class PlayerHttpApi {
           );
         }
         const body = response.body;
+        const retryAfterMs =
+          response.status === 429 ? parseRetryAfter(response.headers.get('retry-after')) : null;
         const cancel = (): void => {
           clearTimeout(timer);
           stall.abort();
@@ -333,6 +339,7 @@ export class PlayerHttpApi {
           return {
             status: body === null && response.ok ? 502 : response.status,
             rangeStart: null,
+            retryAfterMs,
             chunks: empty(),
             cancel,
           };
@@ -340,6 +347,7 @@ export class PlayerHttpApi {
         return {
           status: response.status,
           rangeStart: parseRangeStart(response.headers.get('content-range')),
+          retryAfterMs: null,
           chunks: readChunks(body, kick, () => {
             clearTimeout(timer);
           }),

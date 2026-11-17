@@ -144,6 +144,8 @@ export interface MediaResponse {
   readonly status: number;
   /** First byte position from `Content-Range`, or null when absent or unreadable. */
   readonly rangeStart: number | null;
+  /** Capped `Retry-After` when `status` is 429; otherwise null. */
+  readonly retryAfterMs: number | null;
   /** Body chunks; iteration rejects when the transfer breaks or stalls. */
   readonly chunks: AsyncIterable<Uint8Array<ArrayBuffer>>;
   /** Releases the connection without reading the rest. */

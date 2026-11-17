@@ -8,6 +8,7 @@ import {
 } from '@tinnox/contracts';
 import { backoffDelay, jitteredInterval, type BackoffPolicy } from './backoff.ts';
 import { AbortedError, RevokedError, toPlayerError } from './errors.ts';
+import { heldRetryMs, retryAfterMsOf, retryDelay } from './retry-after.ts';
 import type { Clock, Sleep, StagingRecord, StateStore } from './types.ts';
 
 /** Everything a heartbeat says, gathered at the moment of sending. Nothing is queued. */
@@ -168,6 +169,7 @@ export class HeartbeatLoop {
       this.#dirty = false;
       const startedAt = this.#deps.clock.now();
       let delay: number;
+      let held = 0;
       try {
         const suggested = await this.sendOnce();
         if (suggested !== null) interval = suggested;
@@ -190,15 +192,25 @@ export class HeartbeatLoop {
           consecutiveFailures: failures,
         };
         this.#deps.onSendFailure?.(error);
-        delay = backoffDelay(this.#timings.backoff, failures, random);
+        held = heldRetryMs(retryAfterMsOf(err));
+        delay = retryDelay(backoffDelay(this.#timings.backoff, failures, random), held);
       }
 
+      // A 429's Retry-After is not cut short by a state change. The rest of the backoff is.
+      if (held > 0) {
+        try {
+          await sleep(held, signal);
+        } catch {
+          return;
+        }
+      }
+      const rest = delay - held;
       // Wait for the interval, or until a change is flagged; then respect the minimum gap.
-      if (!this.#dirty) {
+      if (!this.#dirty && rest > 0) {
         const wake = new AbortController();
         this.#wake = wake;
         try {
-          await sleep(delay, AbortSignal.any([signal, wake.signal]));
+          await sleep(rest, AbortSignal.any([signal, wake.signal]));
         } catch {
           // Woken by a change, or shut down.
         } finally {
