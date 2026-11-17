@@ -10,11 +10,13 @@
   "dependencies": {},
   "devDependencies": {
     "@playwright/test": "1.65.1",
+    "@tinnox/app-render": "*",
     "@tinnox/contracts": "*",
     "@tinnox/db": "*",
     "@tinnox/domain": "*",
     "@tinnox/storage": "*",
     "@types/pg": "8.23.1",
+    "esbuild": "0.28.2",
     "otplib": "13.6.0",
     "pg": "8.23.1",
     "undici": "8.12.4",
