@@ -26,6 +26,7 @@ import {
 import {
   CalendarDays,
   Copy,
+  LayoutTemplate,
   Monitor,
   Plus,
   RefreshCw,
@@ -198,8 +199,8 @@ export function SurfaceSection() {
         note="A planned section says in one sentence what it will do and when. It has no controls."
       >
         <Card flush>
-          <EmptyState variant="inline" icon={CalendarDays} title="Schedules are planned">
-            Schedules will play different playlists at different times. They arrive with stage B.
+          <EmptyState variant="inline" icon={LayoutTemplate} title="Layouts are planned">
+            Layouts will split a screen into zones. They arrive with stage B.
           </EmptyState>
         </Card>
       </Demo>

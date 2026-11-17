@@ -41,6 +41,7 @@ export const AUDIT_CATEGORY_LABELS: { readonly [K in AuditCategory]: string } = 
   folder: 'Folders',
   app: 'Apps',
   playlist: 'Playlists',
+  schedule: 'Schedules',
   publication: 'Pushes to screens',
   security: 'Security',
 };
@@ -117,6 +118,7 @@ const CATEGORY_SUBJECTS: { readonly [K in AuditCategory]: string } = {
   folder: 'Folder',
   app: 'App',
   playlist: 'Playlist',
+  schedule: 'Schedule',
   publication: 'Push',
   security: 'Security',
 };
@@ -255,6 +257,7 @@ const OBJECT_TYPE_LABELS: Readonly<Record<string, string>> = {
   tag: 'Tag',
   folder: 'Folder',
   app: 'App',
+  schedule: 'Schedule',
   publication: 'Publication',
   player_registration: 'Player',
   pairing: 'Pairing',
@@ -279,7 +282,8 @@ export function shortAuditId(id: string): string {
 }
 
 /** The kinds of object the portal can name, and for most of them open. */
-export type AuditTargetKind = 'display' | 'media' | 'playlist' | 'tag' | 'folder' | 'app';
+export type AuditTargetKind =
+  'display' | 'media' | 'playlist' | 'tag' | 'folder' | 'app' | 'schedule';
 
 export interface AuditTarget {
   readonly kind: AuditTargetKind;
@@ -294,6 +298,7 @@ const TARGET_KINDS: readonly AuditTargetKind[] = [
   'tag',
   'folder',
   'app',
+  'schedule',
 ];
 
 const TARGET_LABELS: { readonly [K in AuditTargetKind]: string } = {
@@ -303,6 +308,7 @@ const TARGET_LABELS: { readonly [K in AuditTargetKind]: string } = {
   tag: 'Tag',
   folder: 'Folder',
   app: 'App',
+  schedule: 'Schedule',
 };
 
 export function auditTargetLabel(kind: AuditTargetKind): string {
@@ -314,6 +320,10 @@ const RELATED_KEYS: readonly { readonly key: string; readonly kind: AuditTargetK
   { key: 'displayId', kind: 'display' },
   { key: 'playlistId', kind: 'playlist' },
   { key: 'assignedPlaylistId', kind: 'playlist' },
+  { key: 'scheduleId', kind: 'schedule' },
+  { key: 'assignedScheduleId', kind: 'schedule' },
+  // The default playlist in the detail of `schedule.create` and `schedule.update`.
+  { key: 'defaultPlaylistId', kind: 'playlist' },
   { key: 'duplicatedFrom', kind: 'playlist' },
   { key: 'mediaId', kind: 'media' },
   { key: 'folderId', kind: 'folder' },
@@ -406,6 +416,8 @@ export function auditTargetPath(
       return `/media?folder=${id}`;
     case 'app':
       return `/apps/${id}`;
+    case 'schedule':
+      return `/schedules/${id}`;
   }
 }
 
@@ -417,6 +429,7 @@ export interface AuditNames {
   readonly tag: ReadonlyMap<string, string> | null;
   readonly folder: ReadonlyMap<string, string> | null;
   readonly app: ReadonlyMap<string, string> | null;
+  readonly schedule: ReadonlyMap<string, string> | null;
   readonly tagScopes: ReadonlyMap<string, TagScope> | null;
 }
 
@@ -427,6 +440,7 @@ export const NO_AUDIT_NAMES: AuditNames = {
   tag: null,
   folder: null,
   app: null,
+  schedule: null,
   tagScopes: null,
 };
 

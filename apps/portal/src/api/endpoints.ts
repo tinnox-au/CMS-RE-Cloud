@@ -24,6 +24,8 @@ import {
   PushResponseSchema,
   RevokePlayerResponseSchema,
   ROUTES,
+  ScheduleDtoSchema,
+  ScheduleListResponseSchema,
   SiteListResponseSchema,
   TagDtoSchema,
   TagListResponseSchema,
@@ -52,6 +54,9 @@ import {
   type PushPlanResponse,
   type PushResponse,
   type RevokePlayerResponse,
+  type ScheduleDto,
+  type ScheduleInput,
+  type ScheduleSummaryDto,
   type SiteDto,
   type TagCreateInput,
   type TagDto,
@@ -84,8 +89,9 @@ export interface Endpoints {
   getDisplay(id: string, signal?: AbortSignal): Promise<DisplayDto>;
   createDisplay(input: DisplayCreateInput): Promise<DisplayDto>;
   /**
-   * Also sets the description, the tags (the complete new set) and the assigned
-   * playlist. Assigning changes nothing on the display until a push.
+   * Also sets the description, the tags (the complete new set) and the assigned playlist or
+   * schedule: a display has one or the other, so assigning one clears the other. Assigning
+   * changes nothing on the display until a push.
    */
   patchDisplay(id: string, patch: DisplayPatch): Promise<DisplayDto>;
   claimPairing(displayId: string, code: string): Promise<PairingClaimResponse>;
@@ -128,12 +134,20 @@ export interface Endpoints {
   /** Leaving `description` out keeps the stored one; null clears it. */
   replacePlaylist(id: string, body: PlaylistReplace): Promise<PlaylistDto>;
   duplicatePlaylist(id: string): Promise<PlaylistDto>;
-  /** Refused with `playlist_in_use` while a display has the playlist assigned. */
+  /** Refused with `playlist_in_use` while a display has the playlist assigned or a schedule uses it. */
   deletePlaylist(id: string): Promise<void>;
   /** Publishes to one display and assigns the playlist to it. */
   publish(playlistId: string, displayId: string, idempotencyKey: string): Promise<PublishResponse>;
 
-  /** Where every display stands between its assigned playlist and what it was last given. */
+  listSchedules(signal?: AbortSignal): Promise<ScheduleSummaryDto[]>;
+  getSchedule(id: string, signal?: AbortSignal): Promise<ScheduleDto>;
+  createSchedule(input: ScheduleInput): Promise<ScheduleDto>;
+  /** The whole schedule. Leaving `description` out keeps the stored one; null clears it. */
+  replaceSchedule(id: string, input: ScheduleInput): Promise<ScheduleDto>;
+  /** 409 `schedule_in_use` while a display has the schedule assigned. */
+  deleteSchedule(id: string): Promise<void>;
+
+  /** Where every display stands between its assigned content and what it was last given. */
   getPushPlan(signal?: AbortSignal): Promise<PushPlanResponse>;
   /**
    * Pushes to the chosen displays. Use one key per intent and repeat it only for the same
@@ -306,6 +320,29 @@ export function createEndpoints(client: ApiClient): Endpoints {
         },
         PublishResponseSchema,
       );
+    },
+
+    async listSchedules(signal) {
+      return (await client.request(get(ROUTES.schedules, signal), ScheduleListResponseSchema))
+        .items;
+    },
+    getSchedule(id, signal) {
+      return client.request(get(ROUTES.schedule(id), signal), ScheduleDtoSchema);
+    },
+    createSchedule(input) {
+      return client.request(
+        { method: 'POST', path: ROUTES.schedules, body: input },
+        ScheduleDtoSchema,
+      );
+    },
+    replaceSchedule(id, input) {
+      return client.request(
+        { method: 'PUT', path: ROUTES.schedule(id), body: input },
+        ScheduleDtoSchema,
+      );
+    },
+    deleteSchedule(id) {
+      return client.requestNoContent({ method: 'DELETE', path: ROUTES.schedule(id) });
     },
 
     getPushPlan(signal) {

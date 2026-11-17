@@ -1,4 +1,9 @@
-import { parseManifest, type Manifest, type PlayerError } from '@tinnox/contracts';
+import {
+  parseManifest,
+  PublicationIdSchema,
+  type Manifest,
+  type PlayerError,
+} from '@tinnox/contracts';
 import { backoffDelay, jitteredInterval, type BackoffPolicy } from './backoff.ts';
 import { AbortedError, PlayerFault, RevokedError, toPlayerError } from './errors.ts';
 import { heldRetryMs, retryAfterMsOf, retryDelay } from './retry-after.ts';
@@ -43,7 +48,10 @@ export interface SyncDeps extends StagingDeps {
   /** The display this registration belongs to; manifests for another display are refused. */
   readonly displayId: string;
   report(error: PlayerError): void;
-  /** Called with the publication id of every manifest the player starts working on. */
+  /**
+   * Called with the publication id of every manifest the player starts working on, and of a
+   * manifest it refused (unsupported version, malformed) when the id can be read.
+   */
   onAttempt?(publicationId: string): void;
 }
 
@@ -88,6 +96,13 @@ export async function syncCycle(deps: SyncDeps): Promise<CycleResult> {
       assetId: null,
     };
     deps.report(error);
+    // Remember which publication was refused (its id is read leniently), so a heartbeat that
+    // names it again leaves the update backoff alone. Without this a player that is sent a
+    // version it does not know fetches the whole manifest again after every heartbeat.
+    if (typeof fetched.raw === 'object' && fetched.raw !== null && 'publicationId' in fetched.raw) {
+      const id = PublicationIdSchema.safeParse(fetched.raw.publicationId);
+      if (id.success) deps.onAttempt?.(id.data);
+    }
     return { kind: 'update_failed', error, publicationId: null };
   }
 

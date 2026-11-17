@@ -21,10 +21,12 @@ import {
 } from './ids.ts';
 import { ABSOLUTE } from './limits.ts';
 import { MediaKindSchema, MediaMimeTypeSchema } from './media.ts';
+import { checkScheduleRule, scheduleRuleShape } from './schedule.ts';
 
 export const MANIFEST_SCHEMA_VERSION = 1;
 export const MANIFEST_SCHEMA_VERSION_V2 = 2;
 export const MANIFEST_SCHEMA_VERSION_V3 = 3;
+export const MANIFEST_SCHEMA_VERSION_V4 = 4;
 
 export const ManifestAssetV1Schema = z
   .object({
@@ -176,7 +178,7 @@ export type ManifestItemV3 = z.infer<typeof ManifestItemV3Schema>;
 
 /**
  * Manifest version 3: version 2 plus app items. Written only when a draft holds
- * an app. Frozen once player 0.3.0 is released; the next addition is version 4.
+ * an app. Frozen.
  */
 export const ManifestV3Schema = manifestV2Object
   .extend({
@@ -186,6 +188,96 @@ export const ManifestV3Schema = manifestV2Object
   .strict()
   .superRefine(checkManifestV2Body);
 export type ManifestV3 = z.infer<typeof ManifestV3Schema>;
+
+/** One playlist of a scheduled manifest: a run of `count` consecutive entries of `assets`. */
+export const ManifestSchedulePlaylistSchema = z
+  .object({
+    count: z.number().int().positive().max(ABSOLUTE.maxPlaylistItems),
+    transition: TransitionSchema,
+    shuffle: z.boolean(),
+  })
+  .strict();
+export type ManifestSchedulePlaylist = z.infer<typeof ManifestSchedulePlaylistSchema>;
+
+/** A weekly event of a scheduled manifest. `playlist` is an index into `schedule.playlists`. */
+export const ManifestScheduleEventSchema = z
+  .object({
+    playlist: z.number().int().nonnegative().max(ABSOLUTE.maxScheduleEvents),
+    ...scheduleRuleShape,
+  })
+  .strict()
+  .superRefine(checkScheduleRule);
+export type ManifestScheduleEvent = z.infer<typeof ManifestScheduleEventSchema>;
+
+/**
+ * The schedule of a manifest. `playlists` are consecutive slices of `assets`: `[0]` is the
+ * default playlist, which plays whenever no event applies, and a playlist that is used several
+ * times appears once. `events` are in priority order (see `eventCovers`). The server only
+ * writes this block with two or more playlists; a player must handle one.
+ *
+ * No playlist id, no schedule id and no slice start: a player reads none of them.
+ */
+export const ManifestScheduleSchema = z
+  .object({
+    playlists: z
+      .array(ManifestSchedulePlaylistSchema)
+      .min(1)
+      .max(ABSOLUTE.maxScheduleEvents + 1),
+    events: z.array(ManifestScheduleEventSchema).min(1).max(ABSOLUTE.maxScheduleEvents),
+  })
+  .strict();
+export type ManifestSchedule = z.infer<typeof ManifestScheduleSchema>;
+
+/** Checks of version 4: those of version 2 over the flat list, plus the schedule block. */
+function checkManifestV4Body(
+  m: Pick<ManifestV3, 'canvas' | 'contentRect' | 'assets' | 'transition' | 'shuffle'> & {
+    schedule: ManifestSchedule;
+  },
+  ctx: z.RefinementCtx,
+): void {
+  checkManifestV2Body(m, ctx);
+  const { playlists, events } = m.schedule;
+  if (playlists.reduce((sum, playlist) => sum + playlist.count, 0) !== m.assets.length) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['schedule', 'playlists'],
+      message: 'playlist counts must add up to the number of assets',
+    });
+  }
+  events.forEach((event, index) => {
+    if (event.playlist >= playlists.length) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['schedule', 'events', index, 'playlist'],
+        message: 'playlist must be an index into schedule.playlists',
+      });
+    }
+  });
+  const first = playlists[0];
+  if (first !== undefined && (first.transition !== m.transition || first.shuffle !== m.shuffle)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['schedule', 'playlists', 0],
+      message: 'the first playlist must carry the top-level transition and shuffle',
+    });
+  }
+}
+
+/**
+ * Manifest version 4: version 3 plus `schedule`. Written only when the assigned schedule has
+ * an event that uses a playlist other than its default. `assets` is every playlist's items in
+ * one flat list, default playlist first; the top-level `transition` and `shuffle` are the
+ * default playlist's. Frozen once player 0.4.0 is released; the next addition is version 5.
+ */
+export const ManifestV4Schema = manifestV2Object
+  .extend({
+    schemaVersion: z.literal(MANIFEST_SCHEMA_VERSION_V4),
+    assets: z.array(ManifestItemV3Schema).min(1).max(ABSOLUTE.maxPlaylistItems),
+    schedule: ManifestScheduleSchema,
+  })
+  .strict()
+  .superRefine(checkManifestV4Body);
+export type ManifestV4 = z.infer<typeof ManifestV4Schema>;
 
 export type ManifestItem = ManifestAssetV1 | ManifestAssetV2 | ManifestAppItem;
 
@@ -198,6 +290,7 @@ export const ManifestSchema = z.discriminatedUnion('schemaVersion', [
   ManifestV1Schema,
   ManifestV2Schema,
   ManifestV3Schema,
+  ManifestV4Schema,
 ]);
 export type Manifest = z.infer<typeof ManifestSchema>;
 
@@ -221,6 +314,37 @@ export function manifestV2Facts(m: Manifest): {
   };
 }
 
+/** One playlist of a manifest as a run of `assets`: the entries `from` to `from + count - 1`. */
+export interface ManifestPlaylistSlice {
+  readonly from: number;
+  readonly count: number;
+  readonly transition: Transition;
+  readonly shuffle: boolean;
+}
+
+/**
+ * The playlists of any manifest, so player code has no version branches: version 4 gives one
+ * slice per `schedule.playlists` entry (`[0]` is the default playlist), versions 1 to 3 give
+ * one slice that is the whole list.
+ */
+export function manifestPlaylists(m: Manifest): ManifestPlaylistSlice[] {
+  if (m.schemaVersion !== MANIFEST_SCHEMA_VERSION_V4) {
+    const { transition, shuffle } = manifestV2Facts(m);
+    return [{ from: 0, count: m.assets.length, transition, shuffle }];
+  }
+  let from = 0;
+  return m.schedule.playlists.map((playlist) => {
+    const slice = {
+      from,
+      count: playlist.count,
+      transition: playlist.transition,
+      shuffle: playlist.shuffle,
+    };
+    from += playlist.count;
+    return slice;
+  });
+}
+
 /**
  * Parses a manifest of unknown version. Returns a discriminated result so a
  * player can report "unsupported schema version" separately from "malformed".
@@ -234,7 +358,11 @@ export function parseManifest(
   if (!version.success) {
     return { ok: false, reason: 'malformed', message: 'manifest has no numeric schemaVersion' };
   }
-  let schema: typeof ManifestV1Schema | typeof ManifestV2Schema | typeof ManifestV3Schema;
+  let schema:
+    | typeof ManifestV1Schema
+    | typeof ManifestV2Schema
+    | typeof ManifestV3Schema
+    | typeof ManifestV4Schema;
   switch (version.data.schemaVersion) {
     case MANIFEST_SCHEMA_VERSION:
       schema = ManifestV1Schema;
@@ -245,11 +373,14 @@ export function parseManifest(
     case MANIFEST_SCHEMA_VERSION_V3:
       schema = ManifestV3Schema;
       break;
+    case MANIFEST_SCHEMA_VERSION_V4:
+      schema = ManifestV4Schema;
+      break;
     default:
       return {
         ok: false,
         reason: 'unsupported_version',
-        message: `manifest schemaVersion ${version.data.schemaVersion} is not supported (expected ${MANIFEST_SCHEMA_VERSION}, ${MANIFEST_SCHEMA_VERSION_V2} or ${MANIFEST_SCHEMA_VERSION_V3})`,
+        message: `manifest schemaVersion ${version.data.schemaVersion} is not supported (expected ${MANIFEST_SCHEMA_VERSION}, ${MANIFEST_SCHEMA_VERSION_V2}, ${MANIFEST_SCHEMA_VERSION_V3} or ${MANIFEST_SCHEMA_VERSION_V4})`,
       };
   }
   const parsed = schema.safeParse(input);

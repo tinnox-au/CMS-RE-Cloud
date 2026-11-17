@@ -23,6 +23,7 @@ const PLAYLIST = ID(2);
 const MEDIA = ID(3);
 const TAG = ID(4);
 const FOLDER = ID(5);
+const SCHEDULE = ID(6);
 
 function event(change: Partial<AuditEventDto> = {}): AuditEventDto {
   return {
@@ -45,6 +46,7 @@ const NAMES: ActivityNames = {
   media: new Map([[MEDIA, 'welcome.jpg']]),
   tag: new Map([[TAG, 'Promotions']]),
   folder: new Map([[FOLDER, 'Spring']]),
+  schedule: new Map([[SCHEDULE, 'Opening hours']]),
 };
 
 describe('describeActivity', () => {
@@ -72,6 +74,13 @@ describe('describeActivity', () => {
       null,
       { fields: ['assignedPlaylistId'], assignedPlaylistId: PLAYLIST },
       { fields: ['assignedPlaylistId'], assignedPlaylistId: null },
+      { fields: ['assignedScheduleId'], assignedScheduleId: SCHEDULE, assignedPlaylistId: null },
+      { fields: ['assignedScheduleId'], assignedScheduleId: null },
+      {
+        fields: ['assignedPlaylistId', 'assignedScheduleId'],
+        assignedPlaylistId: null,
+        assignedScheduleId: null,
+      },
       { reason: 'replaced', displayId: SCREEN },
       { reason: 'player_reset', displayId: SCREEN },
       { scope: 'display' },
@@ -183,6 +192,131 @@ describe('describeActivity', () => {
     );
   });
 
+  it('words an assignment by what the patch named and what was assigned', () => {
+    const base = { action: 'display.update', objectType: 'display', objectId: SCREEN };
+    const describe = (detail: AuditEventDto['detail']) =>
+      describeActivity(event({ ...base, detail }));
+
+    // A playlist assigned over a schedule: the API records the side it cleared as null.
+    const replaced = describe({
+      fields: ['assignedPlaylistId'],
+      assignedPlaylistId: PLAYLIST,
+      assignedScheduleId: null,
+    });
+    expect(replaced.text).toBe('Playlist assigned to screen');
+    expect(replaced.related).toEqual({ kind: 'playlist', id: PLAYLIST });
+    expect(
+      describe({
+        fields: ['assignedPlaylistId', 'assignedScheduleId'],
+        assignedPlaylistId: PLAYLIST,
+        assignedScheduleId: null,
+      }).text,
+    ).toBe('Playlist assigned to screen');
+
+    const scheduled = describe({
+      fields: ['assignedScheduleId'],
+      assignedScheduleId: SCHEDULE,
+      assignedPlaylistId: null,
+    });
+    expect(scheduled.text).toBe('Schedule assigned to screen');
+    expect(scheduled.related).toEqual({ kind: 'schedule', id: SCHEDULE });
+    expect(scheduled.relatedLabel).toBe('Schedule');
+
+    const cleared = describe({
+      fields: ['assignedPlaylistId', 'assignedScheduleId'],
+      assignedPlaylistId: null,
+      assignedScheduleId: null,
+    });
+    expect(cleared.text).toBe('Content removed from screen');
+    expect(cleared.related).toBeNull();
+
+    expect(describe({ fields: ['assignedScheduleId'], assignedScheduleId: null }).text).toBe(
+      'Schedule removed from screen',
+    );
+    expect(describe({ fields: ['assignedPlaylistId'], assignedPlaylistId: null }).text).toBe(
+      'Playlist removed from screen',
+    );
+    // Another field in the same patch: an ordinary update.
+    expect(
+      describe({ fields: ['assignedScheduleId', 'name'], assignedScheduleId: SCHEDULE }).text,
+    ).toBe('Screen updated');
+    // Attempts that failed, with and without the value on record.
+    expect(
+      describeActivity(
+        event({
+          ...base,
+          result: 'failure',
+          detail: { fields: ['assignedScheduleId'], assignedScheduleId: SCHEDULE },
+        }),
+      ).text,
+    ).toBe('Schedule assignment failed');
+    expect(
+      describeActivity(
+        event({ ...base, result: 'denied', detail: { fields: ['assignedScheduleId'] } }),
+      ).text,
+    ).toBe('Schedule assignment refused');
+  });
+
+  it('has words for schedules and names the schedule of a push', () => {
+    const schedule = { objectType: 'schedule', objectId: SCHEDULE };
+    const created = describeActivity(
+      event({
+        ...schedule,
+        action: 'schedule.create',
+        detail: { defaultPlaylistId: PLAYLIST, eventCount: 0 },
+      }),
+    );
+    expect(created).toMatchObject({
+      text: 'Schedule created',
+      subject: { kind: 'schedule', id: SCHEDULE },
+      icon: 'other',
+      removesSubject: false,
+    });
+    expect(describeActivity(event({ ...schedule, action: 'schedule.update' })).text).toBe(
+      'Schedule updated',
+    );
+    expect(
+      describeActivity(event({ ...schedule, action: 'schedule.update', result: 'failure' })).text,
+    ).toBe('Schedule update failed');
+    expect(
+      describeActivity(event({ ...schedule, action: 'schedule.create', result: 'denied' })).text,
+    ).toBe('Schedule creation refused');
+    const deleted = describeActivity(event({ ...schedule, action: 'schedule.delete' }));
+    expect(deleted.text).toBe('Schedule deleted');
+    expect(deleted.removesSubject).toBe(true);
+    expect(
+      describeActivity(event({ ...schedule, action: 'schedule.delete', result: 'denied' })).text,
+    ).toBe('Schedule deletion refused');
+
+    // A scheduled push: `playlistId` is only the schedule's default playlist.
+    const pushed = describeActivity(
+      event({
+        action: 'publication.create',
+        objectType: 'publication',
+        objectId: ID(7),
+        detail: { displayId: SCREEN, playlistId: PLAYLIST, scheduleId: SCHEDULE, via: 'push' },
+      }),
+    );
+    expect(pushed.subject).toEqual({ kind: 'display', id: SCREEN });
+    expect(pushed.related).toEqual({ kind: 'schedule', id: SCHEDULE });
+    expect(pushed.relatedLabel).toBe('Schedule');
+    // A rejected one is recorded against the schedule.
+    const rejected = describeActivity(
+      event({
+        ...schedule,
+        action: 'publication.create',
+        result: 'failure',
+        detail: { displayId: SCREEN, reasons: ['playlist_empty'], via: 'push' },
+      }),
+    );
+    expect(rejected.text).toBe('Push to screen failed');
+    expect(rejected.related).toEqual({ kind: 'schedule', id: SCHEDULE });
+
+    const item = presentActivity(event({ ...schedule, action: 'schedule.update' }), NAMES);
+    expect(activitySentence(item)).toBe('Schedule updated: Opening hours');
+    expect(item.subject?.href).toBe(`/schedules/${SCHEDULE}`);
+  });
+
   it('finds the screen of a pairing or revocation in the detail', () => {
     const paired = describeActivity(
       event({
@@ -243,7 +377,13 @@ describe('describeActivity', () => {
   });
 
   it('marks deletions, whose object can never be named', () => {
-    for (const action of ['media.delete', 'tag.delete', 'folder.delete', 'playlist.delete']) {
+    for (const action of [
+      'media.delete',
+      'tag.delete',
+      'folder.delete',
+      'playlist.delete',
+      'schedule.delete',
+    ]) {
       expect(describeActivity(event({ action })).removesSubject, action).toBe(true);
       expect(describeActivity(event({ action, result: 'failure' })).removesSubject).toBe(false);
     }
@@ -398,6 +538,7 @@ describe('activityHref', () => {
   it('links to the page of the object where one exists', () => {
     expect(activityHref({ kind: 'display', id: SCREEN })).toBe(`/screens/${SCREEN}`);
     expect(activityHref({ kind: 'playlist', id: PLAYLIST })).toBe(`/playlists/${PLAYLIST}`);
+    expect(activityHref({ kind: 'schedule', id: SCHEDULE })).toBe(`/schedules/${SCHEDULE}`);
     expect(activityHref({ kind: 'media', id: MEDIA })).toBe(`/media/${MEDIA}`);
     expect(activityHref({ kind: 'tag', id: TAG })).toBe('/settings/tags');
     expect(activityHref({ kind: 'folder', id: FOLDER })).toBeNull();

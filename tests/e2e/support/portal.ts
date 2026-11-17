@@ -183,6 +183,11 @@ export async function askToDeleteMedia(page: Page, name: string): Promise<Locato
 // ---------------------------------------------------------------------------
 // Playlists
 
+/** A library card in the playlist editor: "Add <name>, <type and size>…", named by its content. */
+function libraryButtonName(name: string): RegExp {
+  return new RegExp(`^Add ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*,`);
+}
+
 /** Creates a playlist from the Playlists page and returns its id; lands in its editor. */
 export async function createPlaylistInPortal(page: Page, name: string): Promise<string> {
   await page.goto(`${PORTAL_URL}/playlists`);
@@ -198,7 +203,7 @@ export async function createPlaylistInPortal(page: Page, name: string): Promise<
 export async function addToPlaylist(page: Page, mediaName: string): Promise<void> {
   const library = page.getByTestId('playlist-editor-library');
   await library.getByRole('searchbox', { name: 'Search media and apps' }).fill(mediaName);
-  await library.getByRole('button', { name: `Add ${mediaName}`, exact: true }).click();
+  await library.getByRole('button', { name: libraryButtonName(mediaName) }).click();
 }
 
 /** In the playlist editor: chooses the Apps chip and adds an app to the end of the sequence. */
@@ -206,7 +211,7 @@ export async function addAppToPlaylist(page: Page, appName: string): Promise<voi
   const library = page.getByTestId('playlist-editor-library');
   await library.getByRole('button', { name: 'Apps', exact: true }).click();
   await library.getByRole('searchbox', { name: 'Search media and apps' }).fill(appName);
-  await library.getByRole('button', { name: `Add ${appName}`, exact: true }).click();
+  await library.getByRole('button', { name: libraryButtonName(appName) }).click();
 }
 
 /** In the playlist editor: saves the draft and waits for "Saved". */
@@ -238,6 +243,72 @@ export async function createAppInPortal(page: Page, type: string, name: string):
 export async function saveApp(page: Page): Promise<void> {
   await page.getByTestId('app-editor-save').click();
   await expect(page.getByTestId('app-editor-save-state')).toHaveText('Saved');
+}
+
+// ---------------------------------------------------------------------------
+// Schedules
+
+/**
+ * Creates a schedule through the Schedules page's "Create schedule" dialog and lands in its
+ * editor; returns its id. The default playlist is chosen by its name.
+ */
+export async function createScheduleInPortal(
+  page: Page,
+  name: string,
+  defaultPlaylistName: string,
+): Promise<string> {
+  await page.goto(`${PORTAL_URL}/schedules`);
+  await page.getByTestId('schedules-create').click();
+  const dialog = page.getByTestId('schedule-create-dialog');
+  await dialog.getByLabel('Name', { exact: true }).fill(name);
+  await dialog.getByLabel('Default playlist').selectOption({ label: defaultPlaylistName });
+  await dialog.getByRole('button', { name: 'Create schedule' }).click();
+  await page.waitForURL(/\/schedules\/[0-9a-f-]{36}$/);
+  await expect(page.getByTestId('schedule-editor')).toBeVisible();
+  return page.url().split('/').pop() ?? '';
+}
+
+/** In the schedule editor: saves and waits for "Saved". */
+export async function saveSchedule(page: Page): Promise<void> {
+  await page.getByTestId('schedule-save').click();
+  await expect(page.getByTestId('schedule-save-state')).toHaveText('Saved');
+}
+
+/**
+ * On a screen's page: assigns a schedule through the schedule picker. A screen that has
+ * content offers it in the "Change" menu; one with nothing assigned has an "Assign schedule"
+ * button. Waits for the portal's confirmation; nothing is pushed.
+ */
+export async function assignScheduleOnScreenPage(
+  page: Page,
+  screenId: string,
+  scheduleName: string,
+): Promise<void> {
+  await openScreenPage(page, screenId);
+  const change = page.getByTestId('screen-detail-change-content');
+  const assign = page.getByTestId('screen-detail-choose-schedule');
+  await expect(change.or(assign)).toBeVisible();
+  if ((await change.count()) > 0) {
+    await change.click();
+    await page.getByRole('menuitem', { name: 'Choose a schedule…' }).click();
+  } else {
+    await assign.click();
+  }
+  const picker = page.getByTestId('screen-detail-schedule-picker');
+  await expect(picker).toBeVisible();
+  await picker.getByTestId('screen-detail-schedule-picker-search').fill(scheduleName);
+  await picker.getByRole('radio', { name: scheduleName }).check();
+  await picker.getByTestId('screen-detail-schedule-picker-confirm').click();
+  await expect(picker).toBeHidden();
+  await expect(notifications(page).getByText(`${scheduleName} assigned`)).toBeVisible();
+}
+
+/**
+ * The toast stack. A toast's words are also copied, 150 ms later, into a visually hidden live
+ * region, so an unscoped `getByText` would match twice.
+ */
+export function notifications(page: Page): Locator {
+  return page.getByRole('region', { name: 'Notifications' });
 }
 
 /** True when the page scrolls sideways (content wider than the viewport). */

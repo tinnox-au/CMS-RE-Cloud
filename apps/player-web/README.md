@@ -128,7 +128,12 @@ immediate poll.
 
 A manifest is validated with the shared schema (`parseManifest`). A malformed manifest,
 an unsupported schema version or a manifest for another display is reported and
-otherwise ignored: the current version keeps playing.
+otherwise ignored: the current version keeps playing. Since `player-web/0.4.0` the
+publication of a refused manifest is remembered as tried when its id can be read
+(`syncCycle` calls `onAttempt`), so a heartbeat reply that names it again does not wake
+the sync loop and the next try waits for the update backoff. Builds up to 0.3.0 do not
+do this: sent a version they do not know, they fetch the manifest again and send a
+heartbeat about every 2 seconds until the page is reloaded.
 
 A new publication goes through `stagePublication` (`src/core/staging.ts`):
 
@@ -195,12 +200,74 @@ manifest's `timeZone` (one `Intl.DateTimeFormat` per zone) and decides which ite
   `createdAt`, or the browser does not know the zone, every item plays.
 
 The rules are checked at item boundaries, so an item can run past an edge by its own
-length; with nothing playable the loop looks again every `idleRecheckMs`. Diagnostics show
-"Time zone", "Local time there", "Clock offset" and "Rotation".
+length (v1 to v3; a v4 manifest is checked on the minute, see "Schedules" below); with
+nothing playable the loop looks again every `idleRecheckMs`. Diagnostics show
+"Time zone", "Local time there", "Clock offset", "Schedule picks" and "Rotation".
 
 The same corrected clock drives the Clock, Date and Countdown apps (manifest v3). The
 offset is kept only in memory: while the page runs offline the last offset is used, and
 after a reload without network the device clock is used until the first heartbeat reply.
+
+### Schedules (manifest v4)
+
+Since `player-web/0.4.0` the player accepts manifest v1 to v4 (`docs/player-protocol-v1.md`
+§5, "Manifest v4"). A v4 manifest holds the items of several playlists in the one flat
+`assets` list, plus a `schedule` block: the playlists as consecutive slices (slice 0 is
+the default playlist) and the weekly events in priority order. `manifestPlaylists` from
+`@tinnox/contracts` gives the slices for every version (one slice for v1 to v3), so the
+player code has no version branches. Staging, verification, the quota check, activation
+and garbage collection read the flat list and did not change: the media of every playlist
+is downloaded and probed before activation, and none of it is collected while the
+publication is active.
+
+The player chooses the playlist itself, with no network at the change time.
+`playableIndexes` in `core/time-rules.ts` returns the items that may play at a moment,
+always from one playlist:
+
+1. v1: every item.
+2. Fail open (clock more than 5 minutes behind the publication, or a zone the browser
+   does not know): every item of slice 0. For v2 and v3 that is the whole list, as
+   before; for v4 it is the default playlist only.
+3. Outside working hours: none. Hours outrank the schedule.
+4. The events are checked from the top (`coveringSlices`: the playlists of the events
+   that cover this minute, in priority order, each once; `eventCovers` from
+   `@tinnox/contracts` is the one evaluator). The first of them that has something to
+   show now plays; the default playlist plays when none has. "Something to show" is an
+   item inside its availability window (apps always count) in a playlist that is not
+   being skipped as failed (below).
+5. Nothing anywhere: `not_now`, as before.
+
+What follows from that:
+
+- **A playlist that comes on starts at its first item** (or a new shuffle round), with
+  its own transition and shuffle. `nextStep` reports it as `restarted`; `switched` still
+  means a new publication only, so a change of playlist sends no `version_adopted` and
+  triggers no garbage collection. There is no resume at the interrupted item.
+- **Minute alignment.** For v4 the hold of an image or an app sleeps in parts to the next
+  wall-clock minute and ends early when the item may no longer be shown, so images and
+  apps change on the minute, at an event edge and at a working-hours or window edge. A
+  video is never cut; it finishes first. v1 to v3 take one sleep as before: their rules
+  are checked at item boundaries.
+- **A failed event playlist is skipped, then tried again.** When every playable item of an
+  event's playlist fails in a row, the playlist is skipped: the next covering event or
+  the default playlist plays, the last good item stays on screen until then, and each
+  failure is reported as `item_failed` only (no `all_failed`, no cleared stage). The
+  playlist is tried again every five minutes (`PlaybackTimings.eventRetryMs`, 300 000 ms)
+  while its event is on, at the next item boundary at which the playlist on air is not
+  part-way through a run of failures; the skip is forgotten when the event
+  ends, so the playlist is tried afresh the next time its event comes on. Each try
+  restarts the playlist that was on air at its first item.
+  `all_failed` and the `faulted` phase now mean that the default playlist failed.
+- **Daylight saving** follows the wall clock, as working hours do: an event wholly inside
+  the skipped hour does not play that day, one that starts inside it starts when the
+  clock resumes, and in the repeated hour an event edge applies twice.
+- **A wrong clock.** A clock that is wrong but not behind the publication picks the wrong
+  event with no signal. Diagnostics shows "Schedule picks" next to "Local time there"
+  and "Clock offset": `— (no schedule)` for a manifest that is not v4, `default playlist`,
+  or `playlist N of M` for the first event that covers the corrected clock. It names what
+  the events ask for, not what is on air after a fallback; "On screen" says what is
+  really showing.
+- `activeItemIndex` stays the index into the flat `assets`, counted across all playlists.
 
 ### Renderer
 
@@ -248,7 +315,9 @@ counter and nothing else.
 - If every playable item of the publication fails in a row (items hidden by a window do
   not count), the stage is cleared, the phase
   becomes `faulted`, the heartbeat says `error` with no active item, and the loop tries
-  again every 30 s. The player never reports `playing` with nothing on screen.
+  again every 30 s. The player never reports `playing` with nothing on screen. With a
+  schedule (v4) this applies to the default playlist only; an event's playlist that fails
+  is skipped instead (see "Schedules").
 
 ### Heartbeat
 
@@ -343,6 +412,14 @@ Registered only in a production build. Hand-written, no library, no imports.
 The first visit installs the worker; offline reload works from then on (diagnostics,
 "Offline shell").
 
+**Moving a screen to a new build.** Nothing reloads a running player, and a manifest
+version the running build does not know is refused (the screen keeps its last content).
+After a release that adds a manifest version, reload the player page on each screen
+**while the screen can reach the player host**: a reload that gets no answer within the
+4 s limit shows the old build from the cache, and nothing on the screen says so. If the
+error on the screen's Overview tab in the portal stays, reload again. The diagnostics
+overlay shows the build ("Build", for example `player-web/0.4.0`).
+
 ### One tab at a time
 
 The tab that holds the Web Lock `tinnox-player-leader` runs the player. Other tabs show a
@@ -419,9 +496,23 @@ fakes for the state store, the asset store, the API and the presenter, plus
 - time rules (`core/time-rules.test.ts`, fixed instants in Australia/Melbourne): a
   daylight-saving day, `24:00`, a closed day, a window edge, fail-open on a clock behind
   the publication and on an unknown zone;
-- manifest v2 and v3 accepted and version 4 refused in sync; a stored v1 record loads
-  from IndexedDB. Test data: `makeManifest` in `core/fakes.test-support.ts` builds v1,
-  `makeManifestV2` builds v2 and `makeManifestV3` builds v3;
+- manifest v2, v3 and v4 accepted and version 5 refused in sync; a refused manifest's
+  publication is remembered, so a heartbeat hint for it does not wake the loop; a stored
+  v1 record and a stored v4 record load from IndexedDB. Test data: `makeManifest` in
+  `core/fakes.test-support.ts` builds v1, `makeManifestV2` builds v2, `makeManifestV3`
+  builds v3 and `makeManifestV4(playlists, events, overrides)` builds v4 (`playlists` are
+  `{ items, transition?, shuffle? }` objects, `events` are manifest events);
+- schedules: the choice of playlist by day and time, overnight events, priority on
+  overlap, a higher event with nothing to show or skipped as failed giving way to the
+  next one, fail-open to the default playlist only, hours outranking events; one table
+  of real daylight-saving instants (Sydney, Brisbane, Lord Howe), each "does not match"
+  row with a control instant at which the same event does match; the order rebuilt per
+  playlist and the per-playlist shuffle and transition; a still cut at the minute an
+  event starts and a video not cut; no `version_adopted` on a change of playlist; a
+  failed event playlist skipped without `all_failed`, tried again after five minutes and
+  after its event ended, not kept longer by a clock set back; a v2 still not cut at a
+  working-hours edge; a v4 manifest staging the media of every playlist, and garbage
+  collection keeping the files of a playlist that is not on air;
 - apps: the hold time is `durationMs`, apps ignore windows and obey working hours, and a
   publication of apps only activates with no media request;
 - heartbeat contents, sequence numbers across reloads, no queue while offline;

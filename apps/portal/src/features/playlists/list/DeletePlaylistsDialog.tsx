@@ -14,7 +14,7 @@ import {
   mergeDeleteRetry,
 } from '../../../lib/playlistsListActions.ts';
 import { Banner, Button, ButtonLink, Dialog, useToast } from '../../../ui/index.ts';
-import { Monitor } from '../../../ui/icons.ts';
+import { CalendarDays, Monitor } from '../../../ui/icons.ts';
 import { useRowFocusReturn, type RowFocusSource } from '../../shared/index.ts';
 import './playlistsList.css';
 
@@ -39,10 +39,10 @@ interface Progress {
 /**
  * Confirms deleting one playlist or several, names them, and reports honestly: one request
  * per playlist, one after another, and every refusal listed with the server's reason and
- * error code. A playlist that a screen has assigned is refused by the server
- * (`playlist_in_use`); the dialog then says which screens and what to do. "Try again"
- * repeats only the ones that failed for another reason, and is not offered when every
- * failure is such a refusal: it could only be refused again.
+ * error code. A playlist that a screen has assigned, or that a schedule uses, is refused by
+ * the server (`playlist_in_use`); the dialog then says which screens or schedules and what to
+ * do. "Try again" repeats only the ones that failed for another reason, and is not offered
+ * when every failure is such a refusal: it could only be refused again.
  */
 export function DeletePlaylistsDialog({
   targets,
@@ -113,9 +113,11 @@ export function DeletePlaylistsDialog({
 
   const attempted = outcome !== null;
   const note = attempted ? deletedNote(outcome.done.length) : null;
-  const anyInUse = failed.some(
-    (failure) => deleteFailureText(failure.error, failure.item.assignedDisplayCount).inUse,
+  const refusals = failed.map((failure) =>
+    deleteFailureText(failure.error, failure.item.assignedDisplayCount),
   );
+  const anyByScreen = refusals.some((text) => text.inUse && !text.bySchedule);
+  const anyBySchedule = refusals.some((text) => text.bySchedule);
 
   return (
     <Dialog
@@ -205,10 +207,19 @@ export function DeletePlaylistsDialog({
             tone="danger"
             live="assertive"
             actions={
-              anyInUse ? (
-                <ButtonLink size="sm" to="/screens" icon={Monitor}>
-                  Go to Screens
-                </ButtonLink>
+              anyByScreen || anyBySchedule ? (
+                <>
+                  {anyByScreen && (
+                    <ButtonLink size="sm" to="/screens" icon={Monitor}>
+                      Go to Screens
+                    </ButtonLink>
+                  )}
+                  {anyBySchedule && (
+                    <ButtonLink size="sm" to="/schedules" icon={CalendarDays}>
+                      Go to Schedules
+                    </ButtonLink>
+                  )}
+                </>
               ) : undefined
             }
           >

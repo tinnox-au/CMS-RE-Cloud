@@ -236,6 +236,18 @@ describe('push state wording', () => {
     }
   });
 
+  it('speaks of content, because a screen has a playlist or a schedule', () => {
+    expect(presentPushState('nothing_assigned').detail).toBe(
+      'No playlist or schedule is assigned to this screen, so there is nothing to push.',
+    );
+    expect(presentPushState('never_pushed').detail).toBe(
+      'Content is assigned, but nothing has been pushed to this screen yet.',
+    );
+    expect(presentPushState('blocked').detail).toBe(
+      'The assigned content cannot be pushed to this screen until its problems are fixed.',
+    );
+  });
+
   it('never borrows the healthy tone, which belongs to a player that reports in sync', () => {
     for (const state of PUSH_STATES) expect(presentPushState(state).tone).not.toBe('ok');
   });

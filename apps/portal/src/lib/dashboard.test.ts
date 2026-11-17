@@ -73,6 +73,7 @@ function display(n: number, name: string): DisplayDto {
     player: null,
     tagIds: [],
     assignedPlaylist: null,
+    assignedSchedule: null,
     createdAt: T,
     updatedAt: T,
   };
@@ -102,6 +103,7 @@ function row(n: number, state: PushState, name = `Screen ${n}`): PushPlanRow {
   return {
     display: { id: ID(n), name },
     playlist: state === 'nothing_assigned' ? null : { id: ID(500), name: 'Reception loop' },
+    schedule: null,
     state,
     issues:
       state === 'blocked'
@@ -428,7 +430,7 @@ describe('pushOverview', () => {
     });
     expect(result.waiting.map((item) => item.display.name)).toEqual(['Screen 1', 'Screen 2']);
     expect(result.blockedText).toBe(
-      '1 screen is blocked: the assigned playlist cannot be pushed as it is.',
+      '1 screen is blocked: the assigned content cannot be pushed as it is.',
     );
   });
 
@@ -459,6 +461,7 @@ describe('pushOverview', () => {
     expect(pushOverview(plan(['up_to_date', 'nothing_assigned']))).toMatchObject({
       state: 'up_to_date',
       headline: 'Everything is up to date',
+      text: 'Every screen with content assigned has been given its latest version.',
       blockedText: null,
     });
     const blocked = pushOverview(plan(['up_to_date', 'blocked', 'blocked']));
@@ -471,10 +474,13 @@ describe('pushOverview', () => {
     expect(pushOverview(plan([]))).toMatchObject({
       state: 'no_screens',
       headline: 'Nothing to push yet',
+      text: 'Add a screen and assign a playlist or a schedule to it. Its changes then wait here until you push.',
     });
     const unassigned = pushOverview(plan(['nothing_assigned', 'nothing_assigned']));
     expect(unassigned.state).toBe('nothing_assigned');
-    expect(unassigned.text).toContain('Assign a playlist');
+    expect(unassigned.text).toBe(
+      'Assign a playlist or a schedule to a screen. Its changes then wait here until you push.',
+    );
   });
 
   it('never says online, offline or display', () => {

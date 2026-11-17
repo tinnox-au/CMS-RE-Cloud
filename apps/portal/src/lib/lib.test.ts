@@ -167,6 +167,7 @@ describe('display form validation', () => {
       description: null,
       tagIds: [],
       assignedPlaylist: null,
+      assignedSchedule: null,
       canvas: { width: 640, height: 1344 },
       contentRect: { x: 0, y: 64, width: 640, height: 1280 },
       defaultFit: 'cover',

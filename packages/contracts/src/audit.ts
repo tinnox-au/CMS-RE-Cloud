@@ -29,6 +29,9 @@ export const AUDIT_ACTIONS = [
   'playlist.create',
   'playlist.update',
   'playlist.delete',
+  'schedule.create',
+  'schedule.update',
+  'schedule.delete',
   'publication.create',
   'security.cross_org_denied',
   'security.csrf_rejected',
@@ -47,6 +50,7 @@ export const AUDIT_CATEGORIES = [
   'folder',
   'app',
   'playlist',
+  'schedule',
   'publication',
   'security',
 ] as const;

@@ -30,6 +30,7 @@ import {
   auditScoped,
   pairingClaim,
   STAGE_A_CONSTRAINTS,
+  STAGE_B_CONSTRAINTS,
   violatedConstraint,
   withOrg,
   type Tx,
@@ -66,6 +67,11 @@ interface DisplayRow {
   assigned_playlist_id: string | null;
   /** Null when nothing is assigned. A deleted playlist cannot be assigned. */
   assigned_playlist_name: string | null;
+  /** The four schedule columns are set together, or all null (a playlist or nothing assigned). */
+  assigned_schedule_id: string | null;
+  assigned_schedule_name: string | null;
+  assigned_schedule_playlist_id: string | null;
+  assigned_schedule_playlist_name: string | null;
 }
 
 const DISPLAY_SELECT = `
@@ -76,12 +82,16 @@ const DISPLAY_SELECT = `
          ARRAY(SELECT dt.tag_id FROM display_tag dt
                WHERE dt.display_id = d.id AND dt.org_id = d.org_id
                ORDER BY dt.created_at, dt.tag_id)::text[] AS tag_ids,
-         ap.id AS assigned_playlist_id, ap.name AS assigned_playlist_name
+         ap.id AS assigned_playlist_id, ap.name AS assigned_playlist_name,
+         asch.id AS assigned_schedule_id, asch.name AS assigned_schedule_name,
+         asp.id AS assigned_schedule_playlist_id, asp.name AS assigned_schedule_playlist_name
   FROM display d
   LEFT JOIN player_registration pr
     ON pr.display_id = d.id AND pr.org_id = d.org_id AND pr.revoked_at IS NULL
   LEFT JOIN playlist ap
     ON ap.id = d.assigned_playlist_id AND ap.org_id = d.org_id AND ap.deleted_at IS NULL
+  LEFT JOIN schedule asch ON asch.id = d.assigned_schedule_id AND asch.org_id = d.org_id
+  LEFT JOIN playlist asp ON asp.id = asch.default_playlist_id AND asp.org_id = asch.org_id
   WHERE d.org_id = app_org_id()`;
 
 export function contentRectOf(row: {
@@ -127,6 +137,20 @@ function toDisplayDto(row: DisplayRow): DisplayDto {
       row.assigned_playlist_id === null || row.assigned_playlist_name === null
         ? null
         : { id: row.assigned_playlist_id, name: row.assigned_playlist_name },
+    assignedSchedule:
+      row.assigned_schedule_id === null ||
+      row.assigned_schedule_name === null ||
+      row.assigned_schedule_playlist_id === null ||
+      row.assigned_schedule_playlist_name === null
+        ? null
+        : {
+            id: row.assigned_schedule_id,
+            name: row.assigned_schedule_name,
+            defaultPlaylist: {
+              id: row.assigned_schedule_playlist_id,
+              name: row.assigned_schedule_playlist_name,
+            },
+          },
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
@@ -341,8 +365,10 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   /**
-   * Partial update. Assigning a playlist changes nothing on the display: what
-   * it plays stays its current publication until a push (decision P2-05).
+   * Partial update. Assigning a playlist or a schedule changes nothing on the
+   * display: what it plays stays its current publication until a push (decision
+   * P2-05). A display has a playlist or a schedule, never both: assigning one
+   * takes the other off the display.
    */
   app.patch(ROUTES.displayPattern, async (request): Promise<DisplayDto> => {
     const session = operatorOf(request);
@@ -361,12 +387,14 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
           content_height: number | null;
           default_fit: 'contain' | 'cover';
           assigned_playlist_id: string | null;
+          assigned_schedule_id: string | null;
           rotation: Rotation;
           working_hours: WorkingHours | null;
         }>(
           `SELECT d.name, d.description, d.canvas_width, d.canvas_height,
                   d.content_x, d.content_y, d.content_width, d.content_height,
-                  d.default_fit, d.assigned_playlist_id, d.rotation, d.working_hours
+                  d.default_fit, d.assigned_playlist_id, d.assigned_schedule_id, d.rotation,
+                  d.working_hours
            FROM display d WHERE d.id = $1 AND d.org_id = app_org_id() FOR UPDATE`,
           [id],
         );
@@ -394,6 +422,30 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
           );
           if (playlist.rowCount !== 1) throw notFound('The playlist');
         }
+        const assignSchedule = patch.assignedScheduleId;
+        if (assignSchedule !== undefined && assignSchedule !== null) {
+          // Held until commit, so the schedule cannot be deleted under the assignment.
+          const schedule = await tx.query(
+            'SELECT 1 FROM schedule WHERE id = $1 AND org_id = app_org_id() FOR SHARE',
+            [assignSchedule],
+          );
+          if (schedule.rowCount !== 1) throw notFound('The schedule');
+        }
+        // The two columns as the one UPDATE writes them: a non-null id on one side
+        // clears the other side, null clears its own side only. The contract refuses
+        // two non-null ids, and the database refuses a row that holds both.
+        const playlistAfter =
+          assign !== undefined
+            ? assign
+            : typeof assignSchedule === 'string'
+              ? null
+              : current.assigned_playlist_id;
+        const scheduleAfter =
+          assignSchedule !== undefined
+            ? assignSchedule
+            : typeof assign === 'string'
+              ? null
+              : current.assigned_schedule_id;
 
         // A change of tags alone leaves the row, and so its updated_at, as it is.
         const { tagIds, ...columns } = patch;
@@ -407,7 +459,7 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
              SET name = $2, canvas_width = $3, canvas_height = $4,
                  content_x = $5, content_y = $6, content_width = $7, content_height = $8,
                  default_fit = $9, description = $10, assigned_playlist_id = $11,
-                 rotation = $12, working_hours = $13::jsonb
+                 rotation = $12, working_hours = $13::jsonb, assigned_schedule_id = $14
              WHERE id = $1 AND org_id = app_org_id()`,
             [
               id,
@@ -420,9 +472,10 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
               spec.contentRect?.height ?? null,
               patch.defaultFit ?? current.default_fit,
               patch.description === undefined ? current.description : patch.description,
-              assign === undefined ? current.assigned_playlist_id : assign,
+              playlistAfter,
               patch.rotation ?? current.rotation,
               hours === null ? null : JSON.stringify(hours),
+              scheduleAfter,
             ],
           );
         }
@@ -437,8 +490,18 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
           result: 'success',
           detail: {
             fields: Object.keys(patch).sort(),
-            // Lower case, as the database stores it: one spelling per object in the trail.
-            ...(assign === undefined ? {} : { assignedPlaylistId: assign?.toLowerCase() ?? null }),
+            // The values written, in lower case as the database stores them: one spelling
+            // per object in the trail. A side is recorded when the patch named it, and
+            // also when assigning the other side took a stored assignment off the
+            // display, so the trail says so without the reader knowing the "never both" rule.
+            ...(assign !== undefined ||
+            (current.assigned_playlist_id !== null && playlistAfter === null)
+              ? { assignedPlaylistId: playlistAfter?.toLowerCase() ?? null }
+              : {}),
+            ...(assignSchedule !== undefined ||
+            (current.assigned_schedule_id !== null && scheduleAfter === null)
+              ? { assignedScheduleId: scheduleAfter?.toLowerCase() ?? null }
+              : {}),
           },
         });
         const row = await loadDisplay(tx, id);
@@ -446,8 +509,8 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
         return toDisplayDto(row);
       });
     } catch (error) {
-      // The playlist or a tag went away between the check above and the write. The
-      // database refuses in both cases; the answer is the same as for an unknown id.
+      // The playlist, the schedule or a tag went away between the check above and the
+      // write. The database refuses in each case; the answer is the same as for an unknown id.
       const constraint = violatedConstraint(error);
       const pg = pgErrorCode(error);
       if (
@@ -455,6 +518,9 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
         (pg === '23001' && constraint === STAGE_A_CONSTRAINTS.assignedPlaylistDeleted)
       ) {
         throw notFound('The playlist');
+      }
+      if (pg === '23503' && constraint === STAGE_B_CONSTRAINTS.displayAssignedSchedule) {
+        throw notFound('The schedule');
       }
       if (isUnknownTag(error)) throw notFound('The tag');
       throw error;

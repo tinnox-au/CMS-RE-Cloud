@@ -818,6 +818,7 @@ function row(n: number, state: PushState, playlistId: string | null = ID(9)): Pu
       state === 'nothing_assigned' || playlistId === null
         ? null
         : { id: playlistId, name: 'Lobby loop' },
+    schedule: null,
     state,
     issues:
       state === 'blocked'
@@ -852,6 +853,16 @@ describe('push card', () => {
     expect(rowsForPlaylist(null, ID(9))).toEqual([]);
   });
 
+  it('leaves out a screen that plays the playlist as the default of its schedule', () => {
+    const scheduled: PushPlanRow = {
+      ...row(2, 'changes'),
+      schedule: { id: ID(60), name: 'Opening hours' },
+    };
+    const thePlan = plan([row(1, 'up_to_date'), scheduled]);
+    expect(rowsForPlaylist(thePlan, ID(9)).map((item) => item.display.name)).toEqual(['Screen 1']);
+    expect(rowsForPlaylist(plan([scheduled]), ID(9))).toEqual([]);
+  });
+
   it('counts the screens a push would act on', () => {
     expect(waitingCount([row(1, 'changes'), row(2, 'never_pushed'), row(3, 'up_to_date')])).toBe(2);
     expect(waitingCount([row(1, 'blocked'), row(2, 'up_to_date')])).toBe(0);
@@ -859,7 +870,7 @@ describe('push card', () => {
   });
 
   it('summarises where the screens stand', () => {
-    expect(pushSummary([])).toBe('No screen has this playlist assigned.');
+    expect(pushSummary([])).toBe('No screen has this playlist assigned directly.');
     expect(pushSummary([row(1, 'changes')])).toBe(
       '1 screen has this playlist assigned. It has changes waiting.',
     );
@@ -888,7 +899,9 @@ describe('push card', () => {
       'Save the draft first. Only the saved playlist can be pushed.',
     );
     expect(pushHoldReason(true, [])).toContain('Save the draft first');
-    expect(pushHoldReason(false, [])).toBe('Assign this playlist to a screen first.');
+    expect(pushHoldReason(false, [])).toBe(
+      'No screen has this playlist assigned directly. Screens that play it through a schedule are pushed with Push to screens.',
+    );
     expect(pushHoldReason(false, [row(1, 'up_to_date')])).toBeNull();
     // A blocked screen can still be opened in the push dialog, which shows the refusal in full.
     expect(pushHoldReason(false, [row(1, 'blocked')])).toBeNull();

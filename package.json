@@ -30,6 +30,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run --project unit",
+    "test:component": "vitest run --project component",
     "test:integration": "vitest run --project integration",
     "test:e2e": "npm run e2e -w @tinnox/tests",
     "audit": "npm audit --audit-level=high",
@@ -41,6 +42,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "22.20.5",
+    "@vitest/browser-playwright": "5.1.0",
     "concurrently": "10.0.7",
     "eslint": "10.15.0",
     "eslint-config-prettier": "10.1.8",
@@ -50,7 +52,8 @@
     "tsx": "4.23.15",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.2",
-    "vitest": "5.1.0"
+    "vitest": "5.1.0",
+    "vitest-browser-react": "2.3.0"
   },
   "packageManager": "npm@11.21.2"
 }

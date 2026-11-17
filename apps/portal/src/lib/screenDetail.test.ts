@@ -336,6 +336,7 @@ describe('assigned content', () => {
     const texts = [
       ...states.map((s) => previewCaption(s, 'Loop', 'a.png')),
       ...states.map((s) => previewCaption(s, null, null)),
+      ...states.map((s) => previewCaption(s, 'Loop', 'a.png', 'Week')),
       PREVIEW_DISCLAIMER,
       APP_PREVIEW_DISCLAIMER,
       STATUS_DISCLAIMER,
@@ -348,6 +349,28 @@ describe('assigned content', () => {
     expect(previewCaption('ready', 'Loop', 'a.png')).toBe('“a.png”, the first item of “Loop”.');
     expect(previewCaption('empty_playlist', null, null)).toMatch(
       /^The assigned playlist has no items/,
+    );
+  });
+
+  it('says that nothing is assigned without assuming a playlist', () => {
+    expect(previewCaption('nothing_assigned', null, null)).toBe(
+      'No playlist or schedule is assigned to this screen, so there is nothing to preview.',
+    );
+  });
+
+  it('says that the preview of a schedule shows its default playlist', () => {
+    expect(previewCaption('ready', 'Loop', 'a.png', 'Opening hours')).toBe(
+      '“a.png”, the first item of “Loop”. This is the default playlist of the schedule “Opening hours”. Events may show other playlists.',
+    );
+    expect(previewCaption('empty_playlist', 'Loop', null, 'Opening hours')).toBe(
+      '“Loop” has no items yet, so there is nothing to preview. This is the default playlist of the schedule “Opening hours”. Events may show other playlists.',
+    );
+    // Without a schedule, and with nothing assigned, the sentence is not added.
+    expect(previewCaption('ready', 'Loop', 'a.png', null)).toBe(
+      '“a.png”, the first item of “Loop”.',
+    );
+    expect(previewCaption('nothing_assigned', null, null, 'Opening hours')).not.toMatch(
+      /default playlist/,
     );
   });
 });
@@ -437,6 +460,7 @@ describe('push row', () => {
         {
           display: { id: 'abcdef00-0000-4000-8000-000000000001', name: 'A' },
           playlist: null,
+          schedule: null,
           state: 'nothing_assigned',
           issues: [],
           lastPushedAt: null,

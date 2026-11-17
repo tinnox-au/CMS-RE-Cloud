@@ -188,7 +188,7 @@ describe('the audit trail of the stage A routes', () => {
     expect(mediaRefused.events).toEqual([]);
 
     // Displays: the assignment is recorded with the playlist, in lower case; the
-    // stage B fields are named like the others.
+    // stage B fields are named like the others. (A schedule: further down.)
     const displayUpdate = await eventsOf(
       () =>
         operator.fetch(`/api/displays/${upper(display)}`, {
@@ -394,6 +394,121 @@ describe('the audit trail of the stage A routes', () => {
     );
     expect(appDelete.events).toEqual([
       expect.objectContaining({ action: 'app.delete', objectId: app, detail: { type: 'qr' } }),
+    ]);
+
+    // Schedules: ids and a count, in lower case whatever the request used; the
+    // assignment is recorded with the schedule as it is with a playlist.
+    const weekly = {
+      days: [true, true, true, true, true, false, false],
+      start: '09:00',
+      end: '17:00',
+    };
+    const scheduleCreate = await eventsOf(
+      () =>
+        operator.fetch('/api/schedules', {
+          method: 'POST',
+          json: {
+            name: `${TYPED} schedule`,
+            description: `${TYPED} description`,
+            defaultPlaylistId: upper(playlist),
+            events: [{ playlistId: upper(playlist), ...weekly }],
+          },
+        }),
+      201,
+    );
+    const schedule = idOf(scheduleCreate.body);
+    expect(scheduleCreate.events).toEqual([
+      expect.objectContaining({
+        action: 'schedule.create',
+        result: 'success',
+        objectType: 'schedule',
+        objectId: schedule,
+        detail: { defaultPlaylistId: playlist, eventCount: 1 },
+      }),
+    ]);
+    const scheduleUpdate = await eventsOf(
+      () =>
+        operator.fetch(`/api/schedules/${upper(schedule)}`, {
+          method: 'PUT',
+          json: {
+            name: `${TYPED} schedule two`,
+            defaultPlaylistId: upper(playlist),
+            events: [
+              { playlistId: upper(playlist), ...weekly },
+              { playlistId: playlist, ...weekly, start: '18:00', end: '24:00' },
+            ],
+          },
+        }),
+      200,
+    );
+    expect(scheduleUpdate.events).toEqual([
+      expect.objectContaining({
+        action: 'schedule.update',
+        objectType: 'schedule',
+        objectId: schedule,
+        detail: { defaultPlaylistId: playlist, eventCount: 2 },
+      }),
+    ]);
+    const scheduleRefused = await eventsOf(
+      () =>
+        operator.fetch(`/api/schedules/${schedule}`, {
+          method: 'PUT',
+          json: { name: 'kept out', defaultPlaylistId: randomUUID(), events: [] },
+        }),
+      400,
+    );
+    expect(scheduleRefused.events).toEqual([]);
+    const scheduleAssign = await eventsOf(
+      () =>
+        operator.fetch(`/api/displays/${upper(unassigned)}`, {
+          method: 'PATCH',
+          json: { assignedScheduleId: upper(schedule) },
+        }),
+      200,
+    );
+    expect(scheduleAssign.events).toEqual([
+      expect.objectContaining({
+        action: 'display.update',
+        objectId: unassigned,
+        detail: { fields: ['assignedScheduleId'], assignedScheduleId: schedule },
+      }),
+    ]);
+    const scheduleInUse = await eventsOf(
+      () => operator.fetch(`/api/schedules/${schedule}`, { method: 'DELETE' }),
+      409,
+    );
+    expect(scheduleInUse.events).toEqual([]);
+    // A playlist in its place: the trail says the schedule was taken off the screen.
+    const playlistAssign = await eventsOf(
+      () =>
+        operator.fetch(`/api/displays/${unassigned}`, {
+          method: 'PATCH',
+          json: { assignedPlaylistId: upper(playlist) },
+        }),
+      200,
+    );
+    expect(playlistAssign.events).toEqual([
+      expect.objectContaining({
+        action: 'display.update',
+        objectId: unassigned,
+        detail: {
+          fields: ['assignedPlaylistId'],
+          assignedPlaylistId: playlist,
+          assignedScheduleId: null,
+        },
+      }),
+    ]);
+    const scheduleDelete = await eventsOf(
+      () => operator.fetch(`/api/schedules/${upper(schedule)}`, { method: 'DELETE' }),
+      204,
+    );
+    expect(scheduleDelete.events).toEqual([
+      expect.objectContaining({
+        action: 'schedule.delete',
+        objectType: 'schedule',
+        objectId: schedule,
+        detail: { eventCount: 2 },
+      }),
     ]);
 
     // The whole trail of this organisation: every object in lower case, nothing typed.

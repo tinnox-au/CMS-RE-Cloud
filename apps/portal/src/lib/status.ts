@@ -37,7 +37,7 @@ const SUMMARY_TEXT: { readonly [K in DeliverySummary]: SummaryText } = {
   nothing_published: {
     headline: 'Nothing published',
     tone: 'neutral',
-    explanation: 'A player is paired, but no playlist has been published to this screen yet.',
+    explanation: 'A player is paired, but nothing has been published to this screen yet.',
   },
   awaiting_player: {
     headline: 'Waiting for the first report',

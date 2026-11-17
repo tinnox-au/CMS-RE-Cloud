@@ -21,11 +21,13 @@ import {
   createDisplay,
   createOrg,
   createPlaylist,
+  createSchedule,
   desiredPublicationId,
   imageItem,
   pairPlayer,
   readyImage,
   readyVideo,
+  scheduleEvent,
   signIn,
   startTestApp,
   uploadBytes,
@@ -397,6 +399,9 @@ describe('playlists: description, summary, duplicate and delete', () => {
       expect(refused.status).toBe(409);
       const body = (await refused.json()) as ErrorBody;
       expect(body.error.code).toBe('playlist_in_use');
+      expect(body.error.message).toBe(
+        'This playlist is assigned to a screen. Assign other content to the screen first.',
+      );
       // The refusal names the display, so the operator knows where to look.
       expect(body.error.details).toEqual([{ path: 'display', message: 'Holding display' }]);
       expect((await getPlaylist(alice, id)).items).toHaveLength(1);
@@ -415,6 +420,50 @@ describe('playlists: description, summary, duplicate and delete', () => {
       const refused = await alice.fetch(`/api/playlists/${id}`, { method: 'DELETE' });
       expect(refused.status).toBe(409);
       expect(((await refused.json()) as ErrorBody).error.code).toBe('playlist_in_use');
+    });
+
+    it('refuses with 409 playlist_in_use while a schedule uses the playlist, as its default or in an event', async () => {
+      const usual = await createPlaylist(alice, 'Usual loop');
+      const special = await createPlaylist(alice, 'Special loop');
+      const spare = await createPlaylist(alice, 'Spare loop');
+      const zulu = await createSchedule(alice, 'zulu week', usual, [
+        scheduleEvent(special),
+        scheduleEvent(special, '18:00', '20:00'),
+      ]);
+      const alpha = await createSchedule(alice, 'Alpha week', special);
+
+      const cases: [string, string[]][] = [
+        [usual, ['zulu week']],
+        // By name; a schedule that uses the playlist twice is named once.
+        [special, ['Alpha week', 'zulu week']],
+      ];
+      for (const [id, names] of cases) {
+        const refused = await alice.fetch(`/api/playlists/${id}`, { method: 'DELETE' });
+        expect(refused.status).toBe(409);
+        const body = (await refused.json()) as ErrorBody;
+        expect(body.error.code).toBe('playlist_in_use');
+        expect(body.error.message).toBe(
+          'This playlist is used by a schedule. Choose another playlist in the schedule first.',
+        );
+        expect(body.error.details).toEqual(names.map((message) => ({ path: 'schedule', message })));
+        expect((await summaries(alice)).map((item) => item.id)).toContain(id);
+      }
+
+      // Once no schedule uses it, each can go: one by an edit, one by deleting the schedules.
+      const replaced = await alice.fetch(`/api/schedules/${zulu.id}`, {
+        method: 'PUT',
+        json: { name: 'zulu week', defaultPlaylistId: spare, events: [scheduleEvent(special)] },
+      });
+      expect(replaced.status).toBe(200);
+      expect((await alice.fetch(`/api/playlists/${usual}`, { method: 'DELETE' })).status).toBe(204);
+      for (const schedule of [zulu, alpha]) {
+        expect(
+          (await alice.fetch(`/api/schedules/${schedule.id}`, { method: 'DELETE' })).status,
+        ).toBe(204);
+      }
+      expect((await alice.fetch(`/api/playlists/${special}`, { method: 'DELETE' })).status).toBe(
+        204,
+      );
     });
 
     it('hides a deleted playlist from every route and keeps what displays were given', async () => {

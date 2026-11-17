@@ -89,7 +89,13 @@ export function ScreenTabs(props: ScreenTabsProps) {
 function TabContent(props: ScreenTabsProps) {
   switch (props.tab) {
     case 'overview':
-      return <OverviewTab status={props.status} onReload={props.onReloadStatus} />;
+      return (
+        <OverviewTab
+          status={props.status}
+          onReload={props.onReloadStatus}
+          scheduled={props.display.assignedSchedule !== null}
+        />
+      );
     case 'canvas':
       return (
         <CanvasTab

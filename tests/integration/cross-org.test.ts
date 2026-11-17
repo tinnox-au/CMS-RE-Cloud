@@ -9,11 +9,13 @@ import {
   appClient,
   createDisplay,
   createOrg,
+  createSchedule,
   heartbeatBody,
   pairPlayer,
   publishImages,
   readyImage,
   requestMediaUrls,
+  scheduleEvent,
   sendHeartbeat,
   signIn,
   startTestApp,
@@ -38,6 +40,7 @@ describe('organisation isolation through the API', () => {
     mediaTagId: string;
     displayTagId: string;
     appId: string;
+    scheduleId: string;
     player: PairedPlayer;
   }
   let a: World;
@@ -51,7 +54,8 @@ describe('organisation isolation through the API', () => {
   /**
    * One of everything an organisation can own: a display with a paired player, ready
    * media in a folder, a playlist published and so assigned to the display, and a tag
-   * of each scope put on the media item and on the display, and an app.
+   * of each scope put on the media item and on the display, an app, and a schedule
+   * with one event on the playlist (assigned to no display).
    */
   async function world(operator: Operator, org: TestOrg): Promise<World> {
     const display = await createDisplay(operator, org, 'Isolation display');
@@ -91,6 +95,9 @@ describe('organisation isolation through the API', () => {
         },
       }),
     );
+    const schedule = await createSchedule(operator, 'Isolation week', published.playlistId, [
+      scheduleEvent(published.playlistId),
+    ]);
     return {
       displayId: display.id,
       mediaId: media.id,
@@ -100,6 +107,7 @@ describe('organisation isolation through the API', () => {
       mediaTagId,
       displayTagId,
       appId,
+      scheduleId: schedule.id,
       player,
     };
   }
@@ -136,6 +144,7 @@ describe('organisation isolation through the API', () => {
       mediaId: string;
       playlistId: string;
       appId: string;
+      scheduleId: string;
     }): string[] => [
       `/api/displays/${ids.displayId}`,
       `/api/displays/${ids.displayId}/status`,
@@ -145,6 +154,7 @@ describe('organisation isolation through the API', () => {
       `/api/media/${ids.mediaId}/usage`,
       `/api/playlists/${ids.playlistId}`,
       `/api/apps/${ids.appId}`,
+      `/api/schedules/${ids.scheduleId}`,
     ];
     const foreign = paths(a);
     const missing = paths({
@@ -152,6 +162,7 @@ describe('organisation isolation through the API', () => {
       mediaId: unknown,
       playlistId: unknown,
       appId: unknown,
+      scheduleId: unknown,
     });
     for (let i = 0; i < foreign.length; i += 1) {
       const real = await bob.fetch(foreign[i] ?? '');
@@ -180,6 +191,7 @@ describe('organisation isolation through the API', () => {
       '/api/tags?scope=display',
       '/api/folders',
       '/api/apps',
+      '/api/schedules',
       '/api/playlists',
       '/api/push',
       '/api/overview',
@@ -201,6 +213,7 @@ describe('organisation isolation through the API', () => {
         a.mediaTagId,
         a.displayTagId,
         a.appId,
+        a.scheduleId,
         a.player.registrationId,
       ]) {
         expect(text, `${path} leaks ${id}`).not.toContain(id);
@@ -217,6 +230,7 @@ describe('organisation isolation through the API', () => {
         '/api/media',
         '/api/push',
         '/api/apps',
+        '/api/schedules',
       ]) {
         expect((await json<{ items: unknown[] }>(path)).items, path).toHaveLength(1);
       }
@@ -247,6 +261,8 @@ describe('organisation isolation through the API', () => {
       tags: await (await alice.fetch('/api/tags')).text(),
       folders: await (await alice.fetch('/api/folders')).text(),
       apps: await (await alice.fetch('/api/apps')).text(),
+      schedule: await (await alice.fetch(`/api/schedules/${a.scheduleId}`)).text(),
+      schedules: await (await alice.fetch('/api/schedules')).text(),
       push: await (await alice.fetch('/api/push')).text(),
       status: JSON.stringify({
         ...((await (await alice.fetch(`/api/displays/${a.displayId}/status`)).json()) as object),
@@ -282,6 +298,14 @@ describe('organisation isolation through the API', () => {
         bob.fetch(`/api/apps/${a.appId}`, { method: 'PATCH', json: { name: 'taken' } }),
       ],
       ['DELETE app', bob.fetch(`/api/apps/${a.appId}`, { method: 'DELETE' })],
+      [
+        'PUT schedule',
+        bob.fetch(`/api/schedules/${a.scheduleId}`, {
+          method: 'PUT',
+          json: { name: 'taken', defaultPlaylistId: b.playlistId, events: [] },
+        }),
+      ],
+      ['DELETE schedule', bob.fetch(`/api/schedules/${a.scheduleId}`, { method: 'DELETE' })],
       ['DELETE playlist', bob.fetch(`/api/playlists/${a.playlistId}`, { method: 'DELETE' })],
       [
         'duplicate playlist',
@@ -309,6 +333,13 @@ describe('organisation isolation through the API', () => {
         bob.fetch(`/api/displays/${b.displayId}`, {
           method: 'PATCH',
           json: { assignedPlaylistId: a.playlistId },
+        }),
+      ],
+      [
+        'assign A schedule to own display',
+        bob.fetch(`/api/displays/${b.displayId}`, {
+          method: 'PATCH',
+          json: { assignedScheduleId: a.scheduleId },
         }),
       ],
       [
@@ -387,6 +418,21 @@ describe('organisation isolation through the API', () => {
     });
     expect(smuggleApp.status).toBe(400);
     expect(JSON.stringify(await smuggleApp.json())).toContain('app_missing');
+    // So is naming A's playlist in a schedule of B's own, as its default or in an event.
+    for (const json of [
+      { name: 'mine', defaultPlaylistId: a.playlistId, events: [] },
+      { name: 'mine', defaultPlaylistId: b.playlistId, events: [scheduleEvent(a.playlistId)] },
+    ]) {
+      for (const smuggleSchedule of [
+        await bob.fetch('/api/schedules', { method: 'POST', json }),
+        await bob.fetch(`/api/schedules/${b.scheduleId}`, { method: 'PUT', json }),
+      ]) {
+        expect(smuggleSchedule.status).toBe(400);
+        expect(JSON.stringify(await smuggleSchedule.json())).toContain(
+          'The playlist was not found.',
+        );
+      }
+    }
     // Creating a display on A's site is refused.
     const onForeignSite = await bob.fetch('/api/displays', {
       method: 'POST',
@@ -399,9 +445,19 @@ describe('organisation isolation through the API', () => {
     const ownDisplay = (await (await bob.fetch(`/api/displays/${b.displayId}`)).json()) as {
       tagIds: string[];
       assignedPlaylist: { id: string } | null;
+      assignedSchedule: { id: string } | null;
     };
     expect(ownDisplay.tagIds).toEqual([b.displayTagId]);
     expect(ownDisplay.assignedPlaylist?.id).toBe(b.playlistId);
+    expect(ownDisplay.assignedSchedule).toBeNull();
+    const ownSchedule = (await (await bob.fetch(`/api/schedules/${b.scheduleId}`)).json()) as {
+      name: string;
+      defaultPlaylist: { id: string };
+    };
+    expect(ownSchedule).toMatchObject({
+      name: 'Isolation week',
+      defaultPlaylist: { id: b.playlistId },
+    });
     const ownMedia = (await (await bob.fetch(`/api/media/${b.mediaId}`)).json()) as {
       folderId: string | null;
       tagIds: string[];
@@ -526,6 +582,8 @@ describe('organisation isolation through the API', () => {
       'display_tag',
       'playlist',
       'playlist_item',
+      'schedule',
+      'schedule_event',
       'publication',
       'publication_asset',
       'display_delivery',

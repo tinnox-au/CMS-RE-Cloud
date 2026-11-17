@@ -101,9 +101,9 @@ function PushSummary({ summary }: { readonly summary: PushOverview }) {
                 >
                   {row.display.name}
                 </Link>
-                {row.playlist !== null && (
+                {(row.schedule ?? row.playlist) !== null && (
                   <span className="tx-dashboard-row__caption tx-small tx-truncate">
-                    {row.playlist.name}
+                    {row.schedule?.name ?? row.playlist?.name}
                   </span>
                 )}
               </span>

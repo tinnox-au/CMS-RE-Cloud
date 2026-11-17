@@ -27,6 +27,8 @@ async function loadNames(kind: LoadedKind, signal: AbortSignal): Promise<Names> 
       return byId(await api.listTags(undefined, signal));
     case 'folder':
       return byId(await api.listFolders(signal));
+    case 'schedule':
+      return byId(await api.listSchedules(signal));
   }
 }
 

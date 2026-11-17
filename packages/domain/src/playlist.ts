@@ -235,6 +235,7 @@ export function buildPublicationDraft(
       rotation: display.rotation,
       workingHours: display.workingHours,
       timeZone: display.timeZone,
+      schedule: null,
     },
   };
 }

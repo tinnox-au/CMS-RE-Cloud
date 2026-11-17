@@ -1,4 +1,9 @@
-import { isPushPending, type PushPlanResponse, type PushState } from '@tinnox/contracts';
+import {
+  isPushPending,
+  type ApiErrorDetail,
+  type PushPlanResponse,
+  type PushState,
+} from '@tinnox/contracts';
 import { isApiRequestError } from '../api/client.ts';
 import { bulkFailureTitle, countOf, type BulkFailure, type BulkOutcome } from './bulkOutcome.ts';
 
@@ -44,45 +49,77 @@ const nameList = new Intl.ListFormat('en-AU', { style: 'long', type: 'conjunctio
 export interface DeleteFailureText extends FailureText {
   /** What to do about it, when the portal knows; else null. */
   readonly hint: string | null;
-  /** True when the server refused because a screen has the playlist assigned. */
+  /** True when the server refused because a screen has the playlist assigned or a schedule uses it. */
   readonly inUse: boolean;
+  /** True when that refusal names the schedules that use the playlist. */
+  readonly bySchedule: boolean;
+}
+
+/**
+ * The names an in-use refusal lists in its details: the screens (`display`) that have the
+ * object assigned, or the schedules (`schedule`) that use it. The server names up to five.
+ */
+export function refusalNames(
+  details: readonly ApiErrorDetail[],
+  path: 'display' | 'schedule',
+): string[] {
+  return details
+    .filter((detail) => detail.path === path && detail.message.trim() !== '')
+    .map((detail) => detail.message);
 }
 
 /**
  * Why a playlist was not deleted. The `playlist_in_use` refusal names up to five of the
- * screens that have the playlist assigned (in `details`); `assignedDisplayCount` is the
- * count the list last showed, used only to say that there are more than the server named.
+ * screens that have the playlist assigned, or of the schedules that use it (in `details`);
+ * `assignedDisplayCount` is the count the list last showed, used only to say that there are
+ * more screens than the server named.
  */
 export function deleteFailureText(error: unknown, assignedDisplayCount: number): DeleteFailureText {
   if (!isApiRequestError(error) || !isInUseRefusal(error)) {
-    return { ...failureText(error), hint: null, inUse: false };
+    return { ...failureText(error), hint: null, inUse: false, bySchedule: false };
   }
-  const screens = error.details
-    .filter((detail) => detail.path === 'display' && detail.message.trim() !== '')
-    .map((detail) => detail.message);
+  const schedules = refusalNames(error.details, 'schedule');
+  if (schedules.length > 0) {
+    const several = schedules.length > 1;
+    return {
+      message: `Used by the ${several ? 'schedules' : 'schedule'} ${nameList.format(schedules)}.`,
+      code: error.code,
+      hint: `Choose another playlist in ${several ? 'those schedules' : 'that schedule'}, then delete the playlist.`,
+      inUse: true,
+      bySchedule: true,
+    };
+  }
+  const screens = refusalNames(error.details, 'display');
+  if (screens.length === 0) {
+    // No names: the refusal of a delete that raced an assignment, which may be either kind.
+    return {
+      message: 'A screen has this playlist assigned or a schedule uses it.',
+      code: error.code,
+      hint: 'Assign other content to the screen, or choose another playlist in the schedule, then delete the playlist.',
+      inUse: true,
+      bySchedule: false,
+    };
+  }
   const more = Math.max(0, assignedDisplayCount - screens.length);
   const several = screens.length + more > 1;
-  const message =
-    screens.length === 0
-      ? 'A screen has this playlist assigned.'
-      : `Assigned to ${nameList.format(more > 0 ? [...screens, `${more} more`] : screens)}.`;
   return {
-    message,
+    message: `Assigned to ${nameList.format(more > 0 ? [...screens, `${more} more`] : screens)}.`,
     code: error.code,
     hint: `Assign other content to ${several ? 'those screens' : 'that screen'}, then delete the playlist.`,
     inUse: true,
+    bySchedule: false,
   };
 }
 
-/** True when the server refused a delete because a screen has the playlist assigned. */
+/** True when the server refused a delete because a screen has the playlist assigned or a schedule uses it. */
 export function isInUseRefusal(error: unknown): boolean {
   return isApiRequestError(error) && error.code === 'playlist_in_use';
 }
 
 /**
  * The failed deletes that "Try again" repeats: every one but a `playlist_in_use` refusal,
- * which can only be refused again until the screens are given other content. An empty list
- * means "Try again" is not offered.
+ * which can only be refused again until the screens are given other content or the schedules
+ * another playlist. An empty list means "Try again" is not offered.
  */
 export function deleteRetryItems<T>(failed: readonly BulkFailure<T>[]): T[] {
   return failed.filter((failure) => !isInUseRefusal(failure.error)).map((f) => f.item);
@@ -175,8 +212,10 @@ export interface AssignPushView {
 
 /**
  * Reads the push plan for the screens a playlist was just assigned to. A row counts only
- * when it already names that playlist: a plan read before the assignment would otherwise be
- * taken for the state after it.
+ * when it already names that playlist, assigned directly: a plan read before the assignment
+ * would otherwise be taken for the state after it. The row of a scheduled screen carries the
+ * schedule's default playlist, so a stale row of a schedule whose default is this playlist
+ * does not count either.
  */
 export function assignPushView(
   assignedDisplayIds: readonly string[],
@@ -187,7 +226,7 @@ export function assignPushView(
   if (plan !== null) {
     const wanted = new Set(assignedDisplayIds);
     for (const row of plan.items) {
-      if (wanted.has(row.display.id) && row.playlist?.id === playlistId) {
+      if (wanted.has(row.display.id) && row.schedule === null && row.playlist?.id === playlistId) {
         stateById.set(row.display.id, row.state);
       }
     }

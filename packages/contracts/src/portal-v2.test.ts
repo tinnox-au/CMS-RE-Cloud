@@ -40,6 +40,10 @@ import {
   PushResponseSchema,
   PushResultSchema,
   ROUTES,
+  ScheduleDtoSchema,
+  ScheduleInputSchema,
+  ScheduleListResponseSchema,
+  ScheduleSummaryDtoSchema,
   TAG_COLOURS,
   TAG_SCOPES,
   TagCreateSchema,
@@ -106,6 +110,7 @@ const displayDto = (o: Record<string, unknown> = {}) => ({
   player: null,
   tagIds: [],
   assignedPlaylist: null,
+  assignedSchedule: null,
   createdAt: NOW,
   updatedAt: NOW,
   ...o,
@@ -643,7 +648,7 @@ describe('displays', () => {
         }),
       ),
     ).toBe(true);
-    for (const field of ['description', 'tagIds', 'assignedPlaylist']) {
+    for (const field of ['description', 'tagIds', 'assignedPlaylist', 'assignedSchedule']) {
       expect(ok(DisplayDtoSchema, without(displayDto(), field)), field).toBe(false);
     }
     const bad = [
@@ -687,6 +692,57 @@ describe('displays', () => {
       expect(ok(DisplayPatchSchema, bad), JSON.stringify(bad)).toBe(false);
   });
 
+  it('carries an assigned schedule with its default playlist', () => {
+    const assignedSchedule = {
+      id: U(70),
+      name: 'Cafe week',
+      defaultPlaylist: { id: U(40), name: 'Reception loop' },
+    };
+    expect(ok(DisplayDtoSchema, displayDto({ assignedSchedule }))).toBe(true);
+    const bad = [
+      displayDto({ assignedSchedule: U(70) }),
+      displayDto({ assignedSchedule: { id: U(70), name: 'Cafe week' } }),
+      displayDto({ assignedSchedule: { ...assignedSchedule, name: '' } }),
+      displayDto({ assignedSchedule: { ...assignedSchedule, defaultPlaylist: U(40) } }),
+      displayDto({ assignedSchedule: { ...assignedSchedule, events: [] } }),
+      displayDto({ assignedScheduleId: U(70) }),
+    ];
+    bad.forEach((b, i) => expect(ok(DisplayDtoSchema, b), `case ${i}`).toBe(false));
+  });
+
+  it('patches the assigned schedule, and never a playlist and a schedule together', () => {
+    expect(DisplayPatchSchema.parse({ assignedScheduleId: U(70) })).toEqual({
+      assignedScheduleId: U(70),
+    });
+    expect(DisplayPatchSchema.parse({ assignedScheduleId: null })).toEqual({
+      assignedScheduleId: null,
+    });
+    // Both null removes all content; a null on one side may travel with an id on the other.
+    expect(ok(DisplayPatchSchema, { assignedPlaylistId: null, assignedScheduleId: null })).toBe(
+      true,
+    );
+    expect(ok(DisplayPatchSchema, { assignedPlaylistId: U(40), assignedScheduleId: null })).toBe(
+      true,
+    );
+    expect(ok(DisplayPatchSchema, { assignedPlaylistId: null, assignedScheduleId: U(70) })).toBe(
+      true,
+    );
+    const both = DisplayPatchSchema.safeParse({
+      assignedPlaylistId: U(40),
+      assignedScheduleId: U(70),
+    });
+    expect(both.success).toBe(false);
+    if (!both.success) {
+      expect(both.error.issues).toMatchObject([
+        { path: ['assignedScheduleId'], message: 'assign a playlist or a schedule, not both' },
+      ]);
+    }
+    expect(ok(DisplayPatchSchema, { assignedScheduleId: 'none' })).toBe(false);
+    expect(ok(DisplayPatchSchema, { assignedSchedule: { id: U(70), name: 'Cafe week' } })).toBe(
+      false,
+    );
+  });
+
   it('lists the status of every display', () => {
     expect(ok(DeliveryStatusListResponseSchema, { items: [] })).toBe(true);
     expect(
@@ -707,9 +763,11 @@ describe('displays', () => {
 describe('push to displays', () => {
   const display = { id: U(3), name: 'Foyer wall' };
   const playlist = { id: U(40), name: 'Reception loop' };
+  const schedule = { id: U(70), name: 'Cafe week' };
   const row = (o: Record<string, unknown> = {}) => ({
     display,
     playlist,
+    schedule: null,
     state: 'changes',
     issues: [],
     lastPushedAt: NOW,
@@ -744,6 +802,31 @@ describe('push to displays', () => {
       }),
     ];
     rows.forEach((r, i) => expect(ok(PushPlanRowSchema, r), `case ${i}`).toBe(true));
+  });
+
+  it('names the schedule of a scheduled display beside its default playlist', () => {
+    const rows = [
+      row({ schedule }),
+      row({ schedule, state: 'never_pushed', lastPushedAt: null }),
+      row({
+        schedule,
+        state: 'blocked',
+        issues: [
+          { ...issue, path: 'events[0].playlist' },
+          { path: 'default.items[2]', message: 'Item 3 failed.', code: 'media_failed' },
+          { path: 'schedule', message: 'Too many items.', code: 'too_many_items' },
+        ],
+      }),
+    ];
+    rows.forEach((r, i) => expect(ok(PushPlanRowSchema, r), `case ${i}`).toBe(true));
+    expect(ok(PushPlanRowSchema, without(row(), 'schedule'))).toBe(false);
+    expect(ok(PushPlanRowSchema, row({ schedule: { ...schedule, events: [] } }))).toBe(false);
+    // A schedule without a playlist: one such row would fail the whole plan in the portal.
+    const bare = PushPlanRowSchema.safeParse(
+      row({ schedule, playlist: null, state: 'nothing_assigned', lastPushedAt: null }),
+    );
+    expect(bare.success).toBe(false);
+    if (!bare.success) expect(bare.error.issues.map((i) => i.path)).toEqual([['schedule']]);
   });
 
   it('refuses a row that contradicts itself', () => {
@@ -834,6 +917,111 @@ describe('push to displays', () => {
         results: Array.from({ length: 201 }, (_, i) => result({ displayId: U(i + 1) })),
       }),
     ).toBe(false);
+  });
+});
+
+describe('schedules', () => {
+  const playlist = { id: U(40), name: 'Reception loop' };
+  const event = (o: Record<string, unknown> = {}) => ({
+    playlistId: U(41),
+    days: [true, true, true, true, true, false, false],
+    start: '11:30',
+    end: '14:00',
+    ...o,
+  });
+  const input = (o: Record<string, unknown> = {}) => ({
+    name: 'Cafe week',
+    defaultPlaylistId: U(40),
+    events: [event()],
+    ...o,
+  });
+  const summary = (o: Record<string, unknown> = {}) => ({
+    id: U(70),
+    name: 'Cafe week',
+    description: null,
+    defaultPlaylist: playlist,
+    eventCount: 1,
+    assignedDisplayCount: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...o,
+  });
+  const dto = (o: Record<string, unknown> = {}) => ({
+    ...without(summary(), 'eventCount'),
+    events: [{ playlist: { id: U(41), name: 'Lunch' }, ...without(event(), 'playlistId') }],
+    ...o,
+  });
+
+  it('takes one body for create and replace, with at most 50 events', () => {
+    expect(ABSOLUTE.maxScheduleEvents).toBe(50);
+    expect(ScheduleInputSchema.parse(input({ name: '  Cafe week  ', events: [] }))).toEqual({
+      name: 'Cafe week',
+      defaultPlaylistId: U(40),
+      events: [],
+    });
+    expect(ScheduleInputSchema.parse(input({ description: '  ' })).description).toBeNull();
+    // Overlapping events and an event on the default playlist are allowed: list order decides.
+    expect(
+      ok(ScheduleInputSchema, input({ events: [event(), event({ playlistId: U(40) })] })),
+    ).toBe(true);
+    const events = (n: number) => Array.from({ length: n }, () => event());
+    expect(ok(ScheduleInputSchema, input({ events: events(50) }))).toBe(true);
+    for (const bad of [
+      input({ events: events(51) }),
+      without(input(), 'events'),
+      without(input(), 'defaultPlaylistId'),
+      input({ name: ' ' }),
+      input({ defaultPlaylistId: null }),
+      input({ description: 'a\tb' }),
+      input({ events: [without(event(), 'playlistId')] }),
+      input({ events: [event({ name: 'Lunch' })] }),
+      input({ events: [event({ end: '00:00' })] }),
+      input({ id: U(70) }),
+      input({ orgId: U(1) }),
+    ])
+      expect(ok(ScheduleInputSchema, bad), JSON.stringify(bad).slice(0, 80)).toBe(false);
+  });
+
+  it('names a refused field by its path in the body', () => {
+    const paths = (value: unknown) => {
+      const parsed = ScheduleInputSchema.safeParse(value);
+      return parsed.success ? [] : parsed.error.issues.map((i) => i.path.join('.'));
+    };
+    const six = [true, true, true, true, true, false];
+    expect(paths(input({ events: [event(), event({ days: six })] }))).toEqual(['events.1.days']);
+    expect(paths(input({ events: [event({ start: '24:00' })] }))).toEqual(['events.0.start']);
+    expect(paths(input({ events: [event({ end: '11:30' })] }))).toEqual(['events.0.end']);
+    expect(paths(input({ events: [event({ playlistId: 'none' })] }))).toEqual([
+      'events.0.playlistId',
+    ]);
+    expect(paths(input({ description: 'a\tb' }))).toEqual(['description']);
+  });
+
+  it('describes a schedule and its list row strictly', () => {
+    expect(ok(ScheduleDtoSchema, dto())).toBe(true);
+    expect(ok(ScheduleDtoSchema, dto({ events: [], description: 'Lunch from 11:30.' }))).toBe(true);
+    expect(ok(ScheduleSummaryDtoSchema, summary())).toBe(true);
+    expect(ok(ScheduleListResponseSchema, { items: [summary(), summary({ id: U(71) })] })).toBe(
+      true,
+    );
+    for (const field of Object.keys(dto())) {
+      expect(ok(ScheduleDtoSchema, without(dto(), field)), field).toBe(false);
+    }
+    for (const field of Object.keys(summary())) {
+      expect(ok(ScheduleSummaryDtoSchema, without(summary(), field)), field).toBe(false);
+    }
+    const bad = [
+      dto({ eventCount: 1 }),
+      dto({ description: '' }),
+      dto({ defaultPlaylist: U(40) }),
+      dto({ events: [event()] }),
+      dto({ assignedDisplayCount: -1 }),
+    ];
+    bad.forEach((b, i) => expect(ok(ScheduleDtoSchema, b), `case ${i}`).toBe(false));
+    expect(ok(ScheduleSummaryDtoSchema, summary({ eventCount: 51 }))).toBe(false);
+    expect(ok(ScheduleSummaryDtoSchema, summary({ events: [] }))).toBe(false);
+    expect(ok(ScheduleListResponseSchema, { items: [dto()] })).toBe(false);
+    expect(ok(ScheduleListResponseSchema, { items: [], total: 0 })).toBe(false);
   });
 });
 
@@ -993,6 +1181,19 @@ describe('errors and routes', () => {
     expect(ROUTES.apps).toBe('/api/apps');
     expect(ROUTES.appPattern).toBe('/api/apps/:id');
     expect(ROUTES.app('../x')).toBe('/api/apps/..%2Fx');
+  });
+
+  it('has the code, audit actions and routes of schedules', () => {
+    expect(API_ERROR_CODES).toContain('schedule_in_use');
+    for (const action of ['schedule.create', 'schedule.update', 'schedule.delete'] as const) {
+      expect(AUDIT_ACTIONS).toContain(action);
+      expect(auditCategoryOf(action)).toBe('schedule');
+    }
+    expect(AUDIT_CATEGORIES).toContain('schedule');
+    expect(ROUTES.schedules).toBe('/api/schedules');
+    expect(ROUTES.schedulePattern).toBe('/api/schedules/:id');
+    expect(ROUTES.schedule(U(70))).toBe(`/api/schedules/${U(70)}`);
+    expect(ROUTES.schedule('../x')).toBe('/api/schedules/..%2Fx');
   });
 
   it('builds every stage A path and percent-encodes its parameter', () => {

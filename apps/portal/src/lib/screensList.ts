@@ -100,13 +100,27 @@ export function canvasLabel(display: Pick<DisplayDto, 'canvas'>): string {
   );
 }
 
+/** The name of what a screen has assigned: its playlist, else its schedule, else null. */
+function assignedContentName(
+  display: Pick<DisplayDto, 'assignedPlaylist' | 'assignedSchedule'>,
+): string | null {
+  return display.assignedPlaylist?.name ?? display.assignedSchedule?.name ?? null;
+}
+
+/** True when a screen has a playlist or a schedule assigned: there is something to push. */
+export function hasContentAssigned(
+  display: Pick<DisplayDto, 'assignedPlaylist' | 'assignedSchedule'>,
+): boolean {
+  return display.assignedPlaylist !== null || display.assignedSchedule !== null;
+}
+
 /** What the search field is matched against. */
 export function screenSearchTexts(row: ScreenRow): readonly (string | null)[] {
   return [
     row.display.name,
     row.display.description,
     row.siteName,
-    row.display.assignedPlaylist?.name ?? null,
+    assignedContentName(row.display),
     canvasLabel(row.display),
     `${row.display.canvas.width}x${row.display.canvas.height}`,
   ];
@@ -233,7 +247,7 @@ const STATUS_RANK: { readonly [K in ScreenStatusKind]: number } = {
 export const SCREEN_SORT_ACCESSORS: SortAccessors<ScreenRow> = {
   name: (row) => row.display.name,
   status: (row) => (row.statusKind === null ? null : STATUS_RANK[row.statusKind]),
-  content: (row) => row.display.assignedPlaylist?.name ?? null,
+  content: (row) => assignedContentName(row.display),
   site: (row) => row.siteName,
   canvas: (row) => row.display.canvas.width * row.display.canvas.height,
 };
@@ -243,24 +257,32 @@ export const SCREEN_SORT_ACCESSORS: SortAccessors<ScreenRow> = {
 
 /**
  * The push states the Content column marks: something is waiting to be pushed, or the
- * assigned playlist cannot be pushed. "Up to date" and "Nothing assigned" need no marker.
+ * assigned content cannot be pushed. "Up to date" and "Nothing assigned" need no marker.
  */
 export function showsPushMarker(state: PushState): boolean {
   return state === 'changes' || state === 'never_pushed' || state === 'blocked';
 }
 
 /**
- * The push state to mark next to a screen's assigned playlist, or null for no marker. The
- * plan is read less often than the list: a plan row that is about another playlist than the
- * one assigned now (the assignment changed a moment ago) gives no marker rather than a
- * wrong one.
+ * The push state to mark next to a screen's assigned content, or null for no marker. The
+ * plan is read less often than the list: a plan row that is about other content than what is
+ * assigned now (the assignment changed a moment ago) gives no marker rather than a wrong
+ * one. A plan row of a schedule carries the schedule's default playlist as its playlist, so
+ * a screen with a playlist matches only a row without a schedule.
  */
 export function pushMarkerFor(row: Pick<ScreenRow, 'display' | 'push'>): PushState | null {
-  const assigned = row.display.assignedPlaylist;
-  const planned = row.push?.playlist ?? null;
-  if (row.push === null || assigned === null || planned === null) return null;
-  if (idKey(assigned.id) !== idKey(planned.id)) return null;
-  return showsPushMarker(row.push.state) ? row.push.state : null;
+  const { push } = row;
+  if (push === null) return null;
+  const { assignedPlaylist, assignedSchedule } = row.display;
+  const planIsAboutIt =
+    assignedSchedule !== null
+      ? push.schedule !== null && idKey(push.schedule.id) === idKey(assignedSchedule.id)
+      : assignedPlaylist !== null &&
+        push.schedule === null &&
+        push.playlist !== null &&
+        idKey(push.playlist.id) === idKey(assignedPlaylist.id);
+  if (!planIsAboutIt) return null;
+  return showsPushMarker(push.state) ? push.state : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -349,7 +371,11 @@ export function contentInset(
 // ---------------------------------------------------------------------------
 // Assigning content
 
-/** The screens an assignment would change: those that do not have this playlist already. */
+/**
+ * The screens an assignment would change: those that do not have this playlist already. A
+ * screen with a schedule has no playlist, so it counts for any playlist chosen (it gets the
+ * playlist instead of its schedule) and never for "no playlist".
+ */
 export function screensToAssign(
   displays: readonly DisplayDto[],
   playlistId: string | null,
@@ -359,6 +385,18 @@ export function screensToAssign(
     if (current === null || playlistId === null) return current !== playlistId;
     return idKey(current) !== idKey(playlistId);
   });
+}
+
+/**
+ * The sentence a playlist-assign dialog adds when a screen it is about has a schedule: a
+ * screen has one or the other, so the playlist takes the schedule's place.
+ */
+export const SCHEDULE_REPLACED_NOTE =
+  'A screen that has a schedule gets this playlist instead of its schedule.';
+
+/** True when any of the screens has a schedule assigned. */
+export function anyHasSchedule(displays: readonly Pick<DisplayDto, 'assignedSchedule'>[]): boolean {
+  return displays.some((display) => display.assignedSchedule !== null);
 }
 
 /**

@@ -322,7 +322,6 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
                   if (entry.kind === 'app') {
                     const { app } = entry;
                     const used = usageLabel(usage.get(app.id) ?? 0);
-                    const metaId = `${hintId}-${app.id}`;
                     return (
                       <li key={app.id}>
                         <button
@@ -330,8 +329,7 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
                           className="tx-playlist-editor-media"
                           draggable={!full}
                           aria-disabled={full || undefined}
-                          aria-label={`Add ${app.name}`}
-                          aria-describedby={`${metaId} ${hintId}`}
+                          aria-describedby={hintId}
                           data-app-id={app.id}
                           data-testid="playlist-editor-library-app"
                           onClick={() => {
@@ -355,10 +353,13 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
                               <Icon icon={Plus} size={16} />
                             </span>
                           </span>
+                          {/* The name comes from the content, so it holds every word shown (WCAG 2.5.3). */}
+                          <span className="tx-visually-hidden">Add </span>
                           <span className="tx-playlist-editor-media__name tx-truncate">
                             {app.name}
                           </span>
-                          <span id={metaId} className="tx-playlist-editor-media__details">
+                          <span className="tx-visually-hidden">, </span>
+                          <span className="tx-playlist-editor-media__details">
                             <span className="tx-playlist-editor-media__meta">
                               {appMetaLabel(app)}
                             </span>
@@ -377,7 +378,6 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
                   const item = entry.media;
                   const name = mediaDisplayName(item);
                   const used = usageLabel(usage.get(item.id) ?? 0);
-                  const metaId = `${hintId}-${item.id}`;
                   return (
                     <li key={item.id}>
                       <button
@@ -385,8 +385,7 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
                         className="tx-playlist-editor-media"
                         draggable={!full}
                         aria-disabled={full || undefined}
-                        aria-label={`Add ${name}`}
-                        aria-describedby={`${metaId} ${hintId}`}
+                        aria-describedby={hintId}
                         data-media-id={item.id}
                         data-testid="playlist-editor-library-item"
                         onClick={() => {
@@ -408,8 +407,11 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
                             <Icon icon={Plus} size={16} />
                           </span>
                         </span>
+                        {/* The name comes from the content, so it holds every word shown (WCAG 2.5.3). */}
+                        <span className="tx-visually-hidden">Add </span>
                         <span className="tx-playlist-editor-media__name tx-truncate">{name}</span>
-                        <span id={metaId} className="tx-playlist-editor-media__details">
+                        <span className="tx-visually-hidden">, </span>
+                        <span className="tx-playlist-editor-media__details">
                           <span className="tx-playlist-editor-media__meta">
                             {libraryMetaLabel(item)}
                           </span>

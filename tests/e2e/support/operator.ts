@@ -69,6 +69,19 @@ export interface PublishResult {
   readonly manifest: { readonly assets: readonly { assetId: string; sha256: string }[] };
 }
 
+/** A schedule as `POST` and `PUT /api/schedules` take it; `days` is seven entries, Monday first. */
+export interface ScheduleInput {
+  readonly name: string;
+  readonly defaultPlaylistId: string;
+  readonly events: readonly {
+    readonly playlistId: string;
+    readonly days: readonly boolean[];
+    /** HH:mm in the screen's site zone; an end of 24:00 is midnight. */
+    readonly start: string;
+    readonly end: string;
+  }[];
+}
+
 export interface StatusView {
   readonly paired: boolean;
   readonly registrationId: string | null;
@@ -221,6 +234,26 @@ export class OperatorApi {
     playback: { transition?: 'cut' | 'fade'; shuffle?: boolean } = {},
   ): Promise<void> {
     const response = await this.put(`/api/playlists/${id}`, { name, items, ...playback });
+    expect(response.status(), await response.text()).toBe(200);
+  }
+
+  async createSchedule(input: ScheduleInput): Promise<{ id: string }> {
+    const response = await this.post('/api/schedules', input);
+    expect(response.status(), await response.text()).toBe(201);
+    return (await response.json()) as { id: string };
+  }
+
+  /** Replaces the whole schedule: its name, default playlist and events. */
+  async replaceSchedule(id: string, input: ScheduleInput): Promise<void> {
+    const response = await this.put(`/api/schedules/${id}`, input);
+    expect(response.status(), await response.text()).toBe(200);
+  }
+
+  /** Assigns a schedule to a screen (this clears an assigned playlist). Nothing is pushed. */
+  async assignSchedule(displayId: string, scheduleId: string): Promise<void> {
+    const response = await this.patch(`/api/displays/${displayId}`, {
+      assignedScheduleId: scheduleId,
+    });
     expect(response.status(), await response.text()).toBe(200);
   }
 

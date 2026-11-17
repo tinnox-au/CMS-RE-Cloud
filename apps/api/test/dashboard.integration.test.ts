@@ -23,6 +23,7 @@ import {
   createDisplay,
   createOrg,
   createPlaylist,
+  createSchedule,
   imageItem,
   pairPlayer,
   pngBytes,
@@ -358,6 +359,7 @@ describe('dashboard numbers, status of every display, audit filters', () => {
       const display = await createDisplay(operator, org, 'Audited');
       const empty = await createPlaylist(operator, 'Empty');
       await assignPlaylist(operator, display.id, empty);
+      await createSchedule(operator, 'Week', empty);
       // A failure (blocked push) and a denial (wrong pairing code), next to the successes.
       await push(operator, [display.id]);
       await operator.fetch(`/api/displays/${display.id}/claim`, {
@@ -373,13 +375,21 @@ describe('dashboard numbers, status of every display, audit filters', () => {
 
     it('recorded events of several categories and results to filter', () => {
       expect(new Set(all.map((e) => auditCategoryOf(e.action)))).toEqual(
-        new Set(['display', 'playlist', 'publication', 'pairing', 'tag', 'folder']),
+        new Set(['display', 'playlist', 'schedule', 'publication', 'pairing', 'tag', 'folder']),
       );
       expect(new Set(all.map((e) => e.result))).toEqual(new Set(['success', 'failure', 'denied']));
     });
 
     it('narrows the list to one category, to one result, or to both', async () => {
-      for (const category of ['display', 'playlist', 'publication', 'pairing', 'tag', 'folder']) {
+      for (const category of [
+        'display',
+        'playlist',
+        'schedule',
+        'publication',
+        'pairing',
+        'tag',
+        'folder',
+      ]) {
         const { items } = await audit(`?limit=200&category=${category}`);
         expect(items, category).toEqual(all.filter((e) => auditCategoryOf(e.action) === category));
         expect(items.length, category).toBeGreaterThan(0);

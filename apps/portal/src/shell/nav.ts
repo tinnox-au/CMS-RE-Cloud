@@ -99,14 +99,7 @@ export const PRIMARY_NAV: readonly NavItem[] = [
     icon: LayoutTemplate,
     planned: true,
   },
-  {
-    kind: 'link',
-    id: 'schedules',
-    label: 'Schedules',
-    to: '/schedules',
-    icon: CalendarDays,
-    planned: true,
-  },
+  { kind: 'link', id: 'schedules', label: 'Schedules', to: '/schedules', icon: CalendarDays },
   { kind: 'link', id: 'screens', label: 'Screens', to: '/screens', icon: Monitor },
 ];
 
