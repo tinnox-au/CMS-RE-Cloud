@@ -1,3 +1,4 @@
+import pg from 'pg';
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from './pool.ts';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -20,6 +21,33 @@ function wrap(client: PoolClient): Tx {
   };
 }
 
+/**
+ * COMMIT was sent but did not confirm, so the transaction may have committed. Callers
+ * must not undo work outside the database (delete files or stored objects) on this
+ * error: the rows that own that work may exist (review round 3, SCX-03). `cause` holds
+ * what COMMIT failed with.
+ */
+export class CommitOutcomeUnknownError extends Error {
+  constructor(cause: unknown) {
+    super('the outcome of the transaction is unknown: COMMIT did not confirm', { cause });
+    this.name = 'CommitOutcomeUnknownError';
+  }
+}
+
+/**
+ * True when the server answered COMMIT with an error that it raises only while rolling
+ * the transaction back: a deferred constraint (class 23) or a serialization failure
+ * (class 40). Anything else (a lost connection, a timeout, a server shutting down) may
+ * have come after the commit was durable.
+ */
+function commitRefused(error: unknown): boolean {
+  return (
+    error instanceof pg.DatabaseError &&
+    typeof error.code === 'string' &&
+    (error.code.startsWith('23') || error.code.startsWith('40'))
+  );
+}
+
 async function run<T>(
   pool: Pool,
   begin: (client: PoolClient) => Promise<void>,
@@ -38,7 +66,11 @@ async function run<T>(
     await client.query('BEGIN');
     await begin(client);
     const result = await fn(wrap(client));
-    await client.query('COMMIT');
+    try {
+      await client.query('COMMIT');
+    } catch (error) {
+      throw commitRefused(error) ? error : new CommitOutcomeUnknownError(error);
+    }
     return result;
   } catch (error) {
     try {

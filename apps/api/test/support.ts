@@ -76,9 +76,15 @@ export interface TestApp {
   close(): Promise<void>;
 }
 
+export interface TestAppOptions {
+  /** Wraps the app's database pool, for example to inject a fault (used by every route and the pipeline). */
+  readonly wrapPool?: (pool: Pool) => Pool;
+}
+
 export async function startTestApp(
   limitOverrides: Record<string, string> = {},
   rateLimitScale = 1000,
+  options: TestAppOptions = {},
 ): Promise<TestApp> {
   const scratch = await mkdtemp(join(tmpdir(), 'tinnox-api-test-'));
   const jobsDir = join(scratch, 'jobs');
@@ -108,11 +114,12 @@ export async function startTestApp(
   });
   let offsetMs = 0;
   const now = (): Date => new Date(Date.now() + offsetMs);
-  const pool = createPool({
+  const created = createPool({
     connectionString: config.databaseUrl,
     applicationName: 'tinnox-api-test',
     max: 12,
   });
+  const pool = options.wrapPool?.(created) ?? created;
   const storage = await LocalObjectStorage.create({ root: mediaRoot });
   const silent = { info: () => undefined, warn: () => undefined, error: () => undefined };
   const media = new MediaPipeline({
@@ -158,7 +165,7 @@ export async function startTestApp(
     async close(): Promise<void> {
       await app.close();
       await media.stop();
-      await pool.end();
+      await created.end();
       await rm(scratch, { recursive: true, force: true });
     },
   };
@@ -647,6 +654,44 @@ export async function settleStrayMediaJobs(pool: Pool): Promise<number> {
     if (changed === 0) throw new Error('media rows in processing could not be settled');
     settled += changed;
   }
+}
+
+/**
+ * A pool whose transactions really commit, but report a lost connection instead of the
+ * answer to COMMIT once a statement matching `marker` ran in them: the case where the
+ * database committed and the API cannot know it.
+ */
+export function losingCommitAnswers(pool: Pool, marker: RegExp): Pool {
+  const bound = <T extends object>(target: T, key: string | symbol): unknown => {
+    const value: unknown = Reflect.get(target, key);
+    return typeof value === 'function'
+      ? (value as (...args: unknown[]) => unknown).bind(target)
+      : value;
+  };
+  return new Proxy(pool, {
+    get(target, key) {
+      if (key !== 'connect') return bound(target, key);
+      return async () => {
+        const client = await target.connect();
+        let marked = false;
+        return new Proxy(client, {
+          get(real, name) {
+            if (name !== 'query') return bound(real, name);
+            return async (text: string, values?: unknown[]) => {
+              if (text === 'BEGIN') marked = false;
+              if (marker.test(text)) marked = true;
+              const result = await real.query(text, values);
+              if (text === 'COMMIT' && marked) {
+                marked = false;
+                throw new Error('Connection terminated unexpectedly');
+              }
+              return result;
+            };
+          },
+        });
+      };
+    },
+  });
 }
 
 export async function listDir(path: string): Promise<string[]> {
