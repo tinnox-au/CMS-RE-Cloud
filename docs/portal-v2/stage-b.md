@@ -514,7 +514,7 @@ Behaviour common to all six:
 - All sizes come from the root's own box, so the result is the same at preview scale and on the screen.
 - A `ResizeObserver` on the root re-fits.
 - Clock, Date and Countdown use one self-correcting timer to the next whole second of `env.now()`. Text is rewritten only when it changes, and re-fitted only when its length changes.
-- Minimum font size is `shortSide/12`. Below that, text is clipped and `onOverflow(true)` is called. `// shortcut: the readability floor is 1/12 of the short side; tune per pixel pitch if reported.`
+- Minimum font size is `shortSide/12`. Text that does not fit at that size first has its over-long words broken anywhere (a URL, a run of letters), then shrinks to at most half that size, so it is shown whole rather than clipped; `onOverflow(true)` is called whenever it went below `shortSide/12`. Only text that does not fit even at `shortSide/24` is clipped. `// shortcut: the readability floor is 1/12 of the short side; tune per pixel pitch if reported.` (Changed after frontend review round 2, FCU-02.)
 
 Per type:
 - **Clock:** one line, `white-space:nowrap`, fitted with max = 0.8 × box height.
@@ -651,7 +651,7 @@ WP3 adds `"@tinnox/app-render": "*"` to `apps/player-web/package.json` and `apps
     - The frame's label: "Preview of this app on a W × H canvas."
     - `Select` "Preview on": "Landscape 1920 × 1080" (default), "Portrait 1080 × 1920", then each screen "{name} · W × H" with its content rectangle.
     - For time-based types: "Times in this preview use this computer's time zone ({zone}). Each screen uses its site's time zone."
-    - On overflow: `Banner` warn "Not all the text fits this screen shape. Shorten the text or preview another shape."
+    - On overflow: `Banner` warn "The text does not fit this screen shape at a readable size, so it is shown smaller. Shorten the text or preview another shape."
     - Facts: Type, Used in, Created, Updated.
   - **Settings card:**
     - section "Details": Name, Description;
