@@ -35,7 +35,7 @@ export const STAGE_A_CONSTRAINTS = Object.freeze({
 export type StageAConstraint = (typeof STAGE_A_CONSTRAINTS)[keyof typeof STAGE_A_CONSTRAINTS];
 
 /**
- * The one name of db/migrations/0008_stage_b_schedules.sql that a caller has to tell
+ * The one name of db/migrations/0009_stage_b_schedules.sql that a caller has to tell
  * apart. Deleted playlists keep their stage A names: `playlist_delete_guard` now also
  * refuses while a schedule uses the playlist.
  */

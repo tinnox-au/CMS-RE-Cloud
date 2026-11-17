@@ -64,7 +64,7 @@ export interface DisplayPlanRow {
   default_fit: FitMode;
   route: 'browser';
   assigned_playlist_id: string | null;
-  /** A display has a playlist or a schedule assigned, never both (migration 0008). */
+  /** A display has a playlist or a schedule assigned, never both (migration 0009). */
   assigned_schedule_id: string | null;
   rotation: Rotation;
   working_hours: WorkingHours | null;

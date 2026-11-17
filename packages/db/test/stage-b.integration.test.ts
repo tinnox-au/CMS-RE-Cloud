@@ -136,7 +136,7 @@ describe('display rotation and working hours', () => {
     expect(await set(Array(7).fill(padded))).toBe(PG.check);
   });
 
-  it('grants the runtime role exactly rotation, working_hours and (0008) assigned_schedule_id on top of stage A', async () => {
+  it('grants the runtime role exactly rotation, working_hours and (0009) assigned_schedule_id on top of stage A', async () => {
     const { rows } = await migrator.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.column_privileges
        WHERE table_schema = 'public' AND table_name = 'display'
@@ -160,7 +160,7 @@ describe('display rotation and working hours', () => {
         // 0006
         'rotation',
         'working_hours',
-        // 0008
+        // 0009
         'assigned_schedule_id',
       ].sort(),
     );

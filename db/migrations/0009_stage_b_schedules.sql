@@ -1,4 +1,4 @@
--- 0008: portal v2, stage B slice 3: schedules (docs/portal-v2/stage-b.md, slice 3). 0001 to 0007 are unchanged.
+-- 0009: portal v2, stage B slice 3: schedules (docs/portal-v2/stage-b.md, slice 3). 0001 to 0008 are unchanged.
 --
 --   1. schedule: a named timetable with a default playlist.
 --   2. schedule_event: the weekly events of a schedule, in priority order.
@@ -147,15 +147,18 @@ END $$;
 
 -- ------------------------------------------------------------------ 5. publication
 
+-- The NULL-safe form of 0008 (IS TRUE: a missing field fails instead of passing), with 4 added.
 ALTER TABLE public.publication DROP CONSTRAINT publication_manifest_shape,
   ADD CONSTRAINT publication_manifest_shape CHECK (
-    jsonb_typeof(manifest) = 'object'
-    AND manifest ->> 'schemaVersion' IN ('1', '2', '3', '4')
-    AND manifest ->> 'publicationId' = id::text
-    AND manifest ->> 'displayId' = display_id::text
-    AND jsonb_typeof(manifest -> 'assets') = 'array'
-    AND jsonb_array_length(manifest -> 'assets') BETWEEN 1 AND 500
-    AND pg_column_size(manifest) <= 1048576
+    (
+      jsonb_typeof(manifest) = 'object'
+      AND manifest ->> 'schemaVersion' IN ('1', '2', '3', '4')
+      AND manifest ->> 'publicationId' = id::text
+      AND manifest ->> 'displayId' = display_id::text
+      AND jsonb_typeof(manifest -> 'assets') = 'array'
+      AND jsonb_array_length(manifest -> 'assets') BETWEEN 1 AND 500
+      AND pg_column_size(manifest) <= 1048576
+    ) IS TRUE
   );
 
 -- -------------------------------------------------------------- 6. RLS and grants

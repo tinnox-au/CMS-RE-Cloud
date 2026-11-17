@@ -906,10 +906,10 @@ Date: 2026-11-17. Read `README.md` and slices 1 and 2 of `stage-b.md` first. Pon
 - **Freeze:** v3 is frozen (0.3.0 is released). v4 is frozen the moment `player-web/0.4.0` is released; the next addition (dated events, layouts) is v5.
 - **Deploy order inside the release:** the API must run the v4 `ManifestSchema` before any v4 row is stored, because `GET /player/manifest` throws on a stored manifest that fails `ManifestSchema` (routes/player.ts:391). One build ships both, so this holds as long as contracts, API and migration go out together.
 
-### 2. Migration `db/migrations/0008_stage_b_schedules.sql`
+### 2. Migration `db/migrations/0009_stage_b_schedules.sql`
 
 ```sql
--- 0008: portal v2, stage B slice 3: schedules (docs/portal-v2/stage-b.md, slice 3). 0001 to 0007 are unchanged.
+-- 0009: portal v2, stage B slice 3: schedules (docs/portal-v2/stage-b.md, slice 3). 0001 to 0008 are unchanged.
 --
 --   1. schedule: a named timetable with a default playlist.
 --   2. schedule_event: the weekly events of a schedule, in priority order.
@@ -1454,7 +1454,7 @@ It names what the events ask for at the corrected clock, so "wrong content at 9"
   - Deleting an assigned schedule gives 23503 `display_assigned_schedule_fk`; deleting an unassigned one removes its events.
   - Manifest CHECK accepts 4 and refuses 5: rls.integration.test.ts:791 and stage-b.integration.test.ts:169 move to 5.
   - A v4 publication with `publication_asset` rows for media positions in two playlists is accepted by the 0004 guard.
-  - RLS lists: `TENANT_TABLES` gains `schedule` and `schedule_event`; `createOrg` (support.ts) seeds one schedule on the org's playlist with one event and `TestOrg.scheduleId`; the public-table list in migration-0005.integration.test.ts:551 gains both names ("// 0008, applied with the rest"). If a db test deletes an org's seeded playlist, seed the schedule on a second playlist and set `ROWS_PER_ORG.playlist = 2` instead.
+  - RLS lists: `TENANT_TABLES` gains `schedule` and `schedule_event`; `createOrg` (support.ts) seeds one schedule on the org's playlist with one event and `TestOrg.scheduleId`; the public-table list in migration-0005.integration.test.ts:551 gains both names ("// 0009, applied with the rest"). If a db test deletes an org's seeded playlist, seed the schedule on a second playlist and set `ROWS_PER_ORG.playlist = 2` instead.
 - **api** (new `apps/api/test/schedules.integration.test.ts`; additions elsewhere; `support.ts` gains `createSchedule` and `assignSchedule`):
   - CRUD with audit events; PUT replaces events and keeps order; unknown, deleted and other-organisation playlists give 400 with the right paths (`defaultPlaylistId`, `events.1.playlistId`); 51 events refused.
   - **Upper-case ids:** a POST and a PUT whose `defaultPlaylistId` and event `playlistId` are in upper case succeed, the DTO and the audit detail carry them in lower case (the audit-trail test at :194-200 is extended to schedules in the same way).
@@ -1499,8 +1499,8 @@ It names what the events ask for at the corrected clock, so "wrong content at 9"
   - packages/domain/src/{schedule (new), schedule.test (new), types, playlist, capability, manifest, push, index}.ts, playlist.test.ts, push.test.ts, fixtures.test-support.ts.
   - packages/delivery/test/{delivery.test.ts, fake-route.ts} where the draft type breaks.
   - Publish contracts `schedule.ts`, `manifest.ts` and domain `types.ts` first, with the exact names above.
-- **Wave 1 / WP2 Migration 0008 and DB tests** (section 2).
-  - db/migrations/0008_stage_b_schedules.sql; packages/db/src/constraints.ts (and index.ts if the new export needs it).
+- **Wave 1 / WP2 Migration 0009 and DB tests** (section 2).
+  - db/migrations/0009_stage_b_schedules.sql; packages/db/src/constraints.ts (and index.ts if the new export needs it).
   - packages/db/test/{stage-b-schedules.integration.test.ts (new), rls.integration.test.ts, migration-0005.integration.test.ts, stage-b.integration.test.ts, support.ts}, and any other packages/db/test file that pins the table list, the display grants or the accepted manifest versions; tests/integration/migration-backfill.test.ts if 0008 breaks it.
 - **Wave 2 / WP3 API** (section 5).
   - apps/api/src/{app.ts, publishing.ts, routes/schedules.ts (new), routes/displays.ts, routes/playlists.ts, routes/push.ts}.
@@ -1562,7 +1562,7 @@ Also deferred: event names; "screen off" events and an empty filler (working hou
 - A broken event playlist is retried every five minutes while its event is on; each retry restarts the playlist that was showing at its first item.
 - An event completely covered by events above it never plays, and the editor does not say so (shortcut).
 - Required-nullable `DisplayDto.assignedSchedule` and `PushPlanRow.schedule` break every strict fixture (mechanical; WP3, WP5 and WP6 own them), and the root typecheck and unit run are red from the end of Wave 1 until WP3, WP5 and WP6 have all landed. Checks are scoped per package and the orchestrator runs the root commands after Wave 2 (section 10).
-- 0008 re-reads every publication under ACCESS EXCLUSIVE: quiet window.
+- 0009 re-reads every publication under ACCESS EXCLUSIVE: quiet window.
 - The replaced `playlist_delete_guard` is shared with stage A behaviour; the regression test in section 8 guards it.
 - The 200-item total across a schedule may be tight for long playlists (client question 5).
 
@@ -1607,7 +1607,7 @@ Questions 1 and 2 decided what was written. The defaults below were built (2026-
 ### Slice 3: release note and rollback
 
 - Release note: **reload screens after upgrading the player to `player-web/0.4.0`, before assigning a schedule with events to them.** A running player is never reloaded by the server. Until its page is reloaded, a 0.3.0 or older player that is sent a v4 manifest reports `manifest_unsupported_version` and keeps playing its last content, or its waiting slate when it has none; the screen's Overview tab tells the operator to reload the player page. Such a player also asks for the manifest and sends a heartbeat about every 2 seconds until it is reloaded, so reload first. **Reload while the screen can reach the player host; if the Overview error stays, reload again** (a reload that gets no answer within 4 seconds shows the old build from the cache). The diagnostics overlay shows the build (`player-web/0.4.0`). Screens with a playlist, or with a schedule in which no event uses a playlist other than the default, keep getting v1 to v3.
-- Operations: rebuild (`npm run build`) and apply migration 0008 (`npm run db:migrate`) before the API of this slice starts; contracts, API and migration go out together, so no v4 row can exist before the API can read it. 0008 takes ACCESS EXCLUSIVE locks on `display` and `publication` and re-reads every publication: run it while the API is stopped or idle.
+- Operations: rebuild (`npm run build`) and apply migrations 0008 and 0009 (`npm run db:migrate`) before the API of this slice starts; contracts, API and migration go out together, so no v4 row can exist before the API can read it. 0008 takes ACCESS EXCLUSIVE locks on `display` and `publication` and re-reads every publication: run it while the API is stopped or idle.
 - Rollback: taking a player below 0.4.0 while a v4 version is stored on it is unsupported and blanks the screen. First, on the server: assign a playlist to the screen (or remove from its schedule every event that uses a playlist other than the default) and push; the push builds v1 to v3; wait until the screen reports it; then roll the player back. Taking the API below this slice after a v4 publication exists is unsupported for the same reason (`GET /player/manifest` would fail on it): push v1 to v3 to every scheduled screen first.
 
 ### Slice 3: as built (2026-11-17)
@@ -1664,6 +1664,7 @@ Built as specified above, except for the rows below. Checked at integration on 2
 | Event Start and End on a phone (section 7) | The event rows wrap at phone width (no sideways scroll) | Start and End keep their 160 px width and stack when the row is too narrow, instead of shrinking until a time such as "08:30 AM" is cut off. Checked from 320 to 1440 px on a static page that loads the portal CSS, not in the running portal. |
 | Editor leave guard while saving (section 7) | `useLeaveGuard` | `useLeaveGuard(dirty, …)`, as in the playlist and screen editors: the guard stays on during the save request and turns off only once the save succeeds, so a failed save cannot lose edits without a warning. |
 | Delete-schedule dialog opened again (section 7) | `DeleteScheduleDialog.tsx`, ConfirmDialog danger | Every open starts without the previous refusal and not busy, also when it opens again for the same schedule; the last schedule stays in the title while the dialog fades out. |
+| Migration number (section 2) | `0008_stage_b_schedules.sql` | `0009_stage_b_schedules.sql`. While this slice was built, `main` gained `0008_null_safe_checks.sql` (backend review round 1, CX-02), which rewrote `publication_manifest_shape` in a NULL-safe form (`(…) IS TRUE`). 0009 keeps that form and only adds version 4, so the CX-02 fix is not undone. Layouts therefore take 0010. |
 | Screens list "No playlist" on a screen that meanwhile got a schedule (section 7) | Success toast | The list's copy can be older than a schedule assigned in another tab. The PATCH then leaves the schedule in place, so instead of "Playlist unassigned" the list says "{name} now has a schedule" and how to remove it. An honest message, not a new option. |
 | Screen page Change menu while "Remove content" saves (section 7) | The busy button | Arrow keys on the busy Change button no longer open the menu, and a save or a picker started while a save runs is ignored, so two saves cannot overlap. |
 | Toast checks in the end-to-end files (section 8, e2e) | Not in the spec | Scoped to the Notifications region through a new `notifications(page)` helper in tests/e2e/support/portal.ts, in specs 08 and 09 and in `assignScheduleOnScreenPage`: 150 ms after a toast appears its words are copied into a hidden live region, and an unscoped `getByText` matched both. Spec 08 (slice 2) changed for its three toast checks only. |
@@ -1688,8 +1689,8 @@ Open client questions (the build uses the default shown). Questions 6 to 9 are b
 
 Layouts were not built beside this slice: both builds would have claimed the same migration number, manifest version and player version, and both change how a screen records its content. They are the next slice of stage B. Guidance for it, from what this slice shipped:
 
-- **Before it starts:** run the two end-to-end files of this slice (09 and 10) and get them green, apply 0008 to the development database, and have this slice committed. A layouts build on top of an unverified schedules build cannot tell its own faults from this slice's.
-- **Numbers:** migration `0009`, manifest v5, `player-web/0.5.0`. 0001 to 0008 are never edited. v4 is frozen the moment `player-web/0.4.0` is released, so any new field or item shape is v5, through the single `manifestVersionFor`. The migration must replace the `publication_manifest_shape` CHECK once more (to accept `'5'`), which re-reads every publication under an ACCESS EXCLUSIVE lock: a quiet window again.
+- **Before it starts:** run the two end-to-end files of this slice (09 and 10) and get them green, apply 0009 to the development database, and have this slice committed. A layouts build on top of an unverified schedules build cannot tell its own faults from this slice's.
+- **Numbers:** migration `0010`, manifest v5, `player-web/0.5.0`. 0001 to 0009 are never edited. v4 is frozen the moment `player-web/0.4.0` is released, so any new field or item shape is v5, through the single `manifestVersionFor`. The migration must replace the `publication_manifest_shape` CHECK once more (to accept `'5'`), which re-reads every publication under an ACCESS EXCLUSIVE lock: a quiet window again.
 - **One version cut for everything that needs one.** Dated events (section 11) also cost v5. If the client wants them (question 3), put them into the same v5 as layouts, so one version is cut and every screen is reloaded once.
 - **Model:** design on the shipped v4 shape. `assets` is one flat list and `schedule.playlists` names consecutive slices of it; regions of a layout can point at slices of the same flat list, which keeps the 0004 `publication_asset` guard, staging, verification, garbage collection, heartbeat v1 and `activeItemIndex` untouched, as they were here. `manifestPlaylists` is the version-free view the player already uses.
 - **What a screen has assigned:** `display` now has `assigned_playlist_id` and `assigned_schedule_id` under the `display_one_assignment` CHECK (`num_nonnulls(...) <= 1`), column by column grants, and a PATCH rule in which a non-null id on one side clears the other in one UPDATE. A third kind of content must extend all three, and every place that reads "what is assigned" (`DisplayDto`, `PushPlanRow`, `assessDisplays`, the screen page's Content card, the push dialog, the screens list). `publication.playlist_id` is `NOT NULL` and holds the default playlist of a scheduled publication; decide what it holds for a layout.

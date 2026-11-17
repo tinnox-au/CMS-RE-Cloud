@@ -1,6 +1,6 @@
 /**
  * The schedule tables, the schedule a display has assigned, the playlist guards and the
- * version 4 manifest added by migration 0008 (portal v2, stage B slice 3), exercised as the
+ * version 4 manifest added by migration 0009 (portal v2, stage B slice 3), exercised as the
  * runtime role tinnox_app against a real PostgreSQL. Tenant isolation of `schedule` and
  * `schedule_event` is covered with every other table in rls.integration.test.ts.
  */

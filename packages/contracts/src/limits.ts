@@ -101,7 +101,7 @@ export const ABSOLUTE = Object.freeze({
   minCanvasSidePx: 16,
   maxCanvasSidePx: 16_384,
   maxPlaylistItems: 500,
-  /** Weekly events in one schedule. Twin of the schedule_event position CHECK (0008). */
+  /** Weekly events in one schedule. Twin of the schedule_event position CHECK (0009). */
   maxScheduleEvents: 50,
   maxItemDurationMs: 24 * 60 * 60 * 1000,
   maxAssetBytes: 2 * 1024 * 1024 * 1024,

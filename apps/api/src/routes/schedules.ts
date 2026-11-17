@@ -37,7 +37,7 @@ interface ScheduleRow {
   assigned_display_count: string;
 }
 
-/** Select list for `SCHEDULE_FROM`. A playlist that a schedule uses cannot be deleted (0008). */
+/** Select list for `SCHEDULE_FROM`. A playlist that a schedule uses cannot be deleted (0009). */
 const SCHEDULE_COLUMNS = `s.id, s.name, s.description, s.created_at, s.updated_at,
   dp.id AS default_playlist_id, dp.name AS default_playlist_name,
   (SELECT count(*) FROM schedule_event e
@@ -158,7 +158,7 @@ async function saveSchedule(
     scheduleId = created;
   } else {
     scheduleId = id;
-    // Event rows are replaced as a set: they have no UPDATE grant (migration 0008).
+    // Event rows are replaced as a set: they have no UPDATE grant (migration 0009).
     await tx.query('DELETE FROM schedule_event WHERE schedule_id = $1 AND org_id = app_org_id()', [
       id,
     ]);

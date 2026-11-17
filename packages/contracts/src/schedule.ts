@@ -42,7 +42,7 @@ export function checkScheduleRule(
  * - `end > start`: a window on one day, `[start, end)`.
  * - `end < start`: the event runs past midnight into the next day.
  * - `00:00` to `24:00`: the whole day.
- * A day in `days` is the day on which the event starts. Twin of the schedule_event CHECKs (0008).
+ * A day in `days` is the day on which the event starts. Twin of the schedule_event CHECKs (0009).
  */
 export const ScheduleRuleSchema = z
   .object(scheduleRuleShape)
