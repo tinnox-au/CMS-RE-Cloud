@@ -4,7 +4,7 @@
  * Nothing here goes through the API: these are the policies themselves.
  */
 import { randomUUID } from 'node:crypto';
-import type pg from 'pg';
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withOrg, withoutOrg, withResolvedOrg, type Pool } from '../src/index.ts';
 import { appPool, createOrg, migratorClient, PG, pgCode, type TestOrg } from './support.ts';
@@ -141,6 +141,50 @@ describe('the runtime role itself', () => {
       await pgCode(pool.query('ALTER TABLE publication DISABLE TRIGGER publication_immutable')),
     ).toBe(PG.insufficientPrivilege);
     expect(await pgCode(pool.query('TRUNCATE media'))).toBe(PG.insufficientPrivilege);
+  });
+
+  it('keeps its timeouts and row security on new connections when it changes its own defaults (round 3, SCU-02)', async () => {
+    // PostgreSQL lets every role change its own defaults; no grant can stop it.
+    const alterOwnDefaults = (clause: string): Promise<unknown> =>
+      pool.query(
+        `DO $$ BEGIN EXECUTE format('ALTER ROLE CURRENT_USER IN DATABASE %I ${clause}', current_database()); END $$`,
+      );
+    try {
+      for (const clause of [
+        'SET statement_timeout = 0',
+        'SET lock_timeout = 0',
+        'SET idle_in_transaction_session_timeout = 0',
+        'SET row_security = off',
+      ]) {
+        await alterOwnDefaults(clause);
+      }
+      // A plain connection gets the changed defaults: the change took effect...
+      const plain = new pg.Client({ connectionString: process.env['TEST_DATABASE_URL'] });
+      await plain.connect();
+      try {
+        const { rows } = await plain.query<{ lt: string; rs: string }>(
+          "SELECT current_setting('lock_timeout') AS lt, current_setting('row_security') AS rs",
+        );
+        expect(rows[0]).toEqual({ lt: '0', rs: 'off' });
+      } finally {
+        await plain.end();
+      }
+      // ...but the API's pool sets its own values when it connects, and they win.
+      const fresh = appPool(1);
+      try {
+        const { rows } = await fresh.query<Record<string, string>>(
+          `SELECT current_setting('statement_timeout') AS statement,
+                  current_setting('lock_timeout') AS lock,
+                  current_setting('idle_in_transaction_session_timeout') AS idle,
+                  current_setting('row_security') AS row_security`,
+        );
+        expect(rows[0]).toEqual({ statement: '15s', lock: '5s', idle: '30s', row_security: 'on' });
+      } finally {
+        await fresh.end();
+      }
+    } finally {
+      await alterOwnDefaults('RESET ALL');
+    }
   });
 
   it('has no access at all to session, login-state, pairing and migration tables', async () => {
