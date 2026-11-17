@@ -5,6 +5,7 @@ import {
   type PlayerError,
 } from '@tinnox/contracts';
 import { downloadAsset } from './download.ts';
+import { retryAfterMsOf } from './retry-after.ts';
 import {
   AbortedError,
   PlayerFault,
@@ -49,7 +50,8 @@ export interface StagingDeps {
 
 export type StageOutcome =
   | { readonly kind: 'activated'; readonly publicationId: string }
-  | { readonly kind: 'failed'; readonly error: PlayerError }
+  /** `retryAfterMs`: the server's `Retry-After` on the last download attempt, if it sent one. */
+  | { readonly kind: 'failed'; readonly error: PlayerError; readonly retryAfterMs: number | null }
   /** The server published something newer while this one was downloading. */
   | { readonly kind: 'superseded'; readonly next: Manifest };
 
@@ -289,7 +291,7 @@ export async function stagePublication(
       // Storage is failing too. The active version is untouched, which is what matters.
       deps.onProgress?.({ ...record, phase: 'failed' });
     }
-    return { kind: 'failed', error };
+    return { kind: 'failed', error, retryAfterMs: retryAfterMsOf(err) };
   }
 
   // Activation is committed. Cleaning up is best effort and can never undo it.

@@ -156,3 +156,5 @@ CX-02, CX-03, CX-04 and CU-02 are fixed. CX-01 is an accepted residual (the logo
 CU-01 is partly fixed, because restore verification still fails when there are zero ready media.
 CU-03 is partly fixed, because the B12 row in `control-matrix.md` still says "CI not yet run".
 The logout fallback log says the session ended even when revocation failed; that is a new low item.
+
+Follow-up (branch `fix/verification-r1-r2`): CU-01 restore verification now passes a database with no ready media (an empty restore is still caught by the row counts and the publication check); CU-03's B12 gap now names only the end-to-end job; the logout fallback logs whether the retried revocation succeeded. CX-01's logout exception stays accepted.

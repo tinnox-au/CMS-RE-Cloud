@@ -93,9 +93,16 @@ check_files() { # stdin: "<sha256> <storage_key> <bytes>" per line; $1: label
 }
 
 echo "== b. ready media rows against restored files"
-psql_in "$RESTORE_DB" -F ' ' \
-  -c "SELECT sha256, storage_key, bytes FROM media WHERE status = 'ready' AND storage_key IS NOT NULL ORDER BY storage_key" \
-  | check_files "media rows" || FAIL=1
+READY="FROM media WHERE status = 'ready' AND storage_key IS NOT NULL"
+# No ready media is not a failure: an organisation may publish only apps. An empty restore
+# is still caught by the row counts (a) and by the publication check (c).
+if [ "$(psql_in "$RESTORE_DB" -c "SELECT count(*) $READY")" = "0" ]; then
+  echo "media rows: none ready, nothing to check"
+else
+  psql_in "$RESTORE_DB" -F ' ' \
+    -c "SELECT sha256, storage_key, bytes $READY ORDER BY storage_key" \
+    | check_files "media rows" || FAIL=1
+fi
 # Thumbnails are optional (images only, none before migration 0006), so none is not a failure.
 THUMB_KEYS=$(psql_in "$RESTORE_DB" -c "SELECT thumb_storage_key FROM media WHERE thumb_storage_key IS NOT NULL ORDER BY 1")
 THUMBS=0; THUMBS_BAD=0

@@ -64,10 +64,12 @@ export async function downloadAsset(asset: ManifestAssetV1, deps: DownloadDeps):
   for (;;) {
     throwIfAborted(deps.signal);
     if (failures >= maxAttempts) {
+      // A Retry-After on the last attempt still applies: the sync loop waits for it before
+      // the next update attempt asks for this asset again.
       throw new PlayerFault(
         last.code,
         `download gave up after ${failures} attempts: ${last.detail}`,
-        { assetId: asset.assetId },
+        { assetId: asset.assetId, retryAfterMs },
       );
     }
     if (failures > 0) {

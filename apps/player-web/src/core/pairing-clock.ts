@@ -37,3 +37,18 @@ export function canReusePairing(
 export function pairingAbandoned(localDeadlineMs: number, nowMs: number): boolean {
   return nowMs >= localDeadlineMs + PAIRING_EXPIRY_SLACK_MS;
 }
+
+/**
+ * How long to wait after a failed poll. `waitMs` is the ordinary wait, which is cut short at
+ * the code's local deadline so an expired code is replaced rather than held (at least one
+ * second). A `Retry-After` from the server (`heldMs`) is never cut short: the deadline only
+ * shortens the player's own backoff.
+ */
+export function pairingPollRetryWait(
+  waitMs: number,
+  heldMs: number,
+  localDeadlineMs: number,
+  nowMs: number,
+): number {
+  return Math.max(heldMs, Math.min(waitMs, Math.max(1_000, localDeadlineMs - nowMs)));
+}

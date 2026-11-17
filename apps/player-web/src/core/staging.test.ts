@@ -476,6 +476,22 @@ describe('stagePublication: a failure at any step keeps the previous version', (
     expectOldVersionIntact(w);
   });
 
+  it('a download that gives up on a 429 hands its Retry-After to the sync loop (FCX-06)', async () => {
+    w.api.mediaUrlsFailure = new PlayerFault('download_failed', 'injected: throttled', {
+      status: 429,
+      retryAfterMs: 600_000,
+    });
+    const outcome = await stagePublication(w.next, w.deps);
+    expect(outcome).toMatchObject({ kind: 'failed', retryAfterMs: 600_000 });
+    expectOldVersionIntact(w);
+  });
+
+  it('a download that gives up without a Retry-After hands none on', async () => {
+    w.api.mediaUrlsFailure = new PlayerFault('network_error', 'injected: unreachable');
+    const outcome = await stagePublication(w.next, w.deps);
+    expect(outcome).toMatchObject({ kind: 'failed', retryAfterMs: null });
+  });
+
   it('with no previous version, a failed first update leaves the player with nothing active', async () => {
     w.state.active = null;
     w.api.media.delete(w.fresh1.asset.assetId);

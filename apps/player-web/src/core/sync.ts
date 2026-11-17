@@ -43,6 +43,8 @@ export type CycleResult =
       readonly kind: 'update_failed';
       readonly error: PlayerError;
       readonly publicationId: string | null;
+      /** The server's `Retry-After` on the download that ended the update, if it sent one. */
+      readonly retryAfterMs?: number | null;
     };
 
 export interface SyncDeps extends StagingDeps {
@@ -131,7 +133,12 @@ export async function syncCycle(deps: SyncDeps): Promise<CycleResult> {
     if (outcome.kind === 'activated') return outcome;
     if (outcome.kind === 'failed') {
       deps.report(outcome.error);
-      return { kind: 'update_failed', error: outcome.error, publicationId: manifest.publicationId };
+      return {
+        kind: 'update_failed',
+        error: outcome.error,
+        publicationId: manifest.publicationId,
+        retryAfterMs: outcome.retryAfterMs,
+      };
     }
     if (hop + 1 >= MAX_SUPERSEDED_HOPS) {
       const error = toPlayerError(
@@ -171,8 +178,8 @@ export function nextCounters(previous: SyncCounters, result: CycleResult): SyncC
 
 /**
  * Delay before the next cycle, given the counters AFTER applying the last result.
- * `retryAfterMs` is the capped wait from a 429. The result is at least the ordinary
- * backoff and at least that wait.
+ * `retryAfterMs` is the capped wait from a 429 (on the manifest request, or on the download
+ * that ended a failed update). The result is at least the ordinary backoff and at least that wait.
  */
 export function nextSyncDelay(
   counters: SyncCounters,
@@ -187,7 +194,10 @@ export function nextSyncDelay(
     );
   }
   if (counters.updateFailures > 0) {
-    return backoffDelay(timings.updateBackoff, counters.updateFailures, random);
+    return retryDelay(
+      backoffDelay(timings.updateBackoff, counters.updateFailures, random),
+      retryAfterMs,
+    );
   }
   return jitteredInterval(timings.pollIntervalMs, timings.pollSpread, random);
 }
@@ -325,7 +335,10 @@ export class SyncLoop {
       this.#onSettled(result);
 
       counters = nextCounters(counters, result);
-      const retryAfterMs = result.kind === 'unreachable' ? result.retryAfterMs : null;
+      const retryAfterMs =
+        result.kind === 'unreachable' || result.kind === 'update_failed'
+          ? (result.retryAfterMs ?? null)
+          : null;
       const delay = nextSyncDelay(counters, this.#timings, this.#deps.random, retryAfterMs);
       const held = heldRetryMs(retryAfterMs);
       this.#status = {
@@ -336,7 +349,8 @@ export class SyncLoop {
         counters,
       };
 
-      // A 429's Retry-After is not cut short by a wake (the network returned, or a publish hint).
+      // A 429's Retry-After is not cut short by a wake (the network returned, or a publish hint),
+      // including one on the last attempt of a download that ended the update.
       if (held > 0) {
         try {
           await this.#deps.sleep(held, signal);

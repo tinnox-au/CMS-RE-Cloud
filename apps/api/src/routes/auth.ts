@@ -279,8 +279,19 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
       } catch (error) {
         // Ending a session is the safe direction, so a sign-out that cannot be audited still
         // ends it. Sign-in and pairing do the opposite: no audit event, no credential.
-        await sessionRevoke(unscoped, session.idHash).catch(() => undefined);
-        request.log.error({ err: error }, 'sign-out was not audited; the session was ended anyway');
+        const ended = await sessionRevoke(unscoped, session.idHash).then(
+          () => true,
+          (revokeError: unknown) => {
+            request.log.error({ err: revokeError }, 'sign-out could not end the session either');
+            return false;
+          },
+        );
+        request.log.error(
+          { err: error },
+          ended
+            ? 'sign-out was not audited; the session was ended anyway'
+            : 'sign-out was not audited and the session may still be active',
+        );
         throw error;
       }
       if (revoked === null) {

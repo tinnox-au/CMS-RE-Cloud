@@ -195,3 +195,5 @@ The same check of `main` at `f138439` is recorded in [Fix verification for revie
 Every finding in this round is fixed except FCX-06, which is partly fixed, because `Retry-After` is dropped after the last download attempt and near pairing expiry.
 `player-protocol-v1.md` still describes clipping below `shortSide/12`; that is a low documentation mismatch.
 
+Follow-up (branch `fix/verification-r1-r2`): FCX-06 is completed. A download that gives up carries the `Retry-After` of its last attempt to the sync loop, which holds the next update for it (`staging.test.ts`, `backoff.test.ts`), and a failed pairing poll near expiry waits for the full `Retry-After` (`pairing-clock.test.ts`). `player-protocol-v1.md` now describes the `shortSide/24` fallback.
+
