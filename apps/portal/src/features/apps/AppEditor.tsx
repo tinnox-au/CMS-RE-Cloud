@@ -563,8 +563,8 @@ export function AppEditor({ initial }: AppEditorProps) {
             {overflow && (
               <div data-testid="app-editor-overflow">
                 <Banner tone="warn" live="polite">
-                  Not all the text fits this screen shape. Shorten the text or preview another
-                  shape.
+                  The text does not fit this screen shape at a readable size, so it is shown
+                  smaller. Shorten the text or preview another shape.
                 </Banner>
               </div>
             )}

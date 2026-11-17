@@ -43,6 +43,11 @@ interface Box {
   height: number;
   /** Readability floor for any font size. */
   min: number;
+  /**
+   * The size text may still shrink to when it does not fit at `min`: half of it. Text that small
+   * is reported as overflowing, but it is shown whole rather than cut (FCU-02).
+   */
+  last: number;
   /** The root padding, reused as the gap between a QR code and its caption. */
   gap: number;
 }
@@ -89,15 +94,42 @@ function stage(root: HTMLElement): HTMLDivElement {
   return el;
 }
 
+/** The largest size to try, the readability floor, and the last resort below it (see Box). */
+interface Sizes {
+  readonly max: number;
+  readonly min: number;
+  readonly last: number;
+}
+
+/**
+ * The last resort of every fit: breaks a word that is wider than the box anywhere (a URL, a run
+ * of letters with no space) and fits again. Wrapping at spaces alone never shortens such a word,
+ * so at the readability floor it was cut at both edges (FCU-02 in
+ * docs/reviews/2026-11-17-frontend-round-2). Ordinary words still break only at spaces unless
+ * this is needed. Returns true when the text overflows even so (it is then too much for the box).
+ */
+function fitBreakingWords(el: HTMLElement, box: HTMLElement, sizes: Sizes): boolean {
+  el.style.setProperty('overflow-wrap', 'normal');
+  if (!fitText(el, box, sizes)) return false;
+  el.style.setProperty('overflow-wrap', 'anywhere');
+  if (!fitText(el, box, sizes)) return false;
+  // Still too much text for the readable floor: show it smaller rather than cut it, and report
+  // it (the portal warns that it does not fit at a readable size).
+  fitText(el, box, { max: sizes.min, min: sizes.last });
+  return true;
+}
+
 /**
  * Fits `el` on one line when that is possible at a readable size, and wrapped otherwise (a long
- * date on a portrait screen). Returns true when it overflows even wrapped.
+ * date on a portrait screen), breaking a word only when it is wider than the box. Returns true
+ * when it overflows even then.
  */
-function fitLines(el: HTMLElement, box: HTMLElement, sizes: { max: number; min: number }): boolean {
+function fitLines(el: HTMLElement, box: HTMLElement, sizes: Sizes): boolean {
+  el.style.setProperty('overflow-wrap', 'normal');
   el.style.setProperty('white-space', 'nowrap');
   if (!fitText(el, box, sizes)) return false;
   el.style.setProperty('white-space', 'normal');
-  return fitText(el, box, sizes);
+  return fitBreakingWords(el, box, sizes);
 }
 
 /** Rewrites text only when it changes; re-fits only when its length changes (tabular digits). */
@@ -117,7 +149,7 @@ function ticking(root: HTMLElement, ctx: Ctx, text: () => string): Drawn {
     setText(value, text(), ctx);
     return true;
   });
-  return { layout: (b) => fitLines(value, box, { max: 0.8 * b.height, min: b.min }) };
+  return { layout: (b) => fitLines(value, box, { max: 0.8 * b.height, min: b.min, last: b.last }) };
 }
 
 function clock(root: HTMLElement, s: ClockSettings, ctx: Ctx): Drawn {
@@ -152,7 +184,7 @@ function countdown(root: HTMLElement, s: CountdownSettings, ctx: Ctx): Drawn {
     ctx.refit();
     return false;
   });
-  return { layout: (b) => fitLines(block, box, { max: 0.6 * b.height, min: b.min }) };
+  return { layout: (b) => fitLines(block, box, { max: 0.6 * b.height, min: b.min, last: b.last }) };
 }
 
 /**
@@ -174,11 +206,12 @@ function textBlock(root: HTMLElement, heading: string, body: string): Drawn {
   const share = body === '' ? 0.8 : 0.5;
   return {
     layout(b) {
-      const sizes = { max: share * b.height, min: b.min };
+      const sizes = { max: share * b.height, min: b.min, last: b.last };
+      block.style.setProperty('overflow-wrap', 'normal');
       head.style.setProperty('white-space', 'nowrap');
       if (!fitText(block, box, sizes)) return false;
       head.style.setProperty('white-space', 'normal');
-      return fitText(block, box, sizes);
+      return fitBreakingWords(block, box, sizes);
     },
   };
 }
@@ -283,7 +316,7 @@ function qr(root: HTMLElement, s: QrSettings): Drawn {
         'margin-left': beside ? px(b.gap) : '0',
         'margin-top': beside ? '0' : px(b.gap),
       });
-      return fitLines(caption, slot, { max: 0.25 * b.height, min: b.min });
+      return fitLines(caption, slot, { max: 0.25 * b.height, min: b.min, last: b.last });
     },
   };
 }
@@ -362,7 +395,13 @@ export function renderApp(content: AppContent, env: AppEnv): AppView {
     const gap = Math.round(0.04 * short);
     root.style.setProperty('padding', px(gap));
     // shortcut: the readability floor is 1/12 of the short side; tune per pixel pitch if reported.
-    box = { width: width - 2 * gap, height: height - 2 * gap, min: short / 12, gap };
+    box = {
+      width: width - 2 * gap,
+      height: height - 2 * gap,
+      min: short / 12,
+      last: short / 24,
+      gap,
+    };
     ctx.refit();
     resolveReady();
   });
