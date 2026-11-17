@@ -28,7 +28,6 @@ None.
 | CMS-2 | Layouts (stage B): split a screen into zones, each with its own content | proposed | - | 17 Nov |
 | CMS-3 | Apps that use outside data (weather and similar); needs the P2-06 threat review first | proposed | - | 17 Nov |
 | CMS-4 | Real-hardware check: scan the QR app with a phone and run the player on a low-power device | proposed | - | 17 Nov |
-| CMS-5 | Backend review round 1: decide and fix the two medium findings (CX-01 audit with credential changes, CU-01 backup check with apps) | proposed | - | 17 Nov |
 | CMS-6 | Screen-reader listening pass (VoiceOver or NVDA) on the portal before customers rely on it; start with the schedule editor | proposed | - | 17 Nov |
 
 ## To do
@@ -37,7 +36,9 @@ None.
 
 ## In progress
 
-None.
+| Id | Card | Agreed | PR | Since |
+|---|---|---|---|---|
+| CMS-5 | Backend review round 1: decide and fix the two medium findings (CX-01 audit with credential changes, CU-01 backup check with apps) | Michael 17 Nov | - | 17 Nov |
 
 ## In review
 
