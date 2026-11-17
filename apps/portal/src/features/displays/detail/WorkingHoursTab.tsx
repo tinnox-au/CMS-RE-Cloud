@@ -21,6 +21,7 @@ import {
   useToast,
 } from '../../../ui/index.ts';
 import { usePush } from '../../push/PushContext.tsx';
+import type { SectionSave } from './types.ts';
 
 const FORM_ERROR_ID = 'screen-detail-hours-form-error';
 
@@ -32,17 +33,25 @@ export interface WorkingHoursTabProps {
   readonly draft: WorkingHoursDraft | null;
   readonly onDraft: (draft: WorkingHoursDraft | null) => void;
   readonly onSaved: (display: DisplayDto) => void;
+  /** Kept by the page so a save outlives the tab (FCX-03). */
+  readonly save: SectionSave;
 }
 
 /** When the screen shows content: always, or on chosen days between two times. */
-export function WorkingHoursTab({ display, site, draft, onDraft, onSaved }: WorkingHoursTabProps) {
+export function WorkingHoursTab({
+  display,
+  site,
+  draft,
+  onDraft,
+  onSaved,
+  save: saveState,
+}: WorkingHoursTabProps) {
   const toast = useToast();
   const push = usePush();
   const value = draft ?? workingHoursDraftOf(display.workingHours);
   const dirty = draft !== null && workingHoursDirty(draft, display.workingHours);
   const [attempted, setAttempted] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<unknown>(null);
+  const { saving, error: saveError, setSaving, setError: setSaveError } = saveState;
   const rootRef = useRef<HTMLDivElement>(null);
   const result = validateWorkingHours(value);
   const errors = attempted && !result.ok ? result.errors : null;

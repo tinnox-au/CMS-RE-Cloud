@@ -37,6 +37,7 @@ import {
 } from '../../../ui/index.ts';
 import { usePush } from '../../push/PushContext.tsx';
 import { CanvasFrame } from './CanvasFrame.tsx';
+import type { SectionSave } from './types.ts';
 
 type PixelField = 'width' | 'height' | 'rectX' | 'rectY' | 'rectWidth' | 'rectHeight';
 
@@ -71,6 +72,8 @@ export interface CanvasTabProps {
   readonly rotationDraft: Rotation | null;
   readonly onRotationDraft: (rotation: Rotation | null) => void;
   readonly onSaved: (display: DisplayDto) => void;
+  /** Kept by the page so a save outlives the tab (FCX-03). */
+  readonly save: SectionSave;
 }
 
 /**
@@ -85,6 +88,7 @@ export function CanvasTab({
   rotationDraft,
   onRotationDraft,
   onSaved,
+  save: saveState,
 }: CanvasTabProps) {
   const { limits } = useSession();
   const toast = useToast();
@@ -94,8 +98,7 @@ export function CanvasTab({
   const dirty =
     (draft !== null || rotationDraft !== null) && canvasFormDirty(values, display, rotation);
   const [errors, setErrors] = useState<DisplayFormErrors>({});
-  const [saveError, setSaveError] = useState<unknown>(null);
-  const [saving, setSaving] = useState(false);
+  const { saving, error: saveError, setSaving, setError: setSaveError } = saveState;
   const summaryRef = useRef<HTMLDivElement>(null);
   const controls = useRef<Partial<Record<DisplayFormField, HTMLElement | null>>>({});
 

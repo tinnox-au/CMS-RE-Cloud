@@ -1,9 +1,9 @@
 import type { DisplayDto } from '@tinnox/contracts';
-import { useState } from 'react';
 import { api } from '../../../api/index.ts';
 import { sameTagIds, tagsSavedText } from '../../../lib/screenDetail.ts';
 import { Button, ErrorNotice, Field, useToast } from '../../../ui/index.ts';
 import { TagPicker, type TagsResource } from '../../shared/index.ts';
+import type { SectionSave } from './types.ts';
 
 export interface TagsTabProps {
   readonly display: DisplayDto;
@@ -13,15 +13,16 @@ export interface TagsTabProps {
   readonly draft: readonly string[] | null;
   readonly onDraft: (draft: readonly string[] | null) => void;
   readonly onSaved: (display: DisplayDto) => void;
+  /** Kept by the page so a save outlives the tab (FCX-03). */
+  readonly save: SectionSave;
 }
 
 /** The screen's tags: choose or create them, then save. Tags group screens in the list. */
-export function TagsTab({ display, tags, draft, onDraft, onSaved }: TagsTabProps) {
+export function TagsTab({ display, tags, draft, onDraft, onSaved, save: saveState }: TagsTabProps) {
   const toast = useToast();
   const value = draft ?? display.tagIds;
   const dirty = draft !== null && !sameTagIds(draft, display.tagIds);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<unknown>(null);
+  const { saving, error: saveError, setSaving, setError: setSaveError } = saveState;
 
   const save = () => {
     if (saving || !dirty) return;

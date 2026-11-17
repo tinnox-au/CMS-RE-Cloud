@@ -18,3 +18,16 @@ export interface RevokeState {
   /** What the API answered, in words, once the revocation is done. */
   readonly result: string | null;
 }
+
+/**
+ * The save state of one settings tab. The page keeps it, not the tab, because switching tabs
+ * unmounts the tab: a save still running when its tab comes back must still hold the form
+ * read-only, so the answer replaces only the draft it saved (FCX-03 in
+ * docs/reviews/2026-11-17-frontend-round-2), and a failure must still be shown.
+ */
+export interface SectionSave {
+  readonly saving: boolean;
+  readonly error: unknown;
+  readonly setSaving: (saving: boolean) => void;
+  readonly setError: (error: unknown) => void;
+}

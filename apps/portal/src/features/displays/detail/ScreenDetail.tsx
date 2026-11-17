@@ -27,6 +27,7 @@ import { ScreenTabs } from './ScreenTabs.tsx';
 import { SummaryCard } from './SummaryCard.tsx';
 import type { RevokeOrigin, RevokeState, ScreenDetailData } from './types.ts';
 import { useAssignedPlaylist } from './useAssignedPlaylist.ts';
+import { useSectionSave } from './useSectionSave.ts';
 import './screenDetail.css';
 
 export type { ScreenDetailData } from './types.ts';
@@ -77,6 +78,11 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
   const [rotationDraft, setRotationDraft] = useState<Rotation | null>(null);
   const [tagsDraft, setTagsDraft] = useState<readonly string[] | null>(null);
   const [workingHoursDraft, setWorkingHoursDraft] = useState<WorkingHoursDraft | null>(null);
+  // Save state too: a save outlives its tab, so its answer cannot clear newer input (FCX-03).
+  const canvasSave = useSectionSave();
+  const tagsSave = useSectionSave();
+  const workingHoursSave = useSectionSave();
+  const saving = canvasSave.saving || tagsSave.saving || workingHoursSave.saving;
 
   const dirty =
     (detailsDraft !== null && screenDetailsDirty(detailsDraft, display)) ||
@@ -89,7 +95,7 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
     (tagsDraft !== null && !sameTagIds(tagsDraft, display.tagIds)) ||
     (workingHoursDraft !== null && workingHoursDirty(workingHoursDraft, display.workingHours));
 
-  const leaveGuard = useLeaveGuard(dirty, display.name);
+  const leaveGuard = useLeaveGuard(dirty, display.name, saving);
 
   const changed = (next: DisplayDto) => {
     onChanged({ display: next, site });
@@ -201,6 +207,7 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
               workingHoursDraft={workingHoursDraft}
               onWorkingHoursDraft={setWorkingHoursDraft}
               onSaved={changed}
+              saves={{ canvas: canvasSave, tags: tagsSave, workingHours: workingHoursSave }}
               onPaired={afterPlayerChange}
               onRevoke={() => {
                 askRevoke('pairing');
