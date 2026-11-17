@@ -61,7 +61,10 @@ export function PageHeader({
         )}
         <div className="tx-page-header__heading">
           {back !== undefined && <BackLink to={back.to}>{back.label}</BackLink>}
-          <h1 className="tx-page-header__title">{title}</h1>
+          {/* A long name is cut short here; `title` lets a pointer read the whole of it. */}
+          <h1 className="tx-page-header__title" title={title}>
+            {title}
+          </h1>
           {subtitle !== undefined && subtitle !== null && subtitle !== false && (
             <p className="tx-page-header__subtitle">{subtitle}</p>
           )}

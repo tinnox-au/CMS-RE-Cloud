@@ -8,6 +8,7 @@ import { backoffDelay, jitteredInterval, type BackoffPolicy } from './backoff.ts
 import { AbortedError, PlayerFault, RevokedError, toPlayerError } from './errors.ts';
 import { heldRetryMs, retryAfterMsOf, retryDelay } from './retry-after.ts';
 import { collectGarbage, stagePublication, type StagingDeps } from './staging.ts';
+import { uniqueAssets } from './types.ts';
 
 export interface SyncTimings {
   /** Regular manifest poll interval. */
@@ -67,10 +68,15 @@ export async function syncCycle(deps: SyncDeps): Promise<CycleResult> {
   const nowIso = (): string => new Date(deps.clock.now()).toISOString();
   const active = await deps.state.getActive();
   const activeId = active?.manifest.publicationId ?? null;
+  // The browser may evict cached media while keeping the active version in IndexedDB. An
+  // incomplete active publication is then repaired from the server: asked for without
+  // If-None-Match, so the server sends the manifest, and staged again even when its id has
+  // not changed (FCX-02 in docs/reviews/2026-11-17-frontend-round-2).
+  const incomplete = active !== null && !(await isComplete(active.manifest, deps));
 
   let fetched;
   try {
-    fetched = await deps.api.fetchManifest(activeId, deps.signal);
+    fetched = await deps.api.fetchManifest(incomplete ? null : activeId, deps.signal);
   } catch (err) {
     if (err instanceof RevokedError || err instanceof AbortedError) throw err;
     const error = toPlayerError(err, {
@@ -116,8 +122,9 @@ export async function syncCycle(deps: SyncDeps): Promise<CycleResult> {
       deps.report(error);
       return { kind: 'update_failed', error, publicationId: null };
     }
-    // The server repeated what is already active (it ignored If-None-Match): nothing to do.
-    if (manifest.publicationId === activeId) return { kind: 'up_to_date' };
+    // The server repeated what is already active (it ignored If-None-Match): nothing to do,
+    // unless media of it has gone from the cache.
+    if (manifest.publicationId === activeId && !incomplete) return { kind: 'up_to_date' };
 
     deps.onAttempt?.(manifest.publicationId);
     const outcome = await stagePublication(manifest, deps);
@@ -135,6 +142,14 @@ export async function syncCycle(deps: SyncDeps): Promise<CycleResult> {
     }
     manifest = outcome.next;
   }
+}
+
+/** True when every media file of `manifest` is in the asset store with its exact size. */
+async function isComplete(manifest: Manifest, deps: SyncDeps): Promise<boolean> {
+  for (const asset of uniqueAssets(manifest)) {
+    if (!(await deps.assets.has(asset.sha256, asset.bytes))) return false;
+  }
+  return true;
 }
 
 export interface SyncCounters {

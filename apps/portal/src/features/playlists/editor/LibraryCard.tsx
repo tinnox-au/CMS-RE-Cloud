@@ -355,7 +355,10 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
                           </span>
                           {/* The name comes from the content, so it holds every word shown (WCAG 2.5.3). */}
                           <span className="tx-visually-hidden">Add </span>
-                          <span className="tx-playlist-editor-media__name tx-truncate">
+                          <span
+                            className="tx-playlist-editor-media__name tx-truncate"
+                            title={app.name}
+                          >
                             {app.name}
                           </span>
                           <span className="tx-visually-hidden">, </span>
@@ -409,7 +412,9 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
                         </span>
                         {/* The name comes from the content, so it holds every word shown (WCAG 2.5.3). */}
                         <span className="tx-visually-hidden">Add </span>
-                        <span className="tx-playlist-editor-media__name tx-truncate">{name}</span>
+                        <span className="tx-playlist-editor-media__name tx-truncate" title={name}>
+                          {name}
+                        </span>
                         <span className="tx-visually-hidden">, </span>
                         <span className="tx-playlist-editor-media__details">
                           <span className="tx-playlist-editor-media__meta">

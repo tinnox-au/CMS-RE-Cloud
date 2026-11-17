@@ -502,6 +502,18 @@
   display: none;
 }
 
+/*
+ * On a narrow window the tabs wrap onto a second row instead of scrolling: a hidden
+ * scrollbar gave no sign that more tabs were further along (FCU-04 in
+ * docs/reviews/2026-11-17-frontend-round-2).
+ */
+@media (max-width: 40rem) {
+  .tx-tabs {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+}
+
 .tx-tab {
   position: relative;
   flex: none;

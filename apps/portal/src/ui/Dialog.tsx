@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { cx } from './cx.ts';
 import { guardReturnedFocus } from './focusReturn.ts';
+import { keepTabInside } from './focusWrap.ts';
 import { IconButton } from './IconButton.tsx';
 import { X } from './icons.ts';
 
@@ -79,8 +80,8 @@ function isOnBackdrop(event: {
 
 /**
  * A modal dialog on the native `<dialog>` element, opened with `showModal()`: the browser
- * makes the rest of the page inert, keeps Tab inside, closes on Escape and gives the element
- * the dialog role.
+ * makes the rest of the page inert, closes on Escape and gives the element the dialog role.
+ * Tab is kept inside by the component, not the browser (see focusWrap.ts).
  *
  * Focus on open goes to the first element marked `data-autofocus`, else the first control
  * in the body, else the first footer button, else the dialog itself. On close it returns
@@ -210,6 +211,7 @@ export function Dialog({
       tabIndex={-1}
       onCancel={onCancel}
       onClose={onNativeClose}
+      onKeyDown={keepTabInside}
       onPointerDown={onPointerDown}
       onClick={onClick}
     >

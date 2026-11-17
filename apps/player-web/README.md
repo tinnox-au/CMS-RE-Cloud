@@ -550,8 +550,11 @@ These are properties of running in a browser. None of them is solved here.
   storage pressure, and some browsers do so after a period without visits. Persistent
   storage is requested, but browsers may refuse, and "granted" still does not survive the
   user clearing site data. After eviction the player finds no registration and shows a
-  pairing code; if only media was evicted, items fail with `storage_error`, the player
-  reports it, and nothing re-downloads them until a new publication arrives.
+  pairing code. If only media was evicted, the items fail with `storage_error` and the
+  player reports it; the next manifest poll finds the active publication incomplete, asks
+  the server for the manifest without `If-None-Match`, and stages the same publication
+  again, which downloads only the missing files. Until that succeeds (the server must be
+  reachable), the missing items are skipped.
 - **Private or guest browsing.** Storage is discarded when the window closes, and may be
   unavailable. If IndexedDB cannot be opened the player says so and does not start.
 - **Storage quota.** The quota is the browser's decision and varies with free disk space.

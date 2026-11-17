@@ -13,7 +13,7 @@ import type { TagsResource } from '../../shared/index.ts';
 import { CanvasTab } from './CanvasTab.tsx';
 import { OverviewTab } from './OverviewTab.tsx';
 import { PairingTab } from './PairingTab.tsx';
-import type { RevokeState } from './types.ts';
+import type { RevokeState, SectionSave } from './types.ts';
 import { TagsTab } from './TagsTab.tsx';
 import { WorkingHoursTab } from './WorkingHoursTab.tsx';
 
@@ -46,6 +46,12 @@ export interface ScreenTabsProps {
   readonly workingHoursDraft: WorkingHoursDraft | null;
   readonly onWorkingHoursDraft: (draft: WorkingHoursDraft | null) => void;
   readonly onSaved: (display: DisplayDto) => void;
+  /** Save state of the Canvas, Tags and Working hours tabs, kept by the page (FCX-03). */
+  readonly saves: {
+    readonly canvas: SectionSave;
+    readonly tags: SectionSave;
+    readonly workingHours: SectionSave;
+  };
   readonly onPaired: () => void;
   readonly onRevoke: () => void;
   readonly revoke: RevokeState | null;
@@ -105,6 +111,7 @@ function TabContent(props: ScreenTabsProps) {
           rotationDraft={props.rotationDraft}
           onRotationDraft={props.onRotationDraft}
           onSaved={props.onSaved}
+          save={props.saves.canvas}
         />
       );
     case 'pairing':
@@ -125,6 +132,7 @@ function TabContent(props: ScreenTabsProps) {
           draft={props.tagsDraft}
           onDraft={props.onTagsDraft}
           onSaved={props.onSaved}
+          save={props.saves.tags}
         />
       );
     case 'working-hours':
@@ -135,6 +143,7 @@ function TabContent(props: ScreenTabsProps) {
           draft={props.workingHoursDraft}
           onDraft={props.onWorkingHoursDraft}
           onSaved={props.onSaved}
+          save={props.saves.workingHours}
         />
       );
   }

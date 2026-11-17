@@ -13,6 +13,7 @@ import {
   type NavLinkItem,
 } from './nav.ts';
 import { Wordmark } from './Wordmark.tsx';
+import { keepTabInside } from '../ui/focusWrap.ts';
 
 export interface SidebarProps {
   /** Under 900 px: the sidebar is an overlay drawer instead of a column. */
@@ -161,8 +162,9 @@ function isOnBackdrop(event: MouseEvent<HTMLDialogElement>): boolean {
 }
 
 /**
- * The drawer is a native modal `<dialog>`: the browser makes the page behind it inert, keeps
- * Tab inside, closes on Escape, and returns focus to the menu button that opened it.
+ * The drawer is a native modal `<dialog>`: the browser makes the page behind it inert, closes
+ * on Escape, and returns focus to the menu button that opened it. Tab is kept inside by
+ * `keepTabInside`, because the browser lets it leave from the last control (FCU-06).
  */
 function NavDrawer({
   open,
@@ -199,6 +201,7 @@ function NavDrawer({
       ref={ref}
       className="tx-drawer"
       aria-label="Navigation"
+      onKeyDown={keepTabInside}
       onCancel={(event) => {
         // Escape. The shell owns `open`, so the element does not close itself.
         event.preventDefault();
@@ -339,9 +342,17 @@ export function Sidebar({
   if (drawer) {
     return (
       <NavDrawer open={open} onClose={onClose}>
-        <div className="tx-sidebar tx-sidebar--drawer">{body}</div>
+        <aside className="tx-sidebar tx-sidebar--drawer" aria-label="Sidebar">
+          {body}
+        </aside>
       </NavDrawer>
     );
   }
-  return <div className={cx('tx-sidebar', collapsed && 'tx-sidebar--collapsed')}>{body}</div>;
+  // A landmark, so the wordmark at its head is inside one too (FCU-05 in
+  // docs/reviews/2026-11-17-frontend-round-2).
+  return (
+    <aside className={cx('tx-sidebar', collapsed && 'tx-sidebar--collapsed')} aria-label="Sidebar">
+      {body}
+    </aside>
+  );
 }

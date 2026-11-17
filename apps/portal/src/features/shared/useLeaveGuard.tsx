@@ -16,8 +16,17 @@ export interface LeaveGuard {
  * leaving. Used by every editor page (media details, playlist editor, screen details, the
  * Add screen wizard) so the question and its buttons read the same everywhere.
  */
-/** `objectName` names what is being edited; null when it has no name yet. */
-export function useLeaveGuard(dirty: boolean, objectName: string | null): LeaveGuard {
+/**
+ * `objectName` names what is being edited; null when it has no name yet. Pass `saving` while a
+ * save is still running: the changes count as unsaved until its answer arrives, because a
+ * save can still fail (FCX-04 in docs/reviews/2026-11-17-frontend-round-2), and the
+ * question then says so.
+ */
+export function useLeaveGuard(
+  dirty: boolean,
+  objectName: string | null,
+  saving = false,
+): LeaveGuard {
   const released = useRef(false);
   const shouldBlock = useCallback<BlockerFunction>(
     ({ currentLocation, nextLocation }) =>
@@ -53,7 +62,19 @@ export function useLeaveGuard(dirty: boolean, objectName: string | null): LeaveG
         blocker.reset?.();
       }}
     >
-      {objectName === null ? (
+      {saving ? (
+        <p>
+          {objectName === null ? (
+            'Your changes are still being saved.'
+          ) : (
+            <>
+              The changes to <strong className="tx-break">“{objectName}”</strong> are still being
+              saved.
+            </>
+          )}{' '}
+          If you leave now and the save fails, they will be lost.
+        </p>
+      ) : objectName === null ? (
         <p>Your changes are not saved. They will be lost if you leave this page.</p>
       ) : (
         <p>

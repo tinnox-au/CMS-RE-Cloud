@@ -84,7 +84,8 @@ export function MediaEditor({ media, onSaved, notice }: MediaEditorProps) {
   const usage = useLoad(loadUsage);
   const usageData = usage.state.status === 'ready' ? usage.state.data : null;
 
-  const guard = useLeaveGuard(dirty && !saving, media.name);
+  // Until the save answers, the changes are not safe: it can still fail (FCX-04).
+  const guard = useLeaveGuard(dirty, media.name, saving);
   const remove = useMediaDelete({
     media,
     usage: usageData,

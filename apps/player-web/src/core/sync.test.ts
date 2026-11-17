@@ -115,6 +115,45 @@ describe('syncCycle', () => {
     expect(w.state.putStagingCalls).toBe(0);
   });
 
+  it('downloads media that went missing from the cache, for the publication already active', async () => {
+    // The browser evicted the media but kept the active version (FCX-02).
+    const manifest = makeManifest([w.a.asset, w.b.asset]);
+    w.assets.seed(w.a);
+    w.state.active = { manifest, activatedAt: '2026-11-14T02:00:00.000Z' };
+    w.api.manifestResults = [{ kind: 'manifest', raw: manifest }];
+    const result = await syncCycle(w.deps);
+    expect(result).toEqual({ kind: 'activated', publicationId: manifest.publicationId });
+    // Asked without If-None-Match, so a 304 cannot hide the publication it needs. (The
+    // second question is staging's usual "anything newer?" before it activates.)
+    expect(w.api.calls.fetchManifest[0]).toBeNull();
+    // Only the missing file is downloaded again.
+    expect(w.api.calls.requestMediaUrls.flat()).toEqual([w.b.asset.assetId]);
+    expect(await w.assets.has(w.b.asset.sha256, w.b.asset.bytes)).toBe(true);
+    expect(w.state.active.manifest).toEqual(manifest);
+  });
+
+  it('repairs the cache from whatever the server now wants, when that is a newer publication', async () => {
+    const old = makeManifest([w.a.asset]);
+    const newer = makeManifest([w.b.asset]);
+    w.state.active = { manifest: old, activatedAt: '2026-11-14T02:00:00.000Z' };
+    w.api.manifestResults = [{ kind: 'manifest', raw: newer }];
+    expect(await syncCycle(w.deps)).toEqual({
+      kind: 'activated',
+      publicationId: newer.publicationId,
+    });
+    expect(w.api.calls.fetchManifest[0]).toBeNull();
+  });
+
+  it('keeps asking with If-None-Match while every file of the active publication is cached', async () => {
+    const manifest = makeManifest([w.a.asset, w.b.asset]);
+    w.assets.seed(w.a);
+    w.assets.seed(w.b);
+    w.state.active = { manifest, activatedAt: '2026-11-14T02:00:00.000Z' };
+    w.api.manifestResults = [{ kind: 'not_modified' }];
+    expect(await syncCycle(w.deps)).toEqual({ kind: 'up_to_date' });
+    expect(w.api.calls.fetchManifest).toEqual([manifest.publicationId]);
+  });
+
   it('reports an unreachable server and changes nothing', async () => {
     const manifest = makeManifest([w.a.asset]);
     w.state.active = { manifest, activatedAt: '2026-11-14T02:00:00.000Z' };

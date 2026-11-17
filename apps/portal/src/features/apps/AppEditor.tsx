@@ -116,7 +116,8 @@ export function AppEditor({ initial }: AppEditorProps) {
   const shape = shapes.find((option) => option.value === shapeValue) ?? shapes[0];
 
   const dirty = appIsDirty(draft, saved);
-  const guard = useLeaveGuard(dirty && !saving, saved.name);
+  // Until the save answers, the changes are not safe: it can still fail (FCX-04).
+  const guard = useLeaveGuard(dirty, saved.name, saving);
   const invalid = appErrorFields(errors);
   const { content } = draft;
   const nowMs = Date.now();
@@ -562,8 +563,8 @@ export function AppEditor({ initial }: AppEditorProps) {
             {overflow && (
               <div data-testid="app-editor-overflow">
                 <Banner tone="warn" live="polite">
-                  Not all the text fits this screen shape. Shorten the text or preview another
-                  shape.
+                  The text does not fit this screen shape at a readable size, so it is shown
+                  smaller. Shorten the text or preview another shape.
                 </Banner>
               </div>
             )}
