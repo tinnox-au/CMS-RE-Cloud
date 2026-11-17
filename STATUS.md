@@ -41,13 +41,13 @@ None.
 
 ## In review
 
-| Id | Card | Agreed | PR | Since |
-|---|---|---|---|---|
-| CMS-1 | Schedules (stage B slice 3): choose which playlist a screen shows by day and time | Michael 17 Nov | #13 | 17 Nov |
+None.
 
 ## Done, last 14 days
 
-None.
+| Id | Date | Outcome | PR |
+|---|---|---|---|
+| CMS-1 | 17 Nov | Schedules (stage B slice 3): choose which playlist a screen shows by day and time | #13 |
 
 ## Parked
 
@@ -58,6 +58,11 @@ None.
 None.
 
 ## Cards
+
+### CMS-1
+
+**Evidence**
+Merged 17 Nov; CI green (lint, types, unit, component, integration 314, secret scan); full browser suite 100/100 before the merge with main
 
 ### CMS-6
 from: CMS-1
