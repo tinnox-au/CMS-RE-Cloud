@@ -1,7 +1,8 @@
 /**
  * Security review round 3, SCX-06: rotating SESSION_SECRET does not end established
  * sessions; scripts/revoke-all-sessions.sql, the incident runbook's global sign-out
- * (docs/security/operations-and-release-checklist.md section 1.3), does.
+ * (docs/security/operations-and-release-checklist.md section 1.3), does. The runbook's
+ * sign-out of one operator, scripts/revoke-subject-sessions.sql, is checked first.
  *
  * In a file of its own because it ends every session in the test database. Files run one
  * at a time, and every other file signs in again in its own beforeAll.
@@ -26,6 +27,21 @@ async function asSuperuser<T>(work: (client: pg.Client) => Promise<T>): Promise<
   }
 }
 
+/** A runbook script as psql would run it, with its `-v name=value` variables filled in. */
+async function runScript(
+  client: pg.Client,
+  name: string,
+  variables: Record<string, string> = {},
+): Promise<void> {
+  let script = await readFile(join(repoRoot, 'scripts', name), 'utf8');
+  for (const [variable, value] of Object.entries(variables)) {
+    const placeholder = `:'${variable}'`;
+    if (!script.includes(placeholder)) throw new Error(`${name} has no ${placeholder}`);
+    script = script.split(placeholder).join(client.escapeLiteral(value));
+  }
+  await client.query(script);
+}
+
 describe('signing every operator out', () => {
   let t: TestApp;
 
@@ -34,6 +50,43 @@ describe('signing every operator out', () => {
   });
   afterAll(async () => {
     await t.close();
+  });
+
+  it("the runbook's sign-out of one operator ends only that operator's sessions, and audits it", async () => {
+    const suspect = await createOrg('Revoke one');
+    const colleague = await createOrg('Revoke one, other');
+    const first = await signIn(t, suspect);
+    const second = await signIn(t, suspect);
+    const other = await signIn(t, colleague);
+
+    await asSuperuser((client) =>
+      runScript(client, 'revoke-subject-sessions.sql', { subject: suspect.oidcSub }),
+    );
+
+    expect((await first.fetch('/api/displays')).status).toBe(401);
+    expect((await second.fetch('/api/displays')).status).toBe(401);
+    expect((await other.fetch('/api/displays')).status).toBe(200);
+    const events = await asSuperuser(async (client) => {
+      const { rows } = await client.query<{
+        actor_type: string;
+        object_type: string;
+        object_id: string;
+        detail: { reason: string; sessions: number };
+      }>(
+        `SELECT actor_type, object_type, object_id, detail FROM public.audit_event
+         WHERE action = 'auth.logout' AND org_id = $1`,
+        [suspect.orgId],
+      );
+      return rows;
+    });
+    expect(events).toEqual([
+      {
+        actor_type: 'system',
+        object_type: 'membership',
+        object_id: suspect.membershipId,
+        detail: { reason: 'incident_revocation', sessions: 2 },
+      },
+    ]);
   });
 
   it('rotating the session secret signs nobody out; the runbook script signs everyone out and audits it', async () => {
@@ -57,8 +110,7 @@ describe('signing every operator out', () => {
       await rotated.close();
     }
 
-    const script = await readFile(join(repoRoot, 'scripts', 'revoke-all-sessions.sql'), 'utf8');
-    await asSuperuser((client) => client.query(script));
+    await asSuperuser((client) => runScript(client, 'revoke-all-sessions.sql'));
 
     const live = await asSuperuser(async (client) => {
       const { rows } = await client.query<{ n: string }>(

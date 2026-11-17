@@ -1,5 +1,6 @@
 /**
- * Backend review round 1, CX-01: a credential change and its audit event have one outcome.
+ * Backend review round 1, CX-01, and security review round 3, SCU-01 and SCX-04: a
+ * credential change (or a pairing session, or its lockout) and its audit event have one outcome.
  * Each case makes the audit insert fail (a trigger the test owns) and checks the outcome:
  * pairing and sign-in issue no credential; sign-out still ends the session. It then
  * removes the fault and checks that the same action works and is audited exactly once.

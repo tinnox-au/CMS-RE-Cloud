@@ -39,6 +39,30 @@ export function pathOnly(url: string | undefined): string {
   return (index === -1 ? url : url.slice(0, index)).slice(0, 300);
 }
 
+function errorFields(error: Error): Record<string, unknown> {
+  const code = (error as { code?: unknown }).code;
+  return {
+    type: error.name,
+    message: error.message.slice(0, 500),
+    ...(typeof code === 'string' ? { code } : {}),
+  };
+}
+
+/**
+ * How an error is logged: name, message, code and stack, and the same for its cause (one
+ * level), so a wrapper such as CommitOutcomeUnknownError still says what went wrong
+ * underneath. Never the bind values or detail of a database error.
+ */
+export function serializeError(error: unknown): Record<string, unknown> {
+  if (!(error instanceof Error)) return { message: 'non-error value thrown' };
+  const cause = (error as { cause?: unknown }).cause;
+  return {
+    ...errorFields(error),
+    ...(cause instanceof Error ? { cause: errorFields(cause) } : {}),
+    stack: error.stack,
+  };
+}
+
 export function createLogger(level: string, pretty: boolean): Logger {
   return pino({
     level,
@@ -50,17 +74,7 @@ export function createLogger(level: string, pretty: boolean): Logger {
       res(reply: { statusCode?: number }) {
         return { statusCode: reply.statusCode };
       },
-      err(error: unknown) {
-        // Name, message and stack only; never the bind values or detail of a database error.
-        if (!(error instanceof Error)) return { message: 'non-error value thrown' };
-        const code = (error as { code?: unknown }).code;
-        return {
-          type: error.name,
-          message: error.message.slice(0, 500),
-          ...(typeof code === 'string' ? { code } : {}),
-          stack: error.stack,
-        };
-      },
+      err: serializeError,
     },
     ...(pretty
       ? {

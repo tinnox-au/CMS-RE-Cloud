@@ -74,13 +74,13 @@ No body, no credential. Response `201` (`PairingCreateResponseSchema`):
 |---|---|---|
 | `200 {"status":"pending","expiresAt"}` | Not claimed yet | Keep polling |
 | `200 {"status":"claimed", deviceToken, registrationId, orgId, display:{id,name,canvas,contentRect}}` | Claimed. **Returned exactly once.** | Store the token, registration id, org id and display; start syncing |
-| `200 {"status":"consumed"}` | The token was already handed out | If the player has no token, start a new pairing |
-| `200 {"status":"expired"}` | The code expired unclaimed | Start a new pairing |
+| `200 {"status":"consumed"}` | The token was already handed out, or the claim was cancelled between this poll and the collection | If the player has no token, start a new pairing |
+| `200 {"status":"expired"}` | The code expired unclaimed, or its claim was cancelled before the player collected it (a newer code was claimed for the display, or the operator revoked the display's player) | Start a new pairing |
 | `404 not_found` | Unknown id, wrong polling token, missing header, or locked session. Deliberately indistinguishable. | Start a new pairing |
 
 Five wrong polling tokens lock a session permanently. Five wrong codes by one operator within 10 minutes block that operator's claims (`429 pairing_locked` on the portal side).
 
-Claiming a display that already has a player revokes the previous registration (reason `replaced`).
+Claiming a display that already has a player revokes the previous registration (reason `replaced`). It also cancels every earlier claim of that display that no player has collected yet, and so does revoking the display's player: only the newest claim can complete, and completing never replaces an active registration.
 
 ## 4. Registration lifecycle
 

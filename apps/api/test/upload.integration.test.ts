@@ -568,7 +568,8 @@ describe('upload limits and validation results', () => {
       const sha256 = createHash('sha256').update(bytes).digest('hex');
       const row = await withOrg(t.pool, org.orgId, async (tx) => {
         const { rows } = await tx.query<{ id: string; status: string }>(
-          'SELECT id, status FROM media WHERE sha256 = $1',
+          // Newest first: an earlier upload of this file may have drawn the same colour.
+          'SELECT id, status FROM media WHERE sha256 = $1 ORDER BY created_at DESC LIMIT 1',
           [sha256],
         );
         return rows[0];
