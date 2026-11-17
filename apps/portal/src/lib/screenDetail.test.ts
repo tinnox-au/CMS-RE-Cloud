@@ -255,10 +255,17 @@ describe('pairing', () => {
   it('says what happened', () => {
     expect(pairingAcceptedText(true)).toMatch(/previous player credential was revoked/);
     expect(pairingAcceptedText(false)).not.toMatch(/previous/);
-    expect(revokeOutcomeText('30000000-0000-4000-8000-000000000001')).toMatch(
-      /^The player credential was revoked\./,
+    expect(revokeOutcomeText('30000000-0000-4000-8000-000000000001', 0)).toMatch(
+      /^The player credential was revoked\.[^]*reset there\.$/,
     );
-    expect(revokeOutcomeText(null)).toMatch(/Nothing was changed/);
+    expect(revokeOutcomeText(null, 0)).toMatch(/Nothing was changed/);
+    // An accepted code that no player has collected yet is cancelled too (review round 3, SCX-01).
+    expect(revokeOutcomeText(null, 1)).toBe(
+      'This screen had no active player credential. A pairing code accepted for this screen but not yet collected by a player was cancelled.',
+    );
+    expect(revokeOutcomeText('30000000-0000-4000-8000-000000000001', 2)).toMatch(
+      /revoked\.[^]* 2 pairing codes accepted for this screen but not yet collected by a player were cancelled\.$/,
+    );
     expect(pairingStateText(null)).toBe('No player is paired with this screen.');
     expect(pairingStateText('1 Jan')).toMatch(/since 1 Jan/);
   });
@@ -342,7 +349,8 @@ describe('assigned content', () => {
       STATUS_DISCLAIMER,
       REPORTED_FACTS_NOTE,
       pairingStateText(null),
-      revokeOutcomeText(null),
+      revokeOutcomeText(null, 0),
+      revokeOutcomeText(null, 2),
       pairingHint(10),
     ];
     for (const text of texts) expect(text).not.toMatch(/\b(display|online|offline)\b/i);

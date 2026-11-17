@@ -166,6 +166,8 @@ export const RevokePlayerResponseSchema = z
   .object({
     /** Null when the display had no active registration (the call is idempotent). */
     revokedRegistrationId: RegistrationIdSchema.nullable(),
+    /** Pairing codes claimed for the display but not yet collected by a player, now cancelled. */
+    cancelledPairingCount: z.number().int().nonnegative(),
   })
   .strict();
 export type RevokePlayerResponse = z.infer<typeof RevokePlayerResponseSchema>;

@@ -69,6 +69,32 @@ function countAsDefiner(text: string, values: readonly unknown[]): Promise<numbe
   });
 }
 
+interface UnscopedAuditRow {
+  actor_type: string;
+  result: string;
+  object_type: string | null;
+  detail: unknown;
+}
+
+/** Audit events with no organisation, which only a database administrator can read. */
+async function unscopedAudit(action: string, objectId: string): Promise<UnscopedAuditRow[]> {
+  const url = new URL(process.env['TEST_DATABASE_MIGRATOR_URL'] ?? '');
+  url.username = 'postgres';
+  url.password = encodeURIComponent(process.env['POSTGRES_SUPERUSER_PASSWORD'] ?? '');
+  const client = new pg.Client({ connectionString: url.toString() });
+  await client.connect();
+  try {
+    const { rows } = await client.query<UnscopedAuditRow>(
+      `SELECT actor_type, result, object_type, detail FROM public.audit_event
+       WHERE org_id IS NULL AND action = $1 AND object_id = $2`,
+      [action, objectId],
+    );
+    return rows;
+  } finally {
+    await client.end();
+  }
+}
+
 describe('credential changes and their audit events', () => {
   let t: TestApp;
   let org: TestOrg;
@@ -114,6 +140,65 @@ describe('credential changes and their audit events', () => {
     expect(body.deviceToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(await registrations()).toBe(1);
     expect(await actions('pairing.complete')).toBe(1);
+  });
+
+  it('creates no pairing session when its audit event cannot be written (round 3, SCU-01)', async () => {
+    const sessions = (): Promise<number> =>
+      countAsDefiner('SELECT count(*) AS n FROM public.pairing_session', []);
+    const before = await sessions();
+    await whileAuditFails('pairing.create', async () => {
+      const failed = await fetch(`${t.url}/player/pairing`, { method: 'POST' });
+      expect(failed.status).toBe(500);
+      expect(await failed.text()).not.toMatch(/pollingToken|pairingId/);
+      expect(await sessions()).toBe(before);
+    });
+
+    const pairing = await newPairing(t);
+    expect(await sessions()).toBe(before + 1);
+    expect(await unscopedAudit('pairing.create', pairing.pairingId)).toHaveLength(1);
+  });
+
+  it('records a polling-token lockout once, in the same transaction as the lock (round 3, SCX-04)', async () => {
+    const pairing = await newPairing(t);
+    // Well-formed polling tokens that are not this pairing's.
+    const wrong = (i: number): Promise<Response> =>
+      fetch(`${t.url}/player/pairing/${pairing.pairingId}`, {
+        headers: { authorization: `Bearer ${'A'.repeat(42)}${i}` },
+      });
+    const locked = (): Promise<number> =>
+      countAsDefiner(
+        "SELECT count(*) AS n FROM public.pairing_session WHERE id = $1 AND status = 'locked'",
+        [pairing.pairingId],
+      );
+    for (let i = 0; i < 4; i += 1) expect((await wrong(i)).status).toBe(404);
+
+    await whileAuditFails('pairing.lock', async () => {
+      expect((await wrong(4)).status).toBe(500);
+      expect(await locked()).toBe(0);
+    });
+    // The locking attempt rolled back with its audit event: the session is still pending.
+    const still = await pollPairing(t, pairing);
+    expect(still.status).toBe(200);
+    expect(((await still.json()) as { status: string }).status).toBe('pending');
+
+    expect((await wrong(5)).status).toBe(404);
+    expect(await locked()).toBe(1);
+    const rows = await unscopedAudit('pairing.lock', pairing.pairingId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      actor_type: 'anonymous',
+      result: 'denied',
+      object_type: 'pairing_session',
+      detail: { reason: 'wrong_polling_token' },
+    });
+    const text = JSON.stringify(rows[0]);
+    for (const secret of [pairing.code, pairing.pollingToken, 'A'.repeat(42)]) {
+      expect(text).not.toContain(secret);
+    }
+    // Later attempts, and the rightful player, find it locked; no further event.
+    expect((await wrong(6)).status).toBe(404);
+    expect((await pollPairing(t, pairing)).status).toBe(404);
+    expect(await unscopedAudit('pairing.lock', pairing.pairingId)).toHaveLength(1);
   });
 
   it('ends the session at sign-out even when the audit event cannot be written', async () => {

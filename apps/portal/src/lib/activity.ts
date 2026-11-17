@@ -98,6 +98,12 @@ const WORDING: { readonly [K in AuditAction]: Wording } = {
     attempt: 'Player pairing',
     icon: 'player',
   },
+  // Written without an organisation, so it is not in an organisation's activity today.
+  'pairing.lock': {
+    done: 'Pairing request locked after wrong answers',
+    attempt: 'Pairing request',
+    icon: 'security',
+  },
   'player.revoke': {
     done: 'Player revoked on screen',
     attempt: 'Player revocation',

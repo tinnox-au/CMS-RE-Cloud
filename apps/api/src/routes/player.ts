@@ -39,6 +39,7 @@ import {
   poolAsTx,
   sha256,
   withOrg,
+  withoutOrg,
   withResolvedOrg,
   type DeviceLookup,
 } from '@tinnox/db';
@@ -199,13 +200,29 @@ export async function registerPlayerRoutes(app: FastifyInstance, ctx: AppContext
       const clientKey = pairingClientKey(config.pairingClientKeySecret, request.ip);
       for (let attempt = 0; attempt < 5; attempt += 1) {
         const code = randomPairingCode();
-        const result = await pairingCreate(unscoped, {
-          code,
-          pollingTokenHash: sha256(pollingToken),
-          clientKey,
-          ttlSeconds: limits.pairingCodeTtlSeconds,
-          maxSessionsPerClient: limits.pairingMaxSessionsPerIp,
-          windowSeconds: limits.pairingSessionWindowSeconds,
+        // One transaction: the pairing session and its audit event commit together, so a
+        // failed audit leaves no session behind (round 3, SCU-01 and SCX-04).
+        const result = await withoutOrg(pool, async (tx) => {
+          const created = await pairingCreate(tx, {
+            code,
+            pollingTokenHash: sha256(pollingToken),
+            clientKey,
+            ttlSeconds: limits.pairingCodeTtlSeconds,
+            maxSessionsPerClient: limits.pairingMaxSessionsPerIp,
+            windowSeconds: limits.pairingSessionWindowSeconds,
+          });
+          if (created.outcome === 'created') {
+            await auditUnscoped(tx, {
+              actorType: 'anonymous',
+              actorId: null,
+              action: 'pairing.create',
+              objectType: 'pairing_session',
+              objectId: created.pairingId,
+              result: 'success',
+              detail: null,
+            });
+          }
+          return created;
         });
         if (result.outcome === 'rate_limited') {
           throw new HttpError(
@@ -218,15 +235,6 @@ export async function registerPlayerRoutes(app: FastifyInstance, ctx: AppContext
           );
         }
         if (result.outcome === 'code_collision') continue;
-        await auditUnscoped(unscoped, {
-          actorType: 'anonymous',
-          actorId: null,
-          action: 'pairing.create',
-          objectType: 'pairing_session',
-          objectId: result.pairingId,
-          result: 'success',
-          detail: null,
-        });
         void reply.code(201);
         return {
           pairingId: result.pairingId,
@@ -256,10 +264,31 @@ export async function registerPlayerRoutes(app: FastifyInstance, ctx: AppContext
       if (pollingToken === null) throw gone();
       const pollingTokenHash = sha256(pollingToken);
 
-      const poll = await pairingPoll(unscoped, {
-        pairingId: id,
-        pollingTokenHash,
-        maxWrongAttempts: limits.pairingMaxWrongAttempts,
+      // One transaction: the wrong token that locks the session and the lockout's audit
+      // event commit together (round 3, SCX-04). The answer is decided after the commit;
+      // throwing inside would roll back the counted attempt.
+      const poll = await withoutOrg(pool, async (tx) => {
+        const polled = await pairingPoll(tx, {
+          pairingId: id,
+          pollingTokenHash,
+          maxWrongAttempts: limits.pairingMaxWrongAttempts,
+        });
+        if (polled.outcome === 'wrong_token_locked') {
+          // Never the code or a polling token.
+          await auditUnscoped(tx, {
+            actorType: 'anonymous',
+            actorId: null,
+            action: 'pairing.lock',
+            objectType: 'pairing_session',
+            objectId: id,
+            result: 'denied',
+            detail: {
+              reason: 'wrong_polling_token',
+              client: clientFingerprint(config.pairingClientKeySecret, clientKeyOf(request.ip)),
+            },
+          });
+        }
+        return polled;
       });
       switch (poll.outcome) {
         case 'pending':
@@ -272,9 +301,14 @@ export async function registerPlayerRoutes(app: FastifyInstance, ctx: AppContext
         case 'locked':
         case 'not_found':
         case 'wrong_token':
+        case 'wrong_token_locked':
           throw gone();
         case 'claimed':
           break;
+        default: {
+          const unexpected: never = poll.outcome;
+          throw new Error(`unexpected pairing poll outcome ${String(unexpected)}`);
+        }
       }
 
       // The device token exists in clear only in this response; the database gets its hash.

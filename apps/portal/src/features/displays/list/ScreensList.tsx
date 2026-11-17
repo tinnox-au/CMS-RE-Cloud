@@ -35,6 +35,7 @@ import {
   type ScreenRow,
   type ScreenStatusFilter,
 } from '../../../lib/screensList.ts';
+import { revokeOutcomeText } from '../../../lib/screenDetail.ts';
 import { pruneSelection, selectedRows, toggleOne } from '../../../lib/selection.ts';
 import { matchesTagFilter } from '../../../lib/tagColours.ts';
 import {
@@ -116,8 +117,8 @@ interface RevokeState {
 
 interface RevokeOutcome {
   readonly name: string;
-  /** False when the screen had no player credential any more: nothing was changed. */
-  readonly revoked: boolean;
+  /** What the revocation did, from revokeOutcomeText. */
+  readonly text: string;
 }
 
 function rowId(row: ScreenRow): string {
@@ -382,7 +383,10 @@ export function ScreensList() {
     api
       .revokePlayer(target.id)
       .then((result) => {
-        setRevokeOutcome({ name: target.name, revoked: result.revokedRegistrationId !== null });
+        setRevokeOutcome({
+          name: target.name,
+          text: revokeOutcomeText(result.revokedRegistrationId, result.cancelledPairingCount),
+        });
         reloadDisplays();
         reloadStatuses();
       })
@@ -695,11 +699,7 @@ export function ScreensList() {
                 setRevokeOutcome(null);
               }}
             >
-              <p>
-                {revokeOutcome.revoked
-                  ? 'The player credential was revoked. That player can no longer fetch manifests or media. Content it already cached stays on the device until it is reset there.'
-                  : 'This screen had no active player credential. Nothing was changed.'}
-              </p>
+              <p>{revokeOutcome.text}</p>
             </Banner>
           </div>
         )}

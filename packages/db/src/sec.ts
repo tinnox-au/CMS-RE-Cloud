@@ -226,6 +226,10 @@ export async function pairingCreate(
   throw new Error(`unexpected pairing_create outcome ${r.outcome}`);
 }
 
+/**
+ * `wrong_token_locked` is the wrong token that locked the session (once per session):
+ * audit it in the same transaction as the poll. Later polls answer `locked`.
+ */
 export const PAIRING_POLL_OUTCOMES = [
   'pending',
   'claimed',
@@ -234,6 +238,7 @@ export const PAIRING_POLL_OUTCOMES = [
   'locked',
   'not_found',
   'wrong_token',
+  'wrong_token_locked',
 ] as const;
 export type PairingPollOutcome = (typeof PAIRING_POLL_OUTCOMES)[number];
 
@@ -260,6 +265,8 @@ export type PairingClaimResult =
       readonly outcome: 'claimed';
       readonly pairingId: string;
       readonly replacedRegistrationId: string | null;
+      /** Older claims of the display, never collected, that this claim cancelled. */
+      readonly cancelledPairingIds: readonly string[];
     }
   | { readonly outcome: 'invalid_code' | 'display_not_found' | 'rate_limited' };
 
@@ -278,8 +285,9 @@ export async function pairingClaim(
     outcome: string;
     pairing_id: string | null;
     replaced_registration_id: string | null;
+    cancelled_pairing_ids: string[] | null;
   }>(
-    'SELECT outcome, pairing_id, replaced_registration_id FROM sec.pairing_claim($1, $2, $3, $4, $5)',
+    'SELECT outcome, pairing_id, replaced_registration_id, cancelled_pairing_ids FROM sec.pairing_claim($1, $2, $3, $4, $5)',
     [input.code, input.displayId, input.membershipId, input.maxFailures, input.windowSeconds],
   );
   const r = only(rows);
@@ -289,6 +297,7 @@ export async function pairingClaim(
       outcome: 'claimed',
       pairingId: r.pairing_id,
       replacedRegistrationId: r.replaced_registration_id,
+      cancelledPairingIds: r.cancelled_pairing_ids ?? [],
     };
   }
   if (
@@ -301,6 +310,19 @@ export async function pairingClaim(
   throw new Error(`unexpected pairing_claim outcome ${r.outcome}`);
 }
 
+/**
+ * Cancels the display's claims that its player has not collected yet, so none of them
+ * can complete. Must be called with a Tx from `withOrg`, before the transaction touches
+ * the display or its registrations. Returns the ids of the cancelled pairing sessions.
+ */
+export async function pairingCancelClaims(tx: Tx, displayId: string): Promise<string[]> {
+  const { rows } = await tx.query<{ ids: string[] }>(
+    'SELECT sec.pairing_cancel_claims($1) AS ids',
+    [displayId],
+  );
+  return rows[0]?.ids ?? [];
+}
+
 export type PairingCompleteResult =
   | {
       readonly outcome: 'completed';
@@ -310,7 +332,11 @@ export type PairingCompleteResult =
     }
   | { readonly outcome: 'not_claimable' };
 
-/** Succeeds once per pairing session. Pass the hash of a freshly generated device token. */
+/**
+ * Succeeds once per pairing session. Pass the hash of a freshly generated device token.
+ * Never replaces an active registration: if the display has one, a newer claim owns it,
+ * and this pairing is cancelled and answers `not_claimable`.
+ */
 export async function pairingComplete(
   tx: Tx,
   input: { pairingId: string; pollingTokenHash: Buffer; deviceTokenHash: Buffer },
