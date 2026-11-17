@@ -7,12 +7,13 @@ import {
 import { API_ORIGIN, IS_PRODUCTION_BUILD, PLAYER_VERSION } from './config.ts';
 import { backoffDelay, type BackoffPolicy } from './core/backoff.ts';
 import { describeError, ErrorLog, sanitiseMessage, toPlayerError } from './core/errors.ts';
-import { retryAfterMsOf, retryDelay } from './core/retry-after.ts';
+import { heldRetryMs, retryAfterMsOf, retryDelay } from './core/retry-after.ts';
 import { HeartbeatLoop, type HeartbeatSnapshot } from './core/heartbeat.ts';
 import {
   canReusePairing,
   localPairingDeadline,
   pairingAbandoned,
+  pairingPollRetryWait,
   pairingSecondsLeft,
 } from './core/pairing-clock.ts';
 import { heartbeatStateFor, PlayerMachine, type PlayerPhase } from './core/machine.ts';
@@ -327,17 +328,20 @@ export class PlayerApp {
           pollFailures += 1;
           note = `The server cannot be reached (${sanitiseMessage(describeError(err))}). Still trying.`;
           paint();
-          // Still bounded by the code's own deadline: an expired code is replaced, not held.
+          // Still bounded by the code's own deadline (an expired code is replaced, not held),
+          // except that the server's Retry-After is always honoured.
+          const retryAfterMs = retryAfterMsOf(err);
           const wait = retryDelay(
             Math.max(
               record.pollIntervalMs,
               backoffDelay(PAIRING_BACKOFF, pollFailures, Math.random),
             ),
-            retryAfterMsOf(err),
+            retryAfterMs,
           );
-          await sleep(Math.min(wait, Math.max(1_000, deadlineMs - Date.now())), signal).catch(
-            () => undefined,
-          );
+          await sleep(
+            pairingPollRetryWait(wait, heldRetryMs(retryAfterMs), deadlineMs, Date.now()),
+            signal,
+          ).catch(() => undefined);
           continue;
         }
         if (result.status === 'claimed') {

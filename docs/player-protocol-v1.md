@@ -190,7 +190,7 @@ Required player behaviour (`player-web/0.3.0`, `apps/player-web/src/ui/presenter
 - Countdown: the remaining time is the difference of two instants, so a daylight-saving change in between is handled. At zero it shows `finishedText` for good (no count-up) and drops its label. A target inside the skipped or repeated daylight-saving hour may be off by an hour.
 - Ticker: one line at 0.6 of the box height (at most 0.25 of its width) scrolls right to left at 2, 3 or 4.5 character heights per second (slow, medium, fast), measured in canvas pixels, so rotation does not change it. With `prefers-reduced-motion: reduce` the text stands still and wraps.
 - QR code: error correction M, black modules on white with a 4-module quiet zone whatever the colours. A box at least 1.6 times as wide as high puts the caption beside the code; otherwise it goes below.
-- Text sizes are fitted to the app's own box, with a floor of 1/12 of its short side; below that text is clipped. Single lines (clock, date, the countdown value, the QR caption, the Text heading) wrap only when they would overflow at that floor. Locale is `en-AU`.
+- Text sizes are fitted to the app's own box, with a readability floor of 1/12 of its short side. Text that does not fit at that floor first has its over-long words broken anywhere, then shrinks to at most 1/24 of the short side; only text that does not fit even then is clipped (frontend review round 2, FCU-02). Single lines (clock, date, the countdown value, the QR caption, the Text heading) wrap only when they would overflow at that floor. Locale is `en-AU`.
 
 ### Manifest v4 (stage B, slice 3: schedules)
 
@@ -376,6 +376,8 @@ A later LED route (a dedicated player over HDMI, or controller-native playback) 
 `Retry-After` is delay-seconds or an HTTP-date (RFC 9110). The browser player waits at least
 that long and at least its ordinary backoff. A value above 10 minutes is read as 10 minutes
 (the longest window this API sends); a missing or unreadable header keeps the ordinary backoff.
+This also holds when a media download gives up on a 429 (the next update attempt waits for it)
+and when a pairing code is about to expire (the code's deadline shortens only the ordinary backoff).
 A 5xx answer keeps the backoff even when it also carries `Retry-After`.
 
 ## 11. What was verified, and how

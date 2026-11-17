@@ -72,6 +72,16 @@ describe('sync loop delay', () => {
     ).toBe(600_000);
   });
 
+  it('holds a failed update for the Retry-After of its last download (FCX-06)', () => {
+    // The ordinary update backoff after one failure is 30 s; the server asked for 10 minutes.
+    expect(
+      nextSyncDelay({ networkFailures: 0, updateFailures: 1 }, DEFAULT_SYNC_TIMINGS, top, 600_000),
+    ).toBe(600_000);
+    expect(
+      nextSyncDelay({ networkFailures: 0, updateFailures: 1 }, DEFAULT_SYNC_TIMINGS, top, 5_000),
+    ).toBe(30_000);
+  });
+
   it('counts failures by kind and clears them on success', () => {
     const error = {
       code: 'network_error',
