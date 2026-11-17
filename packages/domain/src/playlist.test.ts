@@ -1,14 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { ManifestV1Schema, ManifestV2Schema, ManifestV3Schema } from '@tinnox/contracts';
+import {
+  ManifestV1Schema,
+  ManifestV2Schema,
+  ManifestV3Schema,
+  ManifestV4Schema,
+} from '@tinnox/contracts';
 import { checkCapabilities } from './capability.ts';
 import {
+  EVERY_DAY,
   ID,
+  WEEKDAYS,
   apps,
   display,
   library,
   limits,
+  planSchedule,
   playback,
   tickerContent,
+  type FixturePlaylist,
 } from './fixtures.test-support.ts';
 import type { AppRecord } from './types.ts';
 import {
@@ -337,6 +346,120 @@ describe('manifest v3 (apps)', () => {
   });
 });
 
+describe('manifest v4 (schedules)', () => {
+  const created = { publicationId: ID.pubA, createdAt: new Date('2026-11-14T01:02:03.000Z') };
+  const PLAYLISTS: Record<string, FixturePlaylist> = {
+    [ID.listDefault]: {
+      name: 'Reception loop',
+      items: [image(ID.jpeg), app(ID.clock)],
+      playback: { transition: 'fade', shuffle: false },
+    },
+    [ID.listLunch]: {
+      name: 'Lunch',
+      items: [video(ID.video), image(ID.png), image(ID.jpeg, 3000)],
+      playback: { transition: 'cut', shuffle: true },
+    },
+  };
+  const lunch = { playlistId: ID.listLunch, days: WEEKDAYS, start: '11:30', end: '14:00' };
+  const draftOf = (
+    events: Parameters<typeof planSchedule>[1]['events'],
+    options: Parameters<typeof planSchedule>[2] = {},
+    playlists = PLAYLISTS,
+  ) => {
+    const r = planSchedule(playlists, { defaultPlaylistId: ID.listDefault, events }, options);
+    if (!r.ok) throw new Error(`fixture schedule should plan: ${r.issues[0]?.code}`);
+    return r.draft;
+  };
+
+  it('gives version 4 only with a schedule', () => {
+    expect(manifestVersionFor(draftOf([lunch]))).toBe(4);
+    // Without an event that uses another playlist the draft is the default playlist's.
+    expect(manifestVersionFor(draftOf([]))).toBe(3);
+    expect(manifestVersionFor(draftOf([{ ...lunch, playlistId: ID.listDefault }]))).toBe(3);
+    // The schedule alone decides: no app, no v2 option and still version 4.
+    const plain = draftOf(
+      [lunch],
+      {},
+      {
+        [ID.listDefault]: { name: 'Reception loop', items: [image(ID.jpeg)] },
+        [ID.listLunch]: { name: 'Lunch', items: [image(ID.png)] },
+      },
+    );
+    expect(needsV2(plain)).toBe(false);
+    expect(manifestVersionFor(plain)).toBe(4);
+    expect(manifestVersionFor({ ...plain, schedule: null })).toBe(1);
+  });
+
+  it('builds a v4 manifest that parses, with the playlists as runs of one list', () => {
+    const night = { playlistId: ID.listLunch, days: EVERY_DAY, start: '22:00', end: '02:00' };
+    const draft = draftOf([lunch, night]);
+    const manifest = buildManifest(draft, created);
+    expect(ManifestV4Schema.safeParse(manifest).success).toBe(true);
+    expect(manifest).toMatchObject({
+      schemaVersion: 4,
+      timeZone: 'Australia/Melbourne',
+      transition: 'fade',
+      shuffle: false,
+      schedule: {
+        playlists: [
+          { count: 2, transition: 'fade', shuffle: false },
+          { count: 3, transition: 'cut', shuffle: true },
+        ],
+        events: [
+          { playlist: 1, days: WEEKDAYS, start: '11:30', end: '14:00' },
+          { playlist: 1, days: EVERY_DAY, start: '22:00', end: '02:00' },
+        ],
+      },
+    });
+    expect(manifest.assets.map((a) => a.kind)).toEqual(['image', 'app', 'video', 'image', 'image']);
+    // Every playlist's media is in the one list, so staging and storage need no schedule.
+    expect(manifestAssetIds(manifest)).toEqual([ID.jpeg, ID.video, ID.png]);
+    expect(manifestStorageBytes(manifest)).toBe(120_000 + 4_000_000 + 300_000);
+    // A copy: the manifest does not change when the draft does.
+    const snapshot = JSON.stringify(manifest);
+    (draft.schedule?.events[0]?.days as boolean[] | undefined)?.fill(false);
+    expect(JSON.stringify(manifest)).toBe(snapshot);
+  });
+
+  it('throws on a site time zone the runtime does not know', () => {
+    const draft = draftOf([lunch], { display: display({ timeZone: 'Mars/Olympus_Mons' }) });
+    expect(() => buildManifest(draft, created)).toThrow(RangeError);
+  });
+
+  it('keeps the worst case (200 tickers of 300 euro signs in five playlists, 50 events) under 300 KB of JSON', () => {
+    const text = '\u20ac'.repeat(300);
+    const records: AppRecord[] = Array.from({ length: 200 }, (_, i) => ({
+      id: `55555555-5555-4555-8555-${String(i).padStart(12, '0')}`,
+      content: { type: 'ticker', settings: { ...tickerContent.settings, text } },
+    }));
+    const listId = (n: number) => `66666666-6666-4666-8666-${String(n).padStart(12, '0')}`;
+    const playlists: Record<string, FixturePlaylist> = Object.fromEntries(
+      Array.from({ length: 5 }, (_, n) => [
+        listId(n),
+        { name: `Playlist ${n}`, items: records.slice(n * 40, n * 40 + 40).map((r) => app(r.id)) },
+      ]),
+    );
+    const plan = planSchedule(
+      playlists,
+      {
+        defaultPlaylistId: listId(0),
+        events: Array.from({ length: 50 }, (_, n) => ({
+          playlistId: listId(n % 5),
+          days: EVERY_DAY,
+          start: '22:00',
+          end: '02:00',
+        })),
+      },
+      { appsById: new Map(records.map((r) => [r.id, r])) },
+    );
+    if (!plan.ok) throw new Error(`fixture schedule should plan: ${plan.issues[0]?.code}`);
+    const manifest = buildManifest(plan.draft, created);
+    expect(manifest).toMatchObject({ schemaVersion: 4 });
+    expect(manifest.assets).toHaveLength(200);
+    expect(new TextEncoder().encode(JSON.stringify(manifest)).length).toBeLessThan(300 * 1024);
+  });
+});
+
 describe('manifest version', () => {
   const created = { publicationId: ID.pubA, createdAt: new Date('2026-11-14T01:02:03.000Z') };
   const draftWith = (
@@ -517,6 +640,32 @@ describe('checkCapabilities', () => {
       'unsupported_fit',
       'asset_too_large',
     ]);
+  });
+
+  it('counts the items of a playlist, and of a schedule in the words of a schedule', () => {
+    const three = draftOf([image(ID.jpeg), image(ID.png), video(ID.video)]);
+    const tight = { ...profile, maxItems: 2 };
+    expect(checkCapabilities(three, tight)).toEqual([
+      {
+        index: null,
+        code: 'too_many_items',
+        message: 'The playlist has 3 items; The browser player supports up to 2.',
+      },
+    ]);
+    const scheduled = {
+      ...three,
+      schedule: {
+        playlists: [
+          { count: 1, transition: 'cut' as const, shuffle: false },
+          { count: 2, transition: 'cut' as const, shuffle: false },
+        ],
+        events: [{ playlist: 1, days: EVERY_DAY, start: '09:00', end: '17:00' }],
+      },
+    };
+    expect(checkCapabilities(scheduled, tight).map((i) => i.message)).toEqual([
+      'The playlists of this schedule hold 3 items in total; The browser player supports up to 2.',
+    ]);
+    expect(checkCapabilities(scheduled, profile)).toEqual([]);
   });
 
   it('skips app items', () => {

@@ -19,6 +19,7 @@ export const API_ERROR_CODES = [
   'media_in_use',
   'playlist_in_use',
   'app_in_use',
+  'schedule_in_use',
   'publication_rejected',
   'pairing_code_invalid',
   'pairing_expired',

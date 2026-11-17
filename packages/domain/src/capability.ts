@@ -5,6 +5,11 @@ function megabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** Why a schedule's playlists are refused together: their item total is over the route's limit. */
+export function scheduleTotalMessage(total: number, route: string, max: number): string {
+  return `The playlists of this schedule hold ${total} items in total; ${route} supports up to ${max}.`;
+}
+
 /**
  * Compares a publication draft with a route's capability profile.
  * Returns human-readable rejection reasons; an empty array means the route can show it.
@@ -48,11 +53,15 @@ export function checkCapabilities(
       message: `${route} cannot place content in a sub-rectangle of the output frame. Remove the content rectangle from the screen.`,
     });
   }
+  // shortcut: every route is the browser route, which plays schedules; add schedules to CapabilityProfile when a route that cannot evaluate them ships.
   if (draft.items.length > profile.maxItems) {
     issues.push({
       index: null,
       code: 'too_many_items',
-      message: `The playlist has ${draft.items.length} items; ${route} supports up to ${profile.maxItems}.`,
+      message:
+        draft.schedule !== null
+          ? scheduleTotalMessage(draft.items.length, route, profile.maxItems)
+          : `The playlist has ${draft.items.length} items; ${route} supports up to ${profile.maxItems}.`,
     });
   }
 

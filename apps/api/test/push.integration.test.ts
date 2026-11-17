@@ -26,17 +26,20 @@ import {
   CLOCK,
   appItem,
   assignPlaylist,
+  assignSchedule,
   auditEvents,
   createApp,
   createDisplay,
   createOrg,
   createPlaylist,
+  createSchedule,
   desiredPublicationId,
   imageItem,
   pairPlayer,
   pngBytes,
   push,
   readyImage,
+  scheduleEvent,
   signIn,
   startTestApp,
   uploadBytes,
@@ -170,6 +173,7 @@ describe('assign, then push', () => {
       expect(await planRow(alice, display.id)).toEqual({
         display: { id: display.id, name: 'Reception' },
         playlist: { id: playlistId, name: 'Reception loop' },
+        schedule: null,
         state: 'never_pushed',
         issues: [],
         lastPushedAt: null,
@@ -921,6 +925,9 @@ describe('assign, then push', () => {
         (e) => e.objectId === publicationId,
       );
       expect(event?.detail).toMatchObject({ via: 'publish', playlistId: first });
+      // The display had no schedule, so the event says nothing about one.
+      expect(event?.detail).not.toHaveProperty('assignedScheduleId');
+      expect(event?.detail).not.toHaveProperty('scheduleId');
 
       // Publishing another playlist moves the assignment with it.
       expect((await publish(second, display.id)).status).toBe(201);
@@ -932,6 +939,47 @@ describe('assign, then push', () => {
       expect(replay.status).toBe(200);
       expect(((await replay.json()) as { replayed: boolean }).replayed).toBe(true);
       expect((await getDisplay(alice, display.id)).assignedPlaylist?.id).toBe(second);
+    });
+
+    it('takes a schedule off the display it publishes a playlist to', async () => {
+      const display = await createDisplay(alice, orgA, 'Scheduled, then published to');
+      const usual = await createPlaylist(alice, 'Usual', [imageItem(imageA)]);
+      const other = await createPlaylist(alice, 'Other', [imageItem(imageB)]);
+      const schedule = await createSchedule(alice, 'Week', usual, [scheduleEvent(other)]);
+      await assignSchedule(alice, display.id, schedule.id);
+      expect((await pushed(alice, [display.id]))[0]?.outcome).toBe('published');
+
+      const published = await publish(other, display.id);
+      expect(published.status).toBe(201);
+      const { publicationId } = (await published.json()) as { publicationId: string };
+      expect(await getDisplay(alice, display.id)).toMatchObject({
+        assignedPlaylist: { id: other, name: 'Other' },
+        assignedSchedule: null,
+      });
+      // One event for the publish, and it says the schedule was taken off.
+      const events = (await auditEvents(alice, '&category=publication')).filter(
+        (e) => e.objectId === publicationId,
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0]?.detail).toMatchObject({
+        via: 'publish',
+        playlistId: other,
+        assignedScheduleId: null,
+      });
+      expect(events[0]?.detail).not.toHaveProperty('scheduleId');
+      // The playlist is what the display has now, so nothing is waiting.
+      expect(await planRow(alice, display.id)).toMatchObject({
+        playlist: { id: other },
+        schedule: null,
+        state: 'up_to_date',
+      });
+      expect((await publications(orgA, display.id)).map((p) => p.manifest.schemaVersion)).toEqual([
+        4, 1,
+      ]);
+      // And the schedule is free to be deleted.
+      expect(
+        (await alice.fetch(`/api/schedules/${schedule.id}`, { method: 'DELETE' })).status,
+      ).toBe(204);
     });
 
     it('keeps the assignment and the desired publication in step under concurrent publishes', async () => {
@@ -982,6 +1030,36 @@ describe('assign, then push', () => {
       const [result] = await pushed(alice, [displayId], key);
       expect(result).toMatchObject({ outcome: 'published', publicationId });
       expect(await publications(orgA, displayId)).toHaveLength(1);
+    });
+
+    it('does not replay a pushed schedule as a publish of its default playlist', async () => {
+      const display = await createDisplay(alice, orgA, 'Scheduled key');
+      const usual = await createPlaylist(alice, 'Usual key', [imageItem(imageA)]);
+      const other = await createPlaylist(alice, 'Other key', [imageItem(imageB)]);
+      const week = await createSchedule(alice, 'Week key', usual, [scheduleEvent(other)]);
+      await assignSchedule(alice, display.id, week.id);
+      const key = randomUUID();
+      expect((await pushed(alice, [display.id], key))[0]?.outcome).toBe('published');
+      // The publication records the default playlist, but it can play another one.
+      const refused = await publish(usual, display.id, key);
+      expect(refused.status).toBe(409);
+      expect(((await refused.json()) as ErrorBody).error.code).toBe('idempotency_conflict');
+      expect((await getDisplay(alice, display.id)).assignedSchedule?.id).toBe(week.id);
+      expect(await publications(orgA, display.id)).toHaveLength(1);
+
+      // A schedule that can only play its default is that playlist's publication: it replays.
+      const plain = await createDisplay(alice, orgA, 'Collapsed key');
+      const quiet = await createSchedule(alice, 'Quiet key', usual, []);
+      await assignSchedule(alice, plain.id, quiet.id);
+      const again = randomUUID();
+      const [result] = await pushed(alice, [plain.id], again);
+      expect(result?.outcome).toBe('published');
+      const replay = await publish(usual, plain.id, again);
+      expect(replay.status).toBe(200);
+      expect(await replay.json()).toMatchObject({
+        publicationId: result?.publicationId,
+        replayed: true,
+      });
     });
   });
 
@@ -1077,6 +1155,56 @@ describe('assign, then push', () => {
         publication?.manifest.assets.filter(isMediaItem).map((asset) => asset.assetId),
       ).toEqual([imageB, imageA]);
       expect(publication?.manifest.assets.map((asset) => asset.durationMs)).toEqual([7000, 4000]);
+    });
+
+    it('holds the schedule, so its events cannot change between reading the row and the events', async () => {
+      const display = await createDisplay(alice, orgA, 'Schedule under push');
+      const usual = await createPlaylist(alice, 'Usual', [imageItem(imageA)]);
+      const other = await createPlaylist(alice, 'Other', [imageItem(imageB)]);
+      const schedule = await createSchedule(alice, 'Before the edit', usual, [
+        scheduleEvent(other, '09:00', '17:00'),
+      ]);
+      await assignSchedule(alice, display.id, schedule.id);
+      const weekend = [false, false, false, false, false, true, true];
+      // As PUT /api/schedules/:id does: lock the schedule, replace its events, then
+      // write the row. A push that read the schedule and its events in one locking
+      // statement would publish the new name's schedule with the old events.
+      const { waited, results } = await pushAgainstHeldEdit(display.id, async (tx) => {
+        await tx.query(
+          'SELECT 1 FROM schedule WHERE id = $1 AND org_id = app_org_id() FOR UPDATE',
+          [schedule.id],
+        );
+        await tx.query(
+          'DELETE FROM schedule_event WHERE schedule_id = $1 AND org_id = app_org_id()',
+          [schedule.id],
+        );
+        await tx.query(
+          `INSERT INTO schedule_event
+             (schedule_id, position, org_id, playlist_id, days, start_time, end_time)
+           VALUES ($1, 0, app_org_id(), $2, $3, '10:00', '11:00'),
+                  ($1, 1, app_org_id(), $2, $3, '20:00', '02:00')`,
+          [schedule.id, other, weekend],
+        );
+        await tx.query(
+          "UPDATE schedule SET name = 'After the edit' WHERE id = $1 AND org_id = app_org_id()",
+          [schedule.id],
+        );
+      });
+      expect(waited).toBe(true);
+      expect(results[0]?.outcome).toBe('published');
+      const [publication] = await publications(orgA, display.id);
+      expect(publication?.id).toBe(results[0]?.publicationId);
+      const manifest = publication?.manifest;
+      if (manifest?.schemaVersion !== 4) throw new Error('expected a version 4 manifest');
+      expect(manifest.schedule.events).toEqual([
+        { playlist: 1, days: weekend, start: '10:00', end: '11:00' },
+        { playlist: 1, days: weekend, start: '20:00', end: '02:00' },
+      ]);
+      // What was published is what the plan now compares with: the committed schedule.
+      expect(await planRow(alice, display.id)).toMatchObject({
+        schedule: { id: schedule.id, name: 'After the edit' },
+        state: 'up_to_date',
+      });
     });
   });
 });

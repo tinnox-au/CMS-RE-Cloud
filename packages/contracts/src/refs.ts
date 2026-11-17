@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DisplayIdSchema, PlaylistIdSchema } from './ids.ts';
+import { DisplayIdSchema, PlaylistIdSchema, ScheduleIdSchema } from './ids.ts';
 import { ABSOLUTE } from './limits.ts';
 
 const refName = z.string().min(1).max(ABSOLUTE.maxNameLength);
@@ -11,3 +11,7 @@ export type DisplayRef = z.infer<typeof DisplayRefSchema>;
 /** A playlist named inside another response: enough to show it and link to it. */
 export const PlaylistRefSchema = z.object({ id: PlaylistIdSchema, name: refName }).strict();
 export type PlaylistRef = z.infer<typeof PlaylistRefSchema>;
+
+/** A schedule named inside another response: enough to show it and link to it. */
+export const ScheduleRefSchema = z.object({ id: ScheduleIdSchema, name: refName }).strict();
+export type ScheduleRef = z.infer<typeof ScheduleRefSchema>;

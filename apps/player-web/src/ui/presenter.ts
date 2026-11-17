@@ -9,6 +9,7 @@ import {
   type ManifestItem,
   type Rect,
   type Rotation,
+  type Transition,
 } from '@tinnox/contracts';
 import { canvasToViewport, effectiveContentRect, stageTransform } from '@tinnox/domain';
 import { PlayerFault, throwIfAborted } from '../core/errors.ts';
@@ -54,7 +55,7 @@ function withTimeout<T>(work: Promise<T>, ms: number, onTimeout: () => Error): P
  * around it. Content appears only inside the content rectangle. Two stacked
  * layers give a cut without a black frame: the next item is prepared hidden on
  * top, revealed when it can be displayed, and only then is the old one released
- * (after a 500 ms fade, for image to image when the publication asks for it).
+ * (after a 500 ms fade, for image to image when the item's playlist asks for it).
  *
  * Every object URL made here is revoked when its layer is disposed, and elements
  * are removed from the document, so nothing accumulates however long the loop runs.
@@ -142,7 +143,12 @@ export class DomPresenter implements Presenter {
     this.#canvasEl.hidden = false;
   }
 
-  async show(asset: ManifestItem, manifest: Manifest, signal: AbortSignal): Promise<ShownItem> {
+  async show(
+    asset: ManifestItem,
+    manifest: Manifest,
+    signal: AbortSignal,
+    transition: Transition,
+  ): Promise<ShownItem> {
     this.#dropLeaving();
     let layer: NewLayer | null = null;
     // The geometry the item on screen was laid out with; an app changes it before it is ready.
@@ -175,11 +181,10 @@ export class DomPresenter implements Presenter {
 
       // Swap: geometry first, then reveal, then release.
       this.#applyGeometry(manifest);
-      const facts = manifestV2Facts(manifest);
       const previous = this.#current;
-      // Only image to image fades; the first item and anything with video cut.
-      const fade =
-        facts.transition === 'fade' && asset.kind === 'image' && previous?.kind === 'image';
+      // Only image to image fades; the first item and anything with video cut. On a change of
+      // playlist the incoming playlist's transition decides, as on a publication switch.
+      const fade = transition === 'fade' && asset.kind === 'image' && previous?.kind === 'image';
       layer.reveal(fade);
       this.#current = layer;
       layer = null;

@@ -64,6 +64,7 @@ function row(n: number, state: PushState, name = `Screen ${n}`): PushPlanRow {
   return {
     display: { id: id(n), name },
     playlist: state === 'nothing_assigned' ? null : { id: PLAYLIST, name: 'Foyer loop' },
+    schedule: null,
     state,
     issues: state === 'blocked' ? [ISSUE] : [],
     lastPushedAt: state === 'changes' || state === 'up_to_date' ? PUSHED_AT : null,
@@ -137,6 +138,17 @@ describe('scope and search', () => {
     expect(searchRows(plan, 'foyer north')).toHaveLength(1);
     expect(searchRows(plan, 'nowhere')).toEqual([]);
   });
+
+  it('finds a screen by the name of its schedule', () => {
+    const scheduled: PushPlanRow = {
+      ...row(4, 'changes', 'Canteen'),
+      schedule: { id: id(600), name: 'Opening hours' },
+    };
+    const plan = [row(1, 'changes', 'Foyer north'), scheduled];
+    expect(searchRows(plan, 'opening').map((r) => r.display.name)).toEqual(['Canteen']);
+    // The default playlist of the schedule still matches, as the playlist of any row does.
+    expect(searchRows(plan, 'foyer loop')).toHaveLength(2);
+  });
 });
 
 describe('groups', () => {
@@ -171,6 +183,21 @@ describe('groups', () => {
       'Nothing assigned',
     ]);
     expect(groups[0]?.rows.map((r) => r.display.id)).toEqual([id(2), id(1)]);
+  });
+
+  it('speaks of content in the group notes: a screen may have a schedule', () => {
+    const groups = groupRows([
+      row(5, 'nothing_assigned'),
+      row(3, 'up_to_date'),
+      row(4, 'blocked'),
+      row(1, 'changes'),
+    ]);
+    expect(groups.map((g) => g.note)).toEqual([
+      'The assigned content differs from what these screens were last given.',
+      'The assigned content cannot be pushed as it is. Each screen keeps the version it has.',
+      'The last push already matches the assigned content. There is nothing to push.',
+      'Assign a playlist or a schedule to a screen before pushing to it.',
+    ]);
   });
 
   it('leaves out a group without rows', () => {
@@ -585,7 +612,10 @@ describe('summary of an attempt', () => {
     expect(report?.lines).toHaveLength(4);
     expect(report?.lines.join(' ')).toContain('1 screen was rejected');
     expect(report?.lines.join(' ')).toContain('1 screen was already up to date');
-    expect(report?.lines.join(' ')).toContain('1 screen was skipped');
+    expect(report?.lines.join(' ')).toContain('1 screen was skipped: nothing is assigned.');
+    expect(report?.lines.join(' ')).toContain(
+      '1 screen was rejected: the assigned content cannot be pushed as it is.',
+    );
   });
 
   it('never claims a push when nothing was published', () => {
@@ -689,13 +719,18 @@ describe('words', () => {
     expect(upToDate).toMatchObject({ tone: 'ok', title: 'No changes waiting' });
     const blocked = nothingWaitingNotice([row(3, 'up_to_date'), row(4, 'blocked')]);
     expect(blocked?.tone).toBe('warn');
-    expect(blocked?.text).toContain('1 screen is blocked');
+    expect(blocked?.text).toBe('1 screen is blocked. Fix the assigned content, then push.');
+    expect(upToDate?.text).toBe(
+      'Every screen with content assigned was already given its latest version.',
+    );
     expect(nothingWaitingNotice([row(4, 'blocked'), row(6, 'blocked')])?.text).toContain(
       '2 screens are blocked',
     );
     const unassigned = nothingWaitingNotice([row(5, 'nothing_assigned')]);
     expect(unassigned?.tone).toBe('info');
-    expect(unassigned?.text).toContain('No screen has a playlist assigned yet');
+    expect(unassigned?.text).toBe(
+      'No screen has content assigned yet. Assign a playlist or a schedule to a screen, then push.',
+    );
     for (const notice of [upToDate, blocked, unassigned]) {
       expect(`${notice?.title} ${notice?.text}`.toLowerCase()).not.toMatch(
         /online|offline|display/,

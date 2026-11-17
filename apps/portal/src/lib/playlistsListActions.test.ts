@@ -18,6 +18,7 @@ import {
   failureText,
   isInUseRefusal,
   mergeDeleteRetry,
+  refusalNames,
   screenWording,
 } from './playlistsListActions.ts';
 
@@ -37,10 +38,26 @@ function inUse(screens: readonly string[]): ApiRequestError {
   });
 }
 
-function row(displayId: string, state: PushState, playlistId: string | null): PushPlanRow {
+function usedBySchedules(schedules: readonly string[]): ApiRequestError {
+  return new ApiRequestError({
+    status: 409,
+    code: 'playlist_in_use',
+    message: 'This playlist is used by a schedule. Choose another playlist in the schedule first.',
+    details: schedules.map((name) => ({ path: 'schedule', message: name })),
+    fromApi: true,
+  });
+}
+
+function row(
+  displayId: string,
+  state: PushState,
+  playlistId: string | null,
+  scheduleId: string | null = null,
+): PushPlanRow {
   return {
     display: { id: displayId, name: `Screen ${displayId.slice(0, 1)}` },
     playlist: playlistId === null ? null : { id: playlistId, name: 'Loop' },
+    schedule: scheduleId === null ? null : { id: scheduleId, name: 'Opening hours' },
     state,
     issues:
       state === 'blocked'
@@ -92,11 +109,40 @@ describe('a playlist that was not deleted', () => {
       code: 'playlist_in_use',
       hint: 'Assign other content to that screen, then delete the playlist.',
       inUse: true,
+      bySchedule: false,
     });
     expect(deleteFailureText(inUse(['Foyer', 'Lift lobby', 'Window']), 3)).toMatchObject({
       message: 'Assigned to Foyer, Lift lobby and Window.',
       hint: 'Assign other content to those screens, then delete the playlist.',
     });
+  });
+
+  it('names the schedules that use it and says what to do', () => {
+    expect(deleteFailureText(usedBySchedules(['Opening hours']), 0)).toEqual({
+      message: 'Used by the schedule Opening hours.',
+      code: 'playlist_in_use',
+      hint: 'Choose another playlist in that schedule, then delete the playlist.',
+      inUse: true,
+      bySchedule: true,
+    });
+    // The count of screens says nothing about schedules: no "and 3 more".
+    expect(deleteFailureText(usedBySchedules(['Opening hours', 'Weekend']), 3)).toMatchObject({
+      message: 'Used by the schedules Opening hours and Weekend.',
+      hint: 'Choose another playlist in those schedules, then delete the playlist.',
+    });
+  });
+
+  it('reads the names of one kind from the details of a refusal', () => {
+    const details = [
+      { path: 'display', message: 'Foyer' },
+      { path: 'schedule', message: 'Opening hours' },
+      { path: 'display', message: '  ' },
+      { path: 'display', message: 'Lift lobby' },
+      { path: 'name', message: 'not a name' },
+    ];
+    expect(refusalNames(details, 'display')).toEqual(['Foyer', 'Lift lobby']);
+    expect(refusalNames(details, 'schedule')).toEqual(['Opening hours']);
+    expect(refusalNames([], 'display')).toEqual([]);
   });
 
   it('says that there are more screens than the five the server names', () => {
@@ -107,10 +153,13 @@ describe('a playlist that was not deleted', () => {
   });
 
   it('still explains a refusal that names no screen', () => {
-    expect(deleteFailureText(inUse([]), 0)).toMatchObject({
-      message: 'A screen has this playlist assigned.',
+    // The refusal of a delete that raced an assignment: a screen or a schedule, unnamed.
+    expect(deleteFailureText(inUse([]), 0)).toEqual({
+      message: 'A screen has this playlist assigned or a schedule uses it.',
       code: 'playlist_in_use',
-      hint: 'Assign other content to that screen, then delete the playlist.',
+      hint: 'Assign other content to the screen, or choose another playlist in the schedule, then delete the playlist.',
+      inUse: true,
+      bySchedule: false,
     });
   });
 
@@ -126,6 +175,7 @@ describe('a playlist that was not deleted', () => {
       code: 'not_found',
       hint: null,
       inUse: false,
+      bySchedule: false,
     });
   });
 
@@ -160,12 +210,16 @@ describe('trying a delete again', () => {
 
   it('tells an in-use refusal from any other failure', () => {
     expect(isInUseRefusal(inUse(['Foyer']))).toBe(true);
+    expect(isInUseRefusal(usedBySchedules(['Opening hours']))).toBe(true);
     expect(isInUseRefusal(offline())).toBe(false);
     expect(isInUseRefusal(new Error('boom'))).toBe(false);
   });
 
   it('offers nothing to repeat when every failure is an in-use refusal', () => {
     expect(deleteRetryItems([{ item: alpha, error: inUse(['Foyer']) }])).toEqual([]);
+    expect(deleteRetryItems([{ item: alpha, error: usedBySchedules(['Opening hours']) }])).toEqual(
+      [],
+    );
   });
 
   it('repeats only the failures that another attempt could change', () => {
@@ -263,6 +317,17 @@ describe('the push state after an assignment', () => {
     expect(view.waitingIds).toEqual([A]);
   });
 
+  it('does not take the row of a schedule for the playlist assigned over it', () => {
+    // Read before the assignment: the screen still had a schedule whose default playlist is
+    // the one now assigned, and that schedule was up to date.
+    const stale = plan(row(A, 'up_to_date', PLAYLIST, C), row(B, 'changes', PLAYLIST));
+    const view = assignPushView([A, B], stale, PLAYLIST);
+    expect(view.known).toBe(false);
+    expect(view.stateById.has(A)).toBe(false);
+    expect(view.stateById.get(B)).toBe('changes');
+    expect(canPushAfterAssign(2, assignPushView([A], stale, PLAYLIST))).toBe(true);
+  });
+
   it('does not offer a push when nothing is waiting', () => {
     const blocked = plan(row(A, 'blocked', PLAYLIST), row(B, 'up_to_date', PLAYLIST));
     const view = assignPushView([A, B], blocked, PLAYLIST);
@@ -282,6 +347,8 @@ describe('wording', () => {
       deleteFailureText(inUse(['Foyer']), 1).message,
       deleteFailureText(inUse(['Foyer']), 1).hint ?? '',
       deleteFailureText(inUse([]), 0).message,
+      deleteFailureText(usedBySchedules(['Opening hours']), 0).message,
+      deleteFailureText(usedBySchedules(['Opening hours']), 0).hint ?? '',
       failureText(inUse(['Foyer'])).message,
       assignConfirmLabel(0),
       assignConfirmLabel(2),

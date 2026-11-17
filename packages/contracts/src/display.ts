@@ -11,9 +11,11 @@ import {
   LocalTimeSchema,
   PlaylistIdSchema,
   RegistrationIdSchema,
+  ScheduleIdSchema,
   SiteIdSchema,
   UtcTimestampSchema,
 } from './ids.ts';
+import { ABSOLUTE } from './limits.ts';
 import { PlaylistRefSchema } from './refs.ts';
 import { TagIdsInputSchema, TagIdsSchema } from './tag.ts';
 import { DescriptionInputSchema, DescriptionSchema, NameSchema } from './text.ts';
@@ -50,6 +52,19 @@ export const WorkingHoursSchema = z
   .refine((days) => days.some((d) => d !== null), { message: 'at least one day must be open' });
 export type WorkingHours = z.infer<typeof WorkingHoursSchema>;
 
+/**
+ * The schedule assigned to a display. The default playlist is carried so the screen page can
+ * preview it without a second round trip.
+ */
+export const AssignedScheduleSchema = z
+  .object({
+    id: ScheduleIdSchema,
+    name: z.string().min(1).max(ABSOLUTE.maxNameLength),
+    defaultPlaylist: PlaylistRefSchema,
+  })
+  .strict();
+export type AssignedSchedule = z.infer<typeof AssignedScheduleSchema>;
+
 export const DisplayDtoSchema = z
   .object({
     id: DisplayIdSchema,
@@ -77,6 +92,11 @@ export const DisplayDtoSchema = z
      * the display; a push builds the publication (see `push.ts`).
      */
     assignedPlaylist: PlaylistRefSchema.nullable(),
+    /**
+     * The schedule assigned to the display, or null. A display has a playlist or a schedule
+     * assigned, never both: at most one of `assignedPlaylist` and `assignedSchedule` is set.
+     */
+    assignedSchedule: AssignedScheduleSchema.nullable(),
     createdAt: UtcTimestampSchema,
     updatedAt: UtcTimestampSchema,
   })
@@ -111,6 +131,10 @@ export type DisplayCreateInput = z.input<typeof DisplayCreateSchema>;
  *   the media scope, answers 404.
  * - `assignedPlaylistId`: null removes the assignment. An unknown or deleted
  *   playlist answers 404. Nothing reaches the display until a push.
+ * - `assignedScheduleId`: an unknown schedule answers 404. A display has a playlist
+ *   or a schedule, never both: a non-null id on one side clears the other side, null
+ *   clears its own side only, and `{ assignedPlaylistId: null, assignedScheduleId: null }`
+ *   removes all content. Both ids non-null is refused.
  * - `workingHours`: null clears them (always on).
  */
 export const DisplayPatchSchema = z
@@ -124,9 +148,18 @@ export const DisplayPatchSchema = z
     workingHours: WorkingHoursSchema.nullable().optional(),
     tagIds: TagIdsInputSchema.optional(),
     assignedPlaylistId: PlaylistIdSchema.nullable().optional(),
+    assignedScheduleId: ScheduleIdSchema.nullable().optional(),
   })
   .strict()
-  .refine((p) => Object.keys(p).length > 0, { message: 'at least one field is required' });
+  .refine((p) => Object.keys(p).length > 0, { message: 'at least one field is required' })
+  // Each id is a string, null or absent: only two strings name both.
+  .refine(
+    (p) => typeof p.assignedPlaylistId !== 'string' || typeof p.assignedScheduleId !== 'string',
+    {
+      path: ['assignedScheduleId'],
+      message: 'assign a playlist or a schedule, not both',
+    },
+  );
 export type DisplayPatch = z.infer<typeof DisplayPatchSchema>;
 
 export const RevokePlayerResponseSchema = z

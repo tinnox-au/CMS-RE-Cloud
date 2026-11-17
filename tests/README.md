@@ -16,6 +16,33 @@ no CSP violation) and `e2e/08-apps-portal.spec.ts` (creating and editing an app 
 the portal by keyboard, the contrast warning, adding an app to a playlist and pushing,
 deleting an app in use, the still ticker preview, no CSP violation and no web storage).
 
+Stage B slice 3 (schedules) added `e2e/09-schedules-portal.spec.ts` (creating a schedule
+through the dialog by keyboard; an event with no playlist refused, with the error summary
+leading to its field; events filled in, reordered and removed with focus kept in the
+list; assigning the schedule on a screen's page and pushing it; the refusals to delete a
+schedule a screen has and a playlist a schedule uses; a playlist replacing the schedule
+on a screen, with the dialog saying so; phone width without sideways scrolling; no CSP
+violation and no web storage) and `e2e/10-schedules-player.spec.ts` (a paired player in
+Australia/Melbourne: an event that covers every moment plays its playlist from a
+version 4 manifest; an event on another weekday leaves the default playlist on screen; a
+schedule without events is pushed below version 4; the "Schedule picks" and "Build" rows
+of the diagnostics panel; no CSP violation). The crossing of an event edge is unit-tested
+only (`apps/player-web/src/core/playback.test.ts`): the player corrects its clock from
+the server, so a faked browser clock would not move it. Both files pass in the full suite.
+
+`e2e/11-accessibility.spec.ts` runs axe (`@axe-core/playwright`, WCAG 2.2 A and AA) on
+every main portal page and on the schedule editor with errors, the create-schedule and
+push dialogs, the screen page's tabs and its Change menu, in light and in dark. It fails
+on serious and critical findings only (`e2e/support/a11y.ts`, which first waits for short
+entrance animations so a dialog is not measured while it fades in). An automated check
+finds a share of what a screen-reader user meets; a listening pass with a real screen
+reader is still a manual step.
+
+`integration/` gained the schedule routes in `session-csrf.test.ts` and the schedule
+probes in `cross-org.test.ts`; the API's own schedule tests are
+`apps/api/test/schedules.integration.test.ts`, and the database's are
+`packages/db/test/stage-b-schedules.integration.test.ts`.
+
 `npm run test:integration` also runs `packages/*/test/*.integration.test.ts` and
 `apps/api/test/*.integration.test.ts`. It rebuilds the database `tinnox_test` first.
 

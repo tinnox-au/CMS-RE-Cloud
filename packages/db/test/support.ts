@@ -55,6 +55,8 @@ export interface TestOrg {
   displayTagId: string;
   /** A Clock app, used by no playlist. */
   appId: string;
+  /** A schedule on the playlist, with one event for the same playlist; no display has it assigned. */
+  scheduleId: string;
 }
 
 export const hash = (): Buffer => randomBytes(32);
@@ -67,8 +69,9 @@ export function pairingCode(): string {
 /**
  * Creates a complete organisation as the migrator: site, member, display, ready media in a
  * folder, playlist (assigned to the display), publication, audit row, one tag of each
- * scope put on the media item and on the display, and one app. Every tenant table that the runtime role
- * writes directly gets exactly one row, except `tag`, which gets two.
+ * scope put on the media item and on the display, one app, and one schedule with one event.
+ * Every tenant table that the runtime role writes directly gets exactly one row, except
+ * `tag`, which gets two.
  */
 export async function createOrg(migrator: pg.Client, name: string): Promise<TestOrg> {
   const o: TestOrg = {
@@ -84,6 +87,7 @@ export async function createOrg(migrator: pg.Client, name: string): Promise<Test
     mediaTagId: randomUUID(),
     displayTagId: randomUUID(),
     appId: randomUUID(),
+    scheduleId: randomUUID(),
   };
   const manifest = {
     schemaVersion: 1,
@@ -175,6 +179,15 @@ export async function createOrg(migrator: pg.Client, name: string): Promise<Test
     await migrator.query(
       'INSERT INTO playlist_item (org_id, playlist_id, position, media_id, duration_ms) VALUES ($1, $2, 0, $3, 5000)',
       [o.orgId, o.playlistId, o.mediaId],
+    );
+    await migrator.query(
+      'INSERT INTO schedule (id, org_id, name, default_playlist_id) VALUES ($1, $2, $3, $4)',
+      [o.scheduleId, o.orgId, `${name} schedule`, o.playlistId],
+    );
+    await migrator.query(
+      `INSERT INTO schedule_event (schedule_id, position, org_id, playlist_id, days, start_time, end_time)
+       VALUES ($1, 0, $2, $3, $4, '09:00', '17:00')`,
+      [o.scheduleId, o.orgId, o.playlistId, [true, true, true, true, true, false, false]],
     );
     await migrator.query(
       'INSERT INTO publication (id, org_id, display_id, playlist_id, manifest, idempotency_key, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',

@@ -18,10 +18,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   AppDtoSchema,
+  ScheduleDtoSchema,
   type AppContent,
   type AppDto,
   type MediaJobResult,
   type PlaylistItemInput,
+  type ScheduleDto,
+  type ScheduleEventInput,
 } from '@tinnox/contracts';
 import { createPool, poolAsTx, sessionCreate, sha256, withOrg, type Pool } from '@tinnox/db';
 import { createDeliveryRegistry } from '@tinnox/delivery';
@@ -519,6 +522,49 @@ export async function assignPlaylist(
   const response = await operator.fetch(`/api/displays/${displayId}`, {
     method: 'PATCH',
     json: { assignedPlaylistId: playlistId },
+  });
+  if (response.status !== 200)
+    throw new Error(`assignment failed: ${response.status} ${await response.text()}`);
+}
+
+/** One weekly event for the playlist: every day unless `days` (Monday first) says otherwise. */
+export function scheduleEvent(
+  playlistId: string,
+  start = '09:00',
+  end = '17:00',
+  days: readonly boolean[] = [true, true, true, true, true, true, true],
+): ScheduleEventInput {
+  return { playlistId, days: [...days], start, end };
+}
+
+/** Creates a schedule through the API and returns it. `events` are in priority order. */
+export async function createSchedule(
+  operator: Operator,
+  name: string,
+  defaultPlaylistId: string,
+  events: readonly ScheduleEventInput[] = [],
+): Promise<ScheduleDto> {
+  const response = await operator.fetch('/api/schedules', {
+    method: 'POST',
+    json: { name, defaultPlaylistId, events },
+  });
+  if (response.status !== 201)
+    throw new Error(`schedule create failed: ${response.status} ${await response.text()}`);
+  return ScheduleDtoSchema.parse(await response.json());
+}
+
+/**
+ * Assigns a schedule to a display, which takes a playlist off it (null removes
+ * the schedule). Nothing is pushed.
+ */
+export async function assignSchedule(
+  operator: Operator,
+  displayId: string,
+  scheduleId: string | null,
+): Promise<void> {
+  const response = await operator.fetch(`/api/displays/${displayId}`, {
+    method: 'PATCH',
+    json: { assignedScheduleId: scheduleId },
   });
   if (response.status !== 200)
     throw new Error(`assignment failed: ${response.status} ${await response.text()}`);

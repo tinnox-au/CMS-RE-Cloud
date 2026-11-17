@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { FitMode, Manifest, ManifestAssetV1, ManifestV1 } from '@tinnox/contracts';
 import {
+  EVERY_DAY,
   ID,
+  WEEKDAYS,
   apps,
   display,
   library,
   limits,
+  planSchedule,
   playback,
   tickerContent,
+  type FixturePlaylist,
 } from './fixtures.test-support.ts';
 import { buildManifest, type PlanPublicationResult } from './manifest.ts';
 import { buildPublicationDraft } from './playlist.ts';
@@ -489,6 +493,169 @@ describe('draftMatchesManifest with apps', () => {
       kind: 'playback',
       field: 'schemaVersion',
     });
+  });
+});
+
+describe('draftMatchesManifest with a schedule', () => {
+  const PLAYLISTS: Record<string, FixturePlaylist> = {
+    [ID.listDefault]: { name: 'Reception loop', items: [image(ID.jpeg), video(ID.video)] },
+    [ID.listLunch]: { name: 'Lunch', items: [image(ID.png, 8000), image(ID.jpeg, 3000)] },
+    [ID.listEvening]: { name: 'Evening', items: [video(ID.video)] },
+  };
+  type Events = Parameters<typeof planSchedule>[1]['events'];
+  const lunch = { playlistId: ID.listLunch, days: WEEKDAYS, start: '11:30', end: '14:00' };
+  const evening = { playlistId: ID.listEvening, days: EVERY_DAY, start: '18:00', end: '24:00' };
+  const EVENTS: Events = [lunch, evening];
+  const scheduled = (events: Events = EVENTS, playlists = PLAYLISTS): PublicationDraft => {
+    const plan = planSchedule(playlists, { defaultPlaylistId: ID.listDefault, events });
+    if (!plan.ok) throw new Error(`fixture schedule is not publishable: ${plan.issues[0]?.code}`);
+    return plan.draft;
+  };
+  const stored = (): Manifest => published(scheduled());
+  const SCHEDULE = { kind: 'playback', field: 'schedule' };
+  const VERSION = { kind: 'playback', field: 'schemaVersion' };
+
+  it('matches the v4 manifest built from the same schedule', () => {
+    expect(stored().schemaVersion).toBe(4);
+    expect(firstDraftManifestDifference(scheduled(), stored())).toBeNull();
+    expect(draftMatchesManifest(scheduled(), stored())).toBe(true);
+  });
+
+  it('matches a schedule stored as jsonb, with keys in another order', () => {
+    const reversed = (value: object) => Object.fromEntries(Object.entries(value).reverse());
+    const manifest = JSON.parse(JSON.stringify(stored())) as Manifest;
+    if (manifest.schemaVersion !== 4) throw new Error('fixture should publish v4');
+    (manifest as { schedule: unknown }).schedule = {
+      events: manifest.schedule.events.map(reversed),
+      playlists: manifest.schedule.playlists.map(reversed),
+    };
+    expect(Object.keys(manifest.schedule.events[0] ?? {})[0]).toBe('end');
+    expect(firstDraftManifestDifference(scheduled(), manifest)).toBeNull();
+  });
+
+  it('sees a changed day, time or playlist of an event', () => {
+    const saturdayToo = [true, true, true, true, true, true, false];
+    const cases: [string, Events][] = [
+      ['day', [{ ...lunch, days: saturdayToo }, evening]],
+      ['start', [{ ...lunch, start: '11:00' }, evening]],
+      ['end', [lunch, { ...evening, end: '23:00' }]],
+    ];
+    for (const [what, events] of cases) {
+      expect(firstDraftManifestDifference(scheduled(events), stored()), what).toEqual(SCHEDULE);
+    }
+    // The third event points at another playlist that the schedule already holds.
+    const three = published(scheduled([lunch, evening, lunch]));
+    expect(
+      firstDraftManifestDifference(
+        scheduled([lunch, evening, { ...lunch, playlistId: ID.listEvening }]),
+        three,
+      ),
+    ).toEqual(SCHEDULE);
+  });
+
+  it('sees an added, a removed and a reordered event', () => {
+    const late = { ...lunch, start: '15:00', end: '16:00' };
+    const three = published(scheduled([lunch, evening, late]));
+    // The same playlists in the same slices; only the order of the events differs.
+    expect(firstDraftManifestDifference(scheduled([lunch, late, evening]), three)).toEqual(
+      SCHEDULE,
+    );
+    expect(firstDraftManifestDifference(scheduled([lunch, evening]), three)).toEqual(SCHEDULE);
+    expect(firstDraftManifestDifference(scheduled([lunch, evening, late, late]), three)).toEqual(
+      SCHEDULE,
+    );
+    // A reordering that changes which playlist is used first moves its items in the one list.
+    expect(firstDraftManifestDifference(scheduled([evening, lunch, late]), three)).toMatchObject({
+      kind: 'item',
+      index: 2,
+    });
+  });
+
+  it('sees the playback options of an event playlist, and of the default playlist first', () => {
+    const withLunch = (options: PlaybackOptions) =>
+      scheduled(EVENTS, {
+        ...PLAYLISTS,
+        [ID.listLunch]: {
+          name: 'Lunch',
+          items: [image(ID.png, 8000), image(ID.jpeg, 3000)],
+          playback: options,
+        },
+      });
+    expect(
+      firstDraftManifestDifference(withLunch({ transition: 'cut', shuffle: true }), stored()),
+    ).toEqual(SCHEDULE);
+    expect(
+      firstDraftManifestDifference(withLunch({ transition: 'fade', shuffle: false }), stored()),
+    ).toEqual(SCHEDULE);
+    const shuffledDefault = scheduled(EVENTS, {
+      ...PLAYLISTS,
+      [ID.listDefault]: {
+        name: 'Reception loop',
+        items: [image(ID.jpeg), video(ID.video)],
+        playback: { transition: 'cut', shuffle: true },
+      },
+    });
+    expect(firstDraftManifestDifference(shuffledDefault, stored())).toEqual({
+      kind: 'playback',
+      field: 'shuffle',
+    });
+  });
+
+  it('sees a changed item inside an event playlist at its place in the one list', () => {
+    const edited = scheduled(EVENTS, {
+      ...PLAYLISTS,
+      [ID.listLunch]: { name: 'Lunch', items: [image(ID.png, 8000), image(ID.jpeg, 3001)] },
+    });
+    // Two items of the default playlist come first.
+    expect(firstDraftManifestDifference(edited, stored())).toEqual({
+      kind: 'item',
+      index: 3,
+      field: 'durationMs',
+    });
+    // An item moved from one playlist to the next: the same list, other runs.
+    const moved = scheduled(EVENTS, {
+      ...PLAYLISTS,
+      [ID.listDefault]: { name: 'Reception loop', items: [image(ID.jpeg)] },
+      [ID.listLunch]: {
+        name: 'Lunch',
+        items: [video(ID.video), image(ID.png, 8000), image(ID.jpeg, 3000)],
+      },
+    });
+    expect(firstDraftManifestDifference(moved, stored())).toEqual(SCHEDULE);
+    const longer = scheduled(EVENTS, {
+      ...PLAYLISTS,
+      [ID.listEvening]: { name: 'Evening', items: [video(ID.video), image(ID.png)] },
+    });
+    expect(firstDraftManifestDifference(longer, stored())).toEqual({
+      kind: 'item_count',
+      draftItems: 6,
+      manifestItems: 5,
+    });
+  });
+
+  it('offers a push back when no event uses another playlist any more', () => {
+    const one = published(scheduled([lunch]));
+    expect(one.schemaVersion).toBe(4);
+    // The last event removed, and the only event pointed at the default playlist.
+    expect(firstDraftManifestDifference(scheduled([]), one)).toEqual(VERSION);
+    expect(
+      firstDraftManifestDifference(scheduled([{ ...lunch, playlistId: ID.listDefault }]), one),
+    ).toEqual(VERSION);
+    // A playlist assigned in place of the schedule, and a schedule in place of a playlist.
+    expect(firstDraftManifestDifference(draftOf(), one)).toEqual(VERSION);
+    expect(firstDraftManifestDifference(scheduled([lunch]), publishedManifest())).toEqual(VERSION);
+  });
+
+  it('decides the push state of a scheduled display', () => {
+    const plan = { ok: true as const, draft: scheduled() };
+    expect(decidePushState({ plan, currentManifest: null })).toBe('never_pushed');
+    expect(decidePushState({ plan, currentManifest: stored() })).toBe('up_to_date');
+    expect(
+      decidePushState({
+        plan: { ok: true, draft: scheduled([lunch]) },
+        currentManifest: stored(),
+      }),
+    ).toBe('changes');
   });
 });
 

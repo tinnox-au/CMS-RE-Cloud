@@ -11,6 +11,7 @@ import {
   pushSummary,
   rowsForPlaylist,
 } from '../../../lib/playlistEditor.ts';
+import { anyHasSchedule, SCHEDULE_REPLACED_NOTE } from '../../../lib/screensList.ts';
 import { Plus, Send } from '../../../ui/icons.ts';
 import {
   Button,
@@ -34,7 +35,7 @@ export interface PushCardProps {
 }
 
 /**
- * The screens that have this playlist assigned, with where each stands between what is
+ * The screens that have this playlist assigned directly (not through a schedule), with where each stands between what is
  * assigned and what it was last given (`GET /api/push`, read through `usePush`). "Assign to
  * screens" assigns it to more screens, several at once, as the list's row menu does; "Push now" opens the push dialog on this playlist's
  * screens. Push is held while the draft has unsaved changes: only the saved playlist can be
@@ -215,12 +216,13 @@ export function PushCard({ playlist, dirty }: PushCardProps) {
         }}
         multiple
         title="Assign to screens"
-        description={
+        description={(chosen) => (
           <>
             <strong className="tx-break">{playlist.name}</strong>, as last saved, replaces the
             playlist each chosen screen has now. Nothing changes on a screen until you push.
+            {anyHasSchedule(chosen) && ` ${SCHEDULE_REPLACED_NOTE}`}
           </>
-        }
+        )}
         confirmLabel={assignConfirmLabel}
         disabledReason={(display) =>
           display.assignedPlaylist?.id === playlist.id ? 'Already has this playlist' : null

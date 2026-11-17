@@ -1,17 +1,9 @@
 import { Page } from '../../shell/Page.tsx';
 import { EmptyState, type IconComponent } from '../../ui/index.ts';
-import {
-  AudioLines,
-  CalendarDays,
-  FileText,
-  Globe,
-  LayoutTemplate,
-  Users,
-} from '../../ui/icons.ts';
+import { AudioLines, FileText, Globe, LayoutTemplate, Users } from '../../ui/icons.ts';
 
 /** The sections that are in the navigation but not built yet. */
-export type PlannedSection =
-  'audio' | 'documents' | 'web-pages' | 'layouts' | 'schedules' | 'users';
+export type PlannedSection = 'audio' | 'documents' | 'web-pages' | 'layouts' | 'users';
 
 interface PlannedContent {
   /** The page's `h1`, as in docs/portal-v2/stage-a.md, section 1. */
@@ -47,12 +39,6 @@ const PLANNED: { readonly [K in PlannedSection]: PlannedContent } = {
     icon: LayoutTemplate,
     stage: 'B',
     text: 'Layouts that split a screen into several zones will be drawn here in a canvas editor in stage B.',
-  },
-  schedules: {
-    title: 'Schedules',
-    icon: CalendarDays,
-    stage: 'B',
-    text: 'Schedules with a calendar, repeating events and filler content will be planned here in stage B.',
   },
   users: {
     title: 'Users',

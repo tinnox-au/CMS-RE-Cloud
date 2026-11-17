@@ -27,6 +27,7 @@ import { useWallClock } from './parts.tsx';
 const RELATED_LABELS: { readonly [K in ActivityObject['kind']]: string } = {
   display: 'Screen',
   playlist: 'Playlist',
+  schedule: 'Schedule',
   media: 'Media',
   tag: 'Tag',
   folder: 'Folder',

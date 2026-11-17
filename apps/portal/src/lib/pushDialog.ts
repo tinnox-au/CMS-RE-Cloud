@@ -53,10 +53,12 @@ export function scopeRows(
   return items.filter((row) => wanted.has(idKey(row.display.id)));
 }
 
-/** Rows whose screen name or playlist name contains every word of the query. */
+/** Rows whose screen name, playlist name or schedule name contains every word of the query. */
 export function searchRows(rows: readonly PushPlanRow[], query: string): readonly PushPlanRow[] {
   if (query.trim() === '') return rows;
-  return rows.filter((row) => matchesSearch([row.display.name, row.playlist?.name], query));
+  return rows.filter((row) =>
+    matchesSearch([row.display.name, row.playlist?.name, row.schedule?.name], query),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -94,19 +96,19 @@ const GROUP_TEXT: {
 } = {
   waiting: {
     title: 'Changes waiting',
-    note: 'The assigned playlist differs from what these screens were last given.',
+    note: 'The assigned content differs from what these screens were last given.',
   },
   blocked: {
     title: 'Blocked',
-    note: 'The assigned playlist cannot be pushed as it is. Each screen keeps the version it has.',
+    note: 'The assigned content cannot be pushed as it is. Each screen keeps the version it has.',
   },
   up_to_date: {
     title: 'Up to date',
-    note: 'The last push already matches the assigned playlist. There is nothing to push.',
+    note: 'The last push already matches the assigned content. There is nothing to push.',
   },
   nothing_assigned: {
     title: 'Nothing assigned',
-    note: 'Assign a playlist to a screen before pushing to it.',
+    note: 'Assign a playlist or a schedule to a screen before pushing to it.',
   },
 };
 
@@ -454,7 +456,7 @@ export function reportAttempt(summary: PushAttemptSummary): PushAttemptReport | 
   }
   if (summary.rejected > 0) {
     lines.push(
-      `${was(summary.rejected)} rejected: the assigned playlist cannot be pushed as it is. ${
+      `${was(summary.rejected)} rejected: the assigned content cannot be pushed as it is. ${
         summary.rejected === 1 ? 'It keeps' : 'They keep'
       } the version ${summary.rejected === 1 ? 'it has' : 'they have'}.`,
     );
@@ -470,7 +472,7 @@ export function reportAttempt(summary: PushAttemptSummary): PushAttemptReport | 
     lines.push(`${was(summary.unchanged)} already up to date, so nothing new was made.`);
   }
   if (summary.skipped > 0) {
-    lines.push(`${was(summary.skipped)} skipped: no playlist is assigned.`);
+    lines.push(`${was(summary.skipped)} skipped: nothing is assigned.`);
   }
 
   const complete = summary.published === summary.requested;
@@ -550,20 +552,20 @@ export function nothingWaitingNotice(rows: readonly PushPlanRow[]): PushIdleNoti
     return {
       tone: 'warn',
       title: 'Nothing can be pushed right now',
-      text: `${blocked === 1 ? '1 screen is' : `${blocked} screens are`} blocked. Fix the assigned playlist, then push.`,
+      text: `${blocked === 1 ? '1 screen is' : `${blocked} screens are`} blocked. Fix the assigned content, then push.`,
     };
   }
   if (rows.some((row) => row.state === 'up_to_date')) {
     return {
       tone: 'ok',
       title: 'No changes waiting',
-      text: 'Every screen with a playlist assigned was already given its latest version.',
+      text: 'Every screen with content assigned was already given its latest version.',
     };
   }
   return {
     tone: 'info',
     title: 'No changes waiting',
-    text: 'No screen has a playlist assigned yet. Assign a playlist to a screen, then push.',
+    text: 'No screen has content assigned yet. Assign a playlist or a schedule to a screen, then push.',
   };
 }
 

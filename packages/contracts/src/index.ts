@@ -2,6 +2,7 @@ export * from './ids.ts';
 export * from './limits.ts';
 export * from './text.ts';
 export * from './refs.ts';
+export * from './schedule.ts';
 export * from './canvas.ts';
 export * from './errors.ts';
 export * from './tag.ts';

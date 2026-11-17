@@ -50,6 +50,7 @@ import {
   Tooltip,
 } from '../../ui/index.ts';
 import {
+  CalendarDays,
   CircleCheck,
   CircleDashed,
   CircleExclamationPoint,
@@ -332,7 +333,7 @@ export function PushDialog({
                     </ButtonLink>
                   }
                 >
-                  Add a screen and assign a playlist to it, then push from here.
+                  Add a screen and assign a playlist or a schedule to it, then push from here.
                 </EmptyState>
               </div>
             ) : (
@@ -580,8 +581,13 @@ function PushRow({
   const name = <span className="tx-push-row__name">{row.display.name}</span>;
   const meta = (
     <span className="tx-push-row__meta">
-      {row.playlist === null ? (
-        <span>No playlist assigned</span>
+      {row.schedule !== null ? (
+        <span className="tx-push-row__playlist" title={`Schedule: ${row.schedule.name}`}>
+          <Icon icon={CalendarDays} size={14} />
+          <span className="tx-push-row__playlist-name">Schedule: {row.schedule.name}</span>
+        </span>
+      ) : row.playlist === null ? (
+        <span>Nothing assigned</span>
       ) : (
         <span className="tx-push-row__playlist" title={row.playlist.name}>
           <Icon icon={ListVideo} size={14} />
@@ -629,7 +635,18 @@ function PushRow({
             <StatusPill tone={view.pill.tone}>{view.pill.label}</StatusPill>
           )}
         </span>
-        {row.playlist !== null && view.issues.length > 0 && (
+        {row.schedule !== null && view.issues.length > 0 && (
+          <ButtonLink
+            variant="secondary"
+            size="sm"
+            to={`/schedules/${row.schedule.id}`}
+            onClick={onNavigate}
+          >
+            Open schedule
+            <span className="tx-visually-hidden"> {row.schedule.name}</span>
+          </ButtonLink>
+        )}
+        {row.schedule === null && row.playlist !== null && view.issues.length > 0 && (
           <ButtonLink
             variant="secondary"
             size="sm"

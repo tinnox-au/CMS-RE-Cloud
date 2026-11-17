@@ -1,0 +1,220 @@
+/*
+ * Schedules list, create dialog and editor (docs/portal-v2/stage-b.md, slice 3, section 7).
+ * The frame, the cards, the table, the fields and the controls come from the kit; this file
+ * only arranges the pages' own parts.
+ */
+
+/* ---------- List ---------- */
+
+/* The 44 px tile in a table row: a schedule has no thumbnail, so the section's icon stands in. */
+.tx-schedule-icon-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--link);
+}
+
+/*
+ * The default playlist in a row: a second link, quieter than the row's own. A fixed cap,
+ * because a percentage does not limit a nowrap box in an auto-layout table cell, and a long
+ * name would push columns out of the table; the full name is in the title.
+ */
+.tx-schedule-list__link {
+  display: inline-block;
+  overflow: hidden;
+  max-inline-size: 28ch;
+  border-radius: 4px;
+  color: var(--ink);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.tx-schedule-list__link:hover {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+/* ---------- Editor ---------- */
+
+.tx-schedule-editor-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.tx-schedule-editor-status[data-state='unsaved'] {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.tx-schedule-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-6);
+  min-inline-size: 0;
+}
+
+/* The error summary: each line is a link that moves focus to its control. */
+.tx-schedule-editor-summary:focus-visible {
+  outline: none;
+}
+
+.tx-schedule-editor-summary .tx-banner:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.tx-schedule-editor-summary ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Details and Default playlist, one above the other beside the events. */
+.tx-schedule-editor__side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-6);
+  min-inline-size: 0;
+}
+
+.tx-schedule-editor__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-4);
+}
+
+.tx-schedule-editor-facts.tx-facts {
+  grid-template-columns: minmax(84px, max-content) minmax(0, 1fr);
+  gap: 0;
+}
+
+.tx-schedule-editor-facts > dt,
+.tx-schedule-editor-facts > dd {
+  padding-block: 10px;
+  border-block-start: 1px solid var(--line);
+}
+
+.tx-schedule-editor-facts > dt {
+  padding-inline-end: var(--s-4);
+}
+
+/* A playlist select with the link to the chosen playlist beside it; the link wraps under. */
+.tx-schedule-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+}
+
+.tx-schedule-pick > .tx-select {
+  flex: 1 1 220px;
+  min-inline-size: 0;
+}
+
+/* ---------- Events ---------- */
+
+.tx-schedule-editor__help {
+  display: grid;
+  gap: var(--s-2);
+  max-inline-size: 76ch;
+  margin-block-end: var(--s-5);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-schedule-editor__help > p {
+  margin: 0;
+}
+
+.tx-schedule-editor__none {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.tx-schedule-events {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One event: an inset fill inside the card. */
+.tx-schedule-event {
+  min-inline-size: 0;
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+/* A legend is laid out by the fieldset, not by a grid, so the parts space themselves. */
+.tx-schedule-event__fields > * + * {
+  margin-block-start: var(--s-4);
+}
+
+.tx-schedule-event__fields > .tx-field__hint,
+.tx-schedule-event__fields > .tx-field__error {
+  margin-block-start: var(--s-2);
+}
+
+.tx-schedule-event__legend {
+  color: var(--ink);
+  font: 600 15px/20px var(--font-body);
+  letter-spacing: -0.01em;
+}
+
+/* Start and end, then the three buttons at the end of the same line; they wrap on a phone. */
+.tx-schedule-event__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-3) var(--s-4);
+}
+
+.tx-schedule-event__times {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: var(--s-3) var(--s-4);
+  min-inline-size: 0;
+}
+
+.tx-schedule-event__times > .tx-field {
+  flex: 0 0 160px;
+}
+
+.tx-schedule-event__actions {
+  display: flex;
+  flex: none;
+  gap: var(--s-1);
+  margin-inline-start: auto;
+}
+
+.tx-schedule-editor__add {
+  display: grid;
+  justify-items: start;
+  gap: var(--s-2);
+  margin-block-start: var(--s-5);
+}
+
+@media (max-width: 560px) {
+  .tx-schedule-event {
+    padding: var(--s-4);
+  }
+}

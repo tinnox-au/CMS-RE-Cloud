@@ -5,8 +5,8 @@ Parts that several portal v2 pages need: tags, folders, media thumbnails, playli
 ```tsx
 import {
   FolderSelect, MediaThumb, MoveToFolderDialog, PlaylistMosaic, PlaylistPickerDialog,
-  PushStatePill, ScreenPickerDialog, ScreenStatusPill, TagChips, TagFilter, TagPicker,
-  TagsDialog, useFolders, useNow, useTags,
+  PushStatePill, SchedulePickerDialog, ScreenPickerDialog, ScreenStatusPill, TagChips,
+  TagFilter, TagPicker, TagsDialog, useFolders, useNow, useTags,
   type FoldersResource, type TagsResource, type TagsDialogItem, type MoveToFolderItem,
 } from '../shared/index.ts';
 ```
@@ -16,7 +16,7 @@ Styles are in `shared.css` in this folder (class prefix `tx-shared-`); every com
 ## Rules
 
 - **One list per page.** Call `useTags(scope)` and `useFolders()` once in the page component and pass the result (`tags`, `folders`) to every shared component on that page. Each call is its own request and its own copy of the list.
-- **Who saves.** `TagPicker` and `FolderSelect` are form controls: they change a draft and the page saves it. `TagsDialog` and `MoveToFolderDialog` save by themselves (one `PATCH` per changed item), report with a toast, and tell the page through `onSaved` / `onMoved`. `PlaylistPickerDialog` and `ScreenPickerDialog` only return a choice: the page does the work, passes `busy` while it runs and `error` if it fails, and closes the dialog.
+- **Who saves.** `TagPicker` and `FolderSelect` are form controls: they change a draft and the page saves it. `TagsDialog` and `MoveToFolderDialog` save by themselves (one `PATCH` per changed item), report with a toast, and tell the page through `onSaved` / `onMoved`. `PlaylistPickerDialog`, `SchedulePickerDialog` and `ScreenPickerDialog` only return a choice: the page does the work, passes `busy` while it runs and `error` if it fails, and closes the dialog.
 - **Dialogs stay mounted.** Render a dialog always and toggle `open` (the kit's rule). Each opening starts fresh. `items` are read when the dialog opens.
 - The two saving dialogs call `useToast()`, so they need the `ToastProvider` of `AppShell` above them (every page has it).
 - Nothing here is a `<form>`, and Enter inside these parts never submits a form around them, so they are safe inside a page's own form.
@@ -294,9 +294,11 @@ interface PlaylistPickerDialogProps {
 const [assign, setAssign] = useState<{ busy: boolean; error: unknown } | null>(null);
 
 const assignPlaylist = async (playlist: PlaylistSummaryDto | null) => {
+  if (playlist === null) return; // null comes only with allowNone, which this dialog does not offer
   setAssign({ busy: true, error: null });
   try {
-    await api.patchDisplay(display.id, { assignedPlaylistId: playlist?.id ?? null });
+    // A playlist id also takes a schedule off the screen.
+    await api.patchDisplay(display.id, { assignedPlaylistId: playlist.id });
     setAssign(null);
     toast.success('Playlist assigned');
     refreshPending();
@@ -306,9 +308,9 @@ const assignPlaylist = async (playlist: PlaylistSummaryDto | null) => {
 };
 
 <PlaylistPickerDialog open={assign !== null} onClose={() => setAssign(null)}
-  title="Assign content" description="Nothing changes on the screen until you push."
+  title="Assign content"
+  description={`Nothing changes on the screen until you push.${display.assignedSchedule ? ` ${SCHEDULE_REPLACED_NOTE}` : ''}`}
   confirmLabel="Assign playlist" currentId={display.assignedPlaylist?.id ?? null}
-  allowNone noneHint="The screen keeps what it was last given until the next push."
   busy={assign?.busy} error={assign?.error} errorTitle="The playlist was not assigned"
   onConfirm={(playlist) => { void assignPlaylist(playlist); }} />
 ```
@@ -316,6 +318,39 @@ const assignPlaylist = async (playlist: PlaylistSummaryDto | null) => {
 Loads `api.listPlaylists()` afresh each time it opens. A search field (name and description) over a radio list; each row shows the mosaic, the name and "3 items · 0:45". Focus starts in the search field; Tab reaches the list, arrows move the choice, Enter confirms. The current choice is scrolled into view. States: skeleton rows, load error with "Try again", "No playlists yet" with a link to Playlists, "No playlist matches" with "Clear search". The footer shows the count ("4 of 34 playlists" while searching).
 
 Test ids: `shared-playlist-picker`, `-search`, `-none`, `-option` (each playlist radio; its `value` is the playlist id), `-confirm`.
+
+Since stage B slice 3 a screen has a playlist or a schedule assigned, never both. A non-null `assignedPlaylistId` also takes a schedule off the screen, so say so in `description` when a target has one: `SCHEDULE_REPLACED_NOTE` in `lib/screensList.ts` ("A screen that has a schedule gets this playlist instead of its schedule."), with `anyHasSchedule(displays)` to decide. `{ assignedPlaylistId: null }` alone leaves a schedule in place, so do not offer `allowNone` for a screen that has a schedule (the screens list does not); the screen page no longer uses `allowNone` at all and removes content with its own "Remove content" item, which sends both ids as null.
+
+## SchedulePickerDialog
+
+```ts
+interface SchedulePickerDialogProps {
+  open: boolean;
+  onClose: () => void; // Cancel, Escape, the close button
+  onConfirm: (schedule: ScheduleSummaryDto) => void; // there is no "none"
+  title?: string; // default "Choose a schedule"
+  description?: ReactNode;
+  confirmLabel?: string; // default "Choose schedule"; say what happens: "Assign schedule"
+  currentId?: string | null; // chosen when the dialog opens
+  busy?: boolean; // the caller is saving: not dismissable, button shows it
+  error?: unknown; // what the caller's save threw; shown in the dialog with the API error code
+  errorTitle?: string; // default "The change was not saved"
+  testId?: string; // default 'shared-schedule-picker'
+}
+```
+
+```tsx
+<SchedulePickerDialog open={open} onClose={close}
+  title="Assign content" confirmLabel="Assign schedule"
+  description={`Choose the schedule for ${display.name}. Nothing changes on the screen until you push. Screens need player 0.4.0 or later to play a schedule's events.`}
+  currentId={display.assignedSchedule?.id ?? null}
+  busy={busy} error={error} errorTitle="The schedule was not assigned"
+  onConfirm={(schedule) => { void api.patchDisplay(display.id, { assignedScheduleId: schedule.id }); }} />
+```
+
+A clone of `PlaylistPickerDialog` without the mosaic and without "none": content is removed from a screen on the screen's page. Loads `api.listSchedules()` afresh each time it opens. A search field (name, description and the default playlist's name) over a radio list; each row shows a calendar icon, the name and "Default: Reception loop · 2 events" (`scheduleSummaryLabel` in `lib/schedules.ts`). Keyboard, states and footer as in `PlaylistPickerDialog`: "No schedules yet" links to Schedules, "No schedule matches" offers "Clear search". Assigning a schedule takes a playlist off the screen (the API clears the other side).
+
+Test ids: `shared-schedule-picker`, `-search`, `-option` (each schedule radio; its `value` is the schedule id), `-confirm`.
 
 ## ScreenPickerDialog
 
@@ -326,7 +361,7 @@ interface ScreenPickerDialogProps {
   onConfirm: (displays: readonly DisplayDto[]) => void; // one element when `multiple` is off
   multiple?: boolean; // checkboxes instead of radio buttons; default false
   title?: string; // default "Choose a screen" / "Choose screens"
-  description?: ReactNode;
+  description?: ReactNode | ((chosen: readonly DisplayDto[]) => ReactNode); // a function gets the screens chosen now
   confirmLabel?: string | ((count: number) => string); // default "Choose screen" / "Choose 3 screens"
   initialSelectedIds?: readonly string[]; // display ids ticked when the dialog opens
   disabledReason?: (display: DisplayDto) => string | null;
@@ -345,7 +380,7 @@ interface ScreenPickerDialogProps {
   onConfirm={(displays) => assignTo(displays)} />
 ```
 
-Loads `api.listDisplays()` and `api.listDisplayStatuses()` afresh each time it opens. Each row: the screen's name, "Assigned: Reception loop" or "Nothing assigned", and its `ScreenStatusPill` with the time of the last report. Search matches the name, the description and the assigned playlist. With `multiple`: an "All screens" box (or "All screens found" while searching) with the mixed state, and "2 of 33 screens chosen" in the footer; Space toggles a row and Enter does not confirm. Single: Enter on a chosen radio confirms. If only the statuses cannot be read, the screens are still listed and a warning says so with the error code. Other states as in `PlaylistPickerDialog` ("No screens yet" links to Add screen).
+Loads `api.listDisplays()` and `api.listDisplayStatuses()` afresh each time it opens. Each row: the screen's name, "Assigned: Reception loop", "Assigned: schedule Weekdays" (a screen with a schedule) or "Nothing assigned", and its `ScreenStatusPill` with the time of the last report. Search matches the name, the description and the assigned playlist or schedule. `description` may be a function of the chosen screens, because the picker loads the screens itself and the caller cannot otherwise know what they hold: the two playlist pages use it to add `SCHEDULE_REPLACED_NOTE` once a ticked screen has a schedule. With `multiple`: an "All screens" box (or "All screens found" while searching) with the mixed state, and "2 of 33 screens chosen" in the footer; Space toggles a row and Enter does not confirm. Single: Enter on a chosen radio confirms. If only the statuses cannot be read, the screens are still listed and a warning says so with the error code. Other states as in `PlaylistPickerDialog` ("No screens yet" links to Add screen).
 
 Test ids: `shared-screen-picker`, `-search`, `-all`, `-option` (each row's input; its `value` is the display id), `-count`, `-confirm`.
 

@@ -73,6 +73,8 @@ export interface PublishIssue {
   readonly code: PublishRejectionCode;
   /** Complete sentence suitable for an operator. */
   readonly message: string;
+  /** Set for a scheduled screen: the full issue path, replacing the default `playlist` / `items[n]`. */
+  readonly path?: string;
 }
 
 /** A fully resolved media entry: everything a route needs to judge and deliver it. */
@@ -108,6 +110,25 @@ export interface PlaybackOptions {
 }
 
 /**
+ * The schedule of a publication: `playlists` are consecutive runs of the draft's `items`
+ * (`[0]` is the default playlist) and `events` are the weekly rules in priority order, each
+ * naming its playlist by index.
+ */
+export interface DraftSchedule {
+  readonly playlists: readonly {
+    readonly count: number;
+    readonly transition: Transition;
+    readonly shuffle: boolean;
+  }[];
+  readonly events: readonly {
+    readonly playlist: number;
+    readonly days: readonly boolean[];
+    readonly start: string;
+    readonly end: string;
+  }[];
+}
+
+/**
  * Vendor-neutral description of what is about to be published. It carries no
  * route-specific data; a delivery route validates it against its capability profile.
  */
@@ -118,12 +139,16 @@ export interface PublicationDraft {
   /** M0 publishes single-region, muted playlists only. Modelled explicitly so a route can refuse otherwise. */
   readonly regions: 1;
   readonly audio: false;
+  /** With a schedule: every playlist's items in one list, default playlist first. */
   readonly items: readonly ResolvedItem[];
+  /** With a schedule: the default playlist's. */
   readonly transition: Transition;
   readonly shuffle: boolean;
   readonly rotation: Rotation;
   readonly workingHours: WorkingHours | null;
   readonly timeZone: string;
+  /** Null unless an event of the assigned schedule uses a playlist other than its default. */
+  readonly schedule: DraftSchedule | null;
 }
 
 /**

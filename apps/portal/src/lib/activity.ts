@@ -21,7 +21,14 @@ import {
 import { formatAge } from './format.ts';
 
 /** The kinds of object an activity sentence can name. */
-export const ACTIVITY_OBJECT_KINDS = ['display', 'playlist', 'media', 'tag', 'folder'] as const;
+export const ACTIVITY_OBJECT_KINDS = [
+  'display',
+  'playlist',
+  'schedule',
+  'media',
+  'tag',
+  'folder',
+] as const;
 export type ActivityObjectKind = (typeof ACTIVITY_OBJECT_KINDS)[number];
 
 export interface ActivityRef {
@@ -49,9 +56,9 @@ export interface ActivityDescription {
   readonly text: string;
   /** The object the sentence is about; its name follows the text after a colon. */
   readonly subject: ActivityRef | null;
-  /** A second object worth naming: the playlist of a push, the playlist that was assigned. */
+  /** A second object worth naming: the playlist or schedule of a push, or the one that was assigned. */
   readonly related: ActivityRef | null;
-  /** What the related object is to the event: "Playlist", "Copied from". Null without one. */
+  /** What the related object is to the event: "Playlist", "Schedule", "Copied from". Null without one. */
   readonly relatedLabel: string | null;
   readonly icon: ActivityIcon;
   /** False when the action is not one this portal knows; the raw action is then shown too. */
@@ -117,6 +124,9 @@ const WORDING: { readonly [K in AuditAction]: Wording } = {
   'playlist.create': { done: 'Playlist created', attempt: 'Playlist creation', icon: 'playlist' },
   'playlist.update': { done: 'Playlist updated', attempt: 'Playlist update', icon: 'playlist' },
   'playlist.delete': { done: 'Playlist deleted', attempt: 'Playlist deletion', icon: 'playlist' },
+  'schedule.create': { done: 'Schedule created', attempt: 'Schedule creation', icon: 'other' },
+  'schedule.update': { done: 'Schedule updated', attempt: 'Schedule update', icon: 'other' },
+  'schedule.delete': { done: 'Schedule deleted', attempt: 'Schedule deletion', icon: 'other' },
   'publication.create': { done: 'Pushed to screen', attempt: 'Push to screen', icon: 'push' },
   'security.cross_org_denied': {
     done: 'Cross-organisation request recorded',
@@ -136,6 +146,7 @@ const REMOVALS: ReadonlySet<string> = new Set<AuditAction>([
   'tag.delete',
   'folder.delete',
   'playlist.delete',
+  'schedule.delete',
 ]);
 
 const CATEGORY_ICONS: { readonly [category: string]: ActivityIcon } = {
@@ -162,6 +173,7 @@ const CATEGORY_LABELS: { readonly [category: string]: string } = {
   folder: 'Folder',
   app: 'App',
   playlist: 'Playlist',
+  schedule: 'Schedule',
   publication: 'Push',
   security: 'Security',
 };
@@ -169,6 +181,7 @@ const CATEGORY_LABELS: { readonly [category: string]: string } = {
 const OBJECT_KIND_OF_TYPE: { readonly [objectType: string]: ActivityObjectKind } = {
   display: 'display',
   playlist: 'playlist',
+  schedule: 'schedule',
   media: 'media',
   tag: 'tag',
   folder: 'folder',
@@ -250,9 +263,18 @@ function displayOf(event: AuditEventDto): ActivityRef | null {
   );
 }
 
-function onlyField(event: AuditEventDto, field: string): boolean {
-  const fields = detailValue(event, 'fields');
-  return Array.isArray(fields) && fields.length === 1 && fields[0] === field;
+const ASSIGNMENT_FIELDS: readonly unknown[] = ['assignedPlaylistId', 'assignedScheduleId'];
+
+/**
+ * The fields a `display.update` patch named, when they are assignment keys and nothing else;
+ * else null. `fields` holds the keys of the patch; the detail's values may also carry a null
+ * for the side the API cleared (a screen has a playlist or a schedule, never both).
+ */
+function assignmentFields(event: AuditEventDto): readonly unknown[] | null {
+  const fields: unknown = detailValue(event, 'fields');
+  if (!Array.isArray(fields) || fields.length === 0) return null;
+  const keys: readonly unknown[] = fields;
+  return keys.every((key) => ASSIGNMENT_FIELDS.includes(key)) ? keys : null;
 }
 
 /**
@@ -286,17 +308,34 @@ export function describeActivity(event: AuditEventDto): ActivityDescription {
   switch (action) {
     case 'display.update': {
       // A change of the assignment alone is worth its own words: nothing else was edited.
-      if (onlyField(event, 'assignedPlaylistId')) {
-        const assigned = detailValue(event, 'assignedPlaylistId');
-        if (assigned === null) {
-          done = 'Playlist removed from screen';
-          attempt = 'Removing the playlist from a screen';
-        } else {
-          done = 'Playlist assigned to screen';
-          attempt = 'Playlist assignment';
-          related = ref('playlist', assigned);
-          relatedLabel = 'Playlist';
-        }
+      // What was assigned decides first, so a playlist that replaced a schedule (the detail
+      // then carries `assignedScheduleId: null`) reads as the assignment it was.
+      const fields = assignmentFields(event);
+      if (fields === null) break;
+      const playlist = detailValue(event, 'assignedPlaylistId');
+      const schedule = detailValue(event, 'assignedScheduleId');
+      const playlistNamed = fields.includes('assignedPlaylistId');
+      const scheduleNamed = fields.includes('assignedScheduleId');
+      // A value that was not recorded (an attempt that failed) reads as an assignment.
+      if (typeof playlist === 'string' || (!scheduleNamed && playlist !== null)) {
+        done = 'Playlist assigned to screen';
+        attempt = 'Playlist assignment';
+        related = ref('playlist', playlist);
+        relatedLabel = 'Playlist';
+      } else if (typeof schedule === 'string' || (!playlistNamed && schedule !== null)) {
+        done = 'Schedule assigned to screen';
+        attempt = 'Schedule assignment';
+        related = ref('schedule', schedule);
+        relatedLabel = 'Schedule';
+      } else if (playlistNamed && scheduleNamed) {
+        done = 'Content removed from screen';
+        attempt = 'Removing the content from a screen';
+      } else if (scheduleNamed) {
+        done = 'Schedule removed from screen';
+        attempt = 'Removing the schedule from a screen';
+      } else {
+        done = 'Playlist removed from screen';
+        attempt = 'Removing the playlist from a screen';
       }
       break;
     }
@@ -332,12 +371,20 @@ export function describeActivity(event: AuditEventDto): ActivityDescription {
       break;
     }
     case 'publication.create': {
-      // A push is about a screen; the event's own object is the publication or the playlist.
+      // A push is about a screen; the event's own object is the publication, the playlist
+      // or the schedule. A scheduled push names its schedule: its `playlistId` is only the
+      // schedule's default playlist.
       subject = displayOf(event);
       related =
-        ref('playlist', detailValue(event, 'playlistId')) ??
-        (event.objectType === 'playlist' ? ref('playlist', event.objectId) : null);
-      relatedLabel = 'Playlist';
+        ref('schedule', detailValue(event, 'scheduleId')) ??
+        (event.objectType === 'schedule' ? ref('schedule', event.objectId) : null);
+      relatedLabel = 'Schedule';
+      if (related === null) {
+        related =
+          ref('playlist', detailValue(event, 'playlistId')) ??
+          (event.objectType === 'playlist' ? ref('playlist', event.objectId) : null);
+        relatedLabel = 'Playlist';
+      }
       break;
     }
     default:
@@ -371,6 +418,8 @@ export function activityHref(target: ActivityRef): string | null {
       return `/screens/${target.id}`;
     case 'playlist':
       return `/playlists/${target.id}`;
+    case 'schedule':
+      return `/schedules/${target.id}`;
     case 'media':
       return `/media/${target.id}`;
     case 'tag':
@@ -399,7 +448,7 @@ export interface ActivityItem {
   /** The named object, or null when the event has none or its name is not known. */
   readonly subject: ActivityObject | null;
   readonly related: ActivityObject | null;
-  /** What `related` is to the event: "Playlist", "Copied from". */
+  /** What `related` is to the event: "Playlist", "Schedule", "Copied from". */
   readonly relatedLabel: string | null;
   /**
    * True when the event is about an object that existed then and is in no list now: it was

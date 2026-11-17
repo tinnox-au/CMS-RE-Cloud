@@ -19,10 +19,12 @@ import { useNow } from '../../shared/index.ts';
 export interface OverviewTabProps {
   readonly status: LoadState<DeliveryStatusView>;
   readonly onReload: () => void;
+  /** The screen has a schedule assigned: the active item is counted across its playlists. */
+  readonly scheduled: boolean;
 }
 
 /** The M0 live status facts: what the operator set, and what the player software reported. */
-export function OverviewTab({ status, onReload }: OverviewTabProps) {
+export function OverviewTab({ status, onReload, scheduled }: OverviewTabProps) {
   if (status.status === 'loading') {
     return (
       <SkeletonGroup label="Loading status" className="tx-screen-detail-skeleton">
@@ -46,6 +48,7 @@ export function OverviewTab({ status, onReload }: OverviewTabProps) {
       fetchedAt={status.fetchedAt}
       refreshError={status.refreshError}
       onReload={onReload}
+      scheduled={scheduled}
     />
   );
 }
@@ -72,11 +75,13 @@ function StatusFacts({
   fetchedAt,
   refreshError,
   onReload,
+  scheduled,
 }: {
   readonly view: DeliveryStatusView;
   readonly fetchedAt: number;
   readonly refreshError: unknown;
   readonly onReload: () => void;
+  readonly scheduled: boolean;
 }) {
   const now = useNow();
   const elapsedMs = Math.max(0, now - fetchedAt);
@@ -164,7 +169,15 @@ function StatusFacts({
             {p.activeItemNumber === null ? (
               <Muted>None reported</Muted>
             ) : (
-              `Item ${p.activeItemNumber} of the active publication`
+              <>
+                Item {p.activeItemNumber} of the active publication
+                {scheduled && (
+                  <span className="tx-screen-detail-block tx-screen-detail-note">
+                    With a schedule, items are counted across all of its playlists, default playlist
+                    first.
+                  </span>
+                )}
+              </>
             )}
           </Fact>
           <Fact label="Player state" testId="status-player-state">

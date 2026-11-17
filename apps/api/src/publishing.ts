@@ -4,7 +4,9 @@
  *
  * There is one way to build a publication: load the display, the playlist's
  * items and their media and apps, run `planPublication` against the display's delivery
- * route, and hand the resulting draft to `createPublication`. Deciding whether
+ * route, and hand the resulting draft to `createPublication`. A display with a
+ * schedule assigned (stage B, slice 3) plans every playlist of the schedule the
+ * same way and joins the results (`planSchedulePublication`). Deciding whether
  * a display has changes waiting (portal v2 decision P2-05: assign, then push)
  * runs the same plan and compares its draft with the manifest of the display's
  * current publication, so "what a push would do" and "what a push does" cannot
@@ -23,6 +25,7 @@ import {
   type PushIssue,
   type PushState,
   type Rotation,
+  type ScheduleRef,
   type Transition,
   type WorkingHours,
   isMediaItem,
@@ -33,6 +36,7 @@ import {
   decidePushState,
   isAppDraftItem,
   planPublication,
+  planSchedulePublication,
   type AppRecord,
   type DraftItem,
   type MediaRecord,
@@ -60,6 +64,8 @@ export interface DisplayPlanRow {
   default_fit: FitMode;
   route: 'browser';
   assigned_playlist_id: string | null;
+  /** A display has a playlist or a schedule assigned, never both (migration 0009). */
+  assigned_schedule_id: string | null;
   rotation: Rotation;
   working_hours: WorkingHours | null;
   site_timezone: string;
@@ -68,7 +74,8 @@ export interface DisplayPlanRow {
 /** Select list for `display d` that yields a `DisplayPlanRow`. */
 export const DISPLAY_PLAN_COLUMNS = `d.id, d.name, d.canvas_width, d.canvas_height,
   d.content_x, d.content_y, d.content_width, d.content_height,
-  d.default_fit, d.route, d.assigned_playlist_id, d.rotation, d.working_hours,
+  d.default_fit, d.route, d.assigned_playlist_id, d.assigned_schedule_id, d.rotation,
+  d.working_hours,
   (SELECT s.timezone FROM site s WHERE s.id = d.site_id AND s.org_id = d.org_id) AS site_timezone`;
 
 export interface PublicationRow {
@@ -90,6 +97,19 @@ export interface PlaylistDraft {
   readonly items: readonly DraftItem[];
 }
 
+/** A schedule as publishing sees it: its default playlist and its events in priority order. */
+export interface ScheduleDraft {
+  readonly id: string;
+  readonly name: string;
+  readonly defaultPlaylistId: string;
+  readonly events: readonly {
+    readonly playlistId: string;
+    readonly days: boolean[];
+    readonly start: string;
+    readonly end: string;
+  }[];
+}
+
 /** The publication a display was last given (`display_delivery.desired_publication_id`). */
 export interface CurrentPublication {
   readonly publicationId: string;
@@ -102,11 +122,16 @@ interface LoadedPublication extends CurrentPublication {
   readonly manifest: Manifest | null;
 }
 
-/** Where one display stands between its assigned playlist and its current publication. */
+/** Where one display stands between its assigned content and its current publication. */
 export interface DisplayAssessment {
   readonly display: DisplayPlanRow;
-  /** The assigned playlist; null exactly when `state` is `nothing_assigned`. */
+  /**
+   * The assigned playlist, or the default playlist of the assigned schedule; null
+   * exactly when `state` is `nothing_assigned`.
+   */
   readonly playlist: PlaylistRef | null;
+  /** The assigned schedule; null for a display with a playlist or with nothing assigned. */
+  readonly schedule: ScheduleRef | null;
   readonly state: PushState;
   /**
    * What a push would publish now, for `never_pushed`, `changes` and `up_to_date`.
@@ -114,7 +139,7 @@ export interface DisplayAssessment {
    */
   readonly draft: PublicationDraft | null;
   /**
-   * Why the playlist cannot be published. Non-empty exactly when `state` is `blocked`.
+   * Why the content cannot be published. Non-empty exactly when `state` is `blocked`.
    * Complete when the caller keeps drafts; otherwise the first `MAX_ISSUE_DETAILS`.
    */
   readonly issues: readonly PublishIssue[];
@@ -133,11 +158,12 @@ export const MANIFEST_BATCH_SIZE = 100;
 
 /**
  * Publish issues in the shape of `error.details` of a `publication_rejected`
- * answer and of `PushIssue`: `path` is `playlist` or `items[n]`.
+ * answer and of `PushIssue`: `path` is `playlist` or `items[n]`, or the path a
+ * schedule's issue carries (`default.items[n]`, `events[n].playlist`, `schedule`).
  */
 export function issueDetails(issues: readonly PublishIssue[]): PushIssue[] {
   return issues.slice(0, MAX_ISSUE_DETAILS).map((issue) => ({
-    path: issue.index === null ? 'playlist' : `items[${issue.index}]`,
+    path: issue.path ?? (issue.index === null ? 'playlist' : `items[${issue.index}]`),
     message: issue.message.slice(0, 500),
     code: issue.code,
   }));
@@ -265,6 +291,79 @@ export async function loadPlaylistDrafts(
       shuffle: row.shuffle,
       items: itemsByPlaylist.get(row.id) ?? [],
     });
+  }
+  return drafts;
+}
+
+/**
+ * Schedules with their events, keyed by id. With `lock`, the schedules cannot be
+ * edited or deleted until the transaction ends.
+ *
+ * Two statements when locking, as `loadPlaylistDrafts` does. `withOrg` runs at
+ * READ COMMITTED: one `FOR SHARE OF s` join that waits for an edit took its
+ * snapshot before that edit, and after the wait PostgreSQL re-reads only the
+ * locked schedule row, so the events would still be the old ones. With the lock
+ * taken first, the second statement takes its snapshot while the lock is held,
+ * and an edit or a delete locks the schedule row before it touches the events.
+ * Without `lock` (the push plan) the one statement is one snapshot.
+ */
+export async function loadScheduleDrafts(
+  tx: Tx,
+  scheduleIds: readonly string[],
+  lock: boolean,
+): Promise<Map<string, ScheduleDraft>> {
+  const drafts = new Map<string, ScheduleDraft>();
+  const ids = [...new Set(scheduleIds.map((id) => id.toLowerCase()))];
+  if (ids.length === 0) return drafts;
+  if (lock) {
+    await tx.query(
+      'SELECT id FROM schedule WHERE org_id = app_org_id() AND id = ANY($1::uuid[]) FOR SHARE',
+      [ids],
+    );
+  }
+  const { rows } = await tx.query<{
+    id: string;
+    name: string;
+    default_playlist_id: string;
+    playlist_id: string | null;
+    days: boolean[] | null;
+    start_time: string | null;
+    end_time: string | null;
+  }>(
+    `SELECT s.id, s.name, s.default_playlist_id, e.playlist_id, e.days, e.start_time, e.end_time
+     FROM schedule s
+     LEFT JOIN schedule_event e ON e.schedule_id = s.id AND e.org_id = s.org_id
+     WHERE s.org_id = app_org_id() AND s.id = ANY($1::uuid[])
+     ORDER BY s.id, e.position`,
+    [ids],
+  );
+  const eventsBySchedule = new Map<string, ScheduleDraft['events'][number][]>();
+  for (const row of rows) {
+    let events = eventsBySchedule.get(row.id);
+    if (events === undefined) {
+      events = [];
+      eventsBySchedule.set(row.id, events);
+      drafts.set(row.id, {
+        id: row.id,
+        name: row.name,
+        defaultPlaylistId: row.default_playlist_id,
+        events,
+      });
+    }
+    // A schedule without events is one row whose event columns are all null.
+    if (
+      row.playlist_id !== null &&
+      row.days !== null &&
+      row.start_time !== null &&
+      row.end_time !== null
+    ) {
+      events.push({
+        playlistId: row.playlist_id,
+        days: row.days,
+        start: row.start_time,
+        end: row.end_time,
+      });
+    }
   }
   return drafts;
 }
@@ -428,14 +527,16 @@ async function loadCurrentPublications(
 
 /**
  * Decides, for each display, what a push would do now: nothing is assigned, the
- * assigned playlist cannot be published (blocked), the display has no
+ * assigned content cannot be published (blocked), the display has no
  * publication yet, the publication that would be built differs from the current
- * one, or equals it. Two round trips for the playlists, one for their media and
- * one for their apps, whatever the number of displays, then one for every `MANIFEST_BATCH_SIZE`
- * displays to compare with what they were last given.
+ * one, or equals it. One round trip for the schedules (two inside a push), two
+ * for the playlists (the assigned ones and those of the schedules, in one batch),
+ * one for their media and one for their apps, whatever the number of displays,
+ * then one for every `MANIFEST_BATCH_SIZE` displays to compare with what they
+ * were last given.
  *
- * - `lock` (inside a push): the playlist and its media are held until the
- *   transaction ends, as publishing holds them.
+ * - `lock` (inside a push): the schedule, the playlists and their media are held
+ *   until the transaction ends, as publishing holds them.
  * - `keepDraft` (inside a push): the answer carries the draft to publish and
  *   every issue. Without it (the push plan) neither a draft nor a manifest
  *   outlives its comparison, so memory does not grow with displays times items.
@@ -446,32 +547,84 @@ export async function assessDisplays(
   displays: readonly DisplayPlanRow[],
   options: { readonly lock: boolean; readonly keepDraft: boolean },
 ): Promise<DisplayAssessment[]> {
-  const drafts = await loadPlaylistDrafts(
+  const schedules = await loadScheduleDrafts(
     tx,
-    displays.flatMap((d) => (d.assigned_playlist_id === null ? [] : [d.assigned_playlist_id])),
+    displays.flatMap((d) => (d.assigned_schedule_id === null ? [] : [d.assigned_schedule_id])),
     options.lock,
   );
-  const draftOf = (display: DisplayPlanRow): PlaylistDraft | undefined =>
-    display.assigned_playlist_id === null ? undefined : drafts.get(display.assigned_playlist_id);
+  const drafts = await loadPlaylistDrafts(
+    tx,
+    [
+      ...displays.flatMap((d) => (d.assigned_playlist_id === null ? [] : [d.assigned_playlist_id])),
+      ...[...schedules.values()].flatMap((schedule) => [
+        schedule.defaultPlaylistId,
+        ...schedule.events.map((event) => event.playlistId),
+      ]),
+    ],
+    options.lock,
+  );
+  /**
+   * What the display has assigned: its playlist, or its schedule with the
+   * schedule's default playlist. Undefined when nothing is assigned.
+   *
+   * Also undefined when a schedule is not in its map or its default playlist is
+   * not in `drafts`: the push plan reads without locks, so an edit can land
+   * between its reads. The row then says "nothing assigned" for this one answer,
+   * with no schedule, because a plan row with a schedule must carry a playlist.
+   * Neither can happen inside a push (`lock`): the display's foreign key keeps
+   * the schedule and the delete guard keeps its playlists. A missing event
+   * playlist is reported by `planSchedulePublication` as an issue instead.
+   */
+  const contentOf = (
+    display: DisplayPlanRow,
+  ): { playlist: PlaylistDraft; schedule: ScheduleDraft | null } | undefined => {
+    if (display.assigned_schedule_id !== null) {
+      const schedule = schedules.get(display.assigned_schedule_id);
+      const playlist = schedule === undefined ? undefined : drafts.get(schedule.defaultPlaylistId);
+      return schedule === undefined || playlist === undefined ? undefined : { playlist, schedule };
+    }
+    const playlist =
+      display.assigned_playlist_id === null ? undefined : drafts.get(display.assigned_playlist_id);
+    return playlist === undefined ? undefined : { playlist, schedule: null };
+  };
   const refs = itemRefs([...drafts.values()].flatMap((draft) => draft.items));
   const mediaById = await loadMediaRecords(tx, refs.mediaIds, options.lock);
   const appsById = await loadAppRecords(tx, refs.appIds, options.lock);
 
   const assess = (display: DisplayPlanRow, loaded: LoadedPublication | null): DisplayAssessment => {
-    const playlist = draftOf(display);
+    const content = contentOf(display);
     const current =
       loaded === null ? null : { publicationId: loaded.publicationId, createdAt: loaded.createdAt };
-    if (playlist === undefined) {
+    if (content === undefined) {
       return {
         display,
         playlist: null,
+        schedule: null,
         state: 'nothing_assigned',
         draft: null,
         issues: [],
         current,
       };
     }
-    const plan = planDraft(ctx, display, playlist, mediaById, appsById);
+    const { playlist, schedule } = content;
+    const plan =
+      schedule === null
+        ? planDraft(ctx, display, playlist, mediaById, appsById)
+        : planSchedulePublication({
+            defaultPlaylistId: schedule.defaultPlaylistId,
+            events: schedule.events,
+            planPlaylist: (id) => {
+              const used = drafts.get(id);
+              return used === undefined
+                ? undefined
+                : {
+                    name: used.name,
+                    itemCount: used.items.length,
+                    plan: () => planDraft(ctx, display, used, mediaById, appsById),
+                  };
+            },
+            route: ctx.delivery.get(display.route),
+          });
     const decided = decidePushState({ plan, currentManifest: loaded?.manifest ?? null });
     // A stored manifest that no longer parses cannot be compared with anything;
     // the display has a publication, and a push would replace it.
@@ -479,6 +632,7 @@ export async function assessDisplays(
     return {
       display,
       playlist: { id: playlist.id, name: playlist.name },
+      schedule: schedule === null ? null : { id: schedule.id, name: schedule.name },
       state,
       draft: plan.ok && options.keepDraft ? plan.draft : null,
       issues: plan.ok
@@ -496,7 +650,7 @@ export async function assessDisplays(
     const loaded = await loadCurrentPublications(
       tx,
       batch.map((d) => d.id),
-      batch.filter((d) => draftOf(d) !== undefined).map((d) => d.id),
+      batch.filter((d) => contentOf(d) !== undefined).map((d) => d.id),
     );
     for (const display of batch) assessments.push(assess(display, loaded.get(display.id) ?? null));
   }
@@ -505,8 +659,11 @@ export async function assessDisplays(
 
 export interface NewPublication {
   readonly display: DisplayPlanRow;
+  /** The published playlist, or the default playlist of the published schedule. */
   readonly playlistId: string;
-  /** The accepted plan (`planDraft(...).draft`). */
+  /** The schedule the draft was built from; null for a playlist. Recorded in the audit event. */
+  readonly scheduleId: string | null;
+  /** The accepted plan (`planDraft(...).draft`, or the plan of a schedule). */
   readonly draft: PublicationDraft;
   readonly idempotencyKey: string;
   readonly membershipId: string;
@@ -576,6 +733,13 @@ export async function createPublication(
     detail: {
       displayId: display.id,
       playlistId,
+      // A schedule has no column on the publication: it can be deleted, a publication cannot.
+      ...(input.scheduleId === null ? {} : { scheduleId: input.scheduleId }),
+      // Publishing a playlist takes the display's schedule off it (not `scheduleId`, which
+      // says the publication was built from a schedule).
+      ...(input.via === 'publish' && display.assigned_schedule_id !== null
+        ? { assignedScheduleId: null }
+        : {}),
       items: manifest.assets.length,
       route: display.route,
       via: input.via,
@@ -584,12 +748,16 @@ export async function createPublication(
   return row;
 }
 
-/** Records that a playlist was refused for a display. Commits with the caller's transaction. */
+/**
+ * Records that a playlist, or a schedule (then the object of the event), was
+ * refused for a display. Commits with the caller's transaction.
+ */
 export async function auditRejectedPublication(
   tx: Tx,
   input: {
     readonly membershipId: string;
     readonly playlistId: string;
+    readonly scheduleId: string | null;
     readonly displayId: string;
     readonly issues: readonly PublishIssue[];
     readonly via: 'publish' | 'push';
@@ -599,8 +767,8 @@ export async function auditRejectedPublication(
     actorType: 'operator',
     actorId: input.membershipId,
     action: 'publication.create',
-    objectType: 'playlist',
-    objectId: input.playlistId,
+    objectType: input.scheduleId === null ? 'playlist' : 'schedule',
+    objectId: input.scheduleId ?? input.playlistId,
     result: 'failure',
     detail: {
       displayId: input.displayId,

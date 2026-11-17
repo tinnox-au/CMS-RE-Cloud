@@ -1,7 +1,7 @@
 /**
  * Push to displays (portal v2 decision P2-05: assign, then push).
  *
- * Editing a playlist or assigning one changes nothing on a display. A push
+ * Editing a playlist or a schedule, or assigning one, changes nothing on a display. A push
  * builds one immutable publication per chosen display, through the same code
  * as `POST /api/playlists/:id/publish` (../publishing.ts), and only where the
  * publication that would be built differs from the one the display already has.
@@ -40,6 +40,7 @@ function toPlanRow(assessment: DisplayAssessment): PushPlanRow {
   return {
     display: { id: assessment.display.id, name: assessment.display.name },
     playlist: assessment.playlist,
+    schedule: assessment.schedule,
     state: assessment.state,
     issues: issueDetails(assessment.issues),
     lastPushedAt: assessment.current === null ? null : iso(assessment.current.createdAt),
@@ -103,6 +104,7 @@ export function registerPushRoutes(app: FastifyInstance, ctx: AppContext): void 
       });
       if (assessment === undefined) throw new Error('a display was not assessed');
 
+      // Still "nothing is assigned": a scheduled display carries its default playlist here.
       if (assessment.playlist === null) {
         return { displayId, outcome: 'skipped', publicationId: null, issues: [] };
       }
@@ -112,6 +114,7 @@ export function registerPushRoutes(app: FastifyInstance, ctx: AppContext): void 
         await auditRejectedPublication(tx, {
           membershipId: session.membershipId,
           playlistId: assessment.playlist.id,
+          scheduleId: assessment.schedule?.id ?? null,
           displayId,
           issues: assessment.issues,
           via: 'push',
@@ -136,6 +139,7 @@ export function registerPushRoutes(app: FastifyInstance, ctx: AppContext): void 
       const row = await createPublication(tx, ctx, {
         display,
         playlistId: assessment.playlist.id,
+        scheduleId: assessment.schedule?.id ?? null,
         draft: assessment.draft,
         idempotencyKey: key,
         membershipId: session.membershipId,
@@ -183,7 +187,7 @@ export function registerPushRoutes(app: FastifyInstance, ctx: AppContext): void 
             throw new HttpError(
               409,
               'conflict',
-              'A file used by an assigned playlist changed meanwhile. Nothing is lost: try again.',
+              "Something used by a screen's assigned content changed meanwhile. Nothing is lost: try again.",
             );
           } else {
             throw error;

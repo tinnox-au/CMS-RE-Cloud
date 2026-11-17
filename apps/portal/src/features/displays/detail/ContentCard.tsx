@@ -1,23 +1,39 @@
-import type { DisplayDto, PlaylistSummaryDto } from '@tinnox/contracts';
-import { useState } from 'react';
+import type { DisplayDto, PlaylistSummaryDto, ScheduleSummaryDto } from '@tinnox/contracts';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../../../api/index.ts';
 import { formatTimestamp } from '../../../lib/format.ts';
 import { pushRowFor } from '../../../lib/screenDetail.ts';
-import { assignedDetail } from '../../../lib/screensList.ts';
+import { assignedDetail, SCHEDULE_REPLACED_NOTE } from '../../../lib/screensList.ts';
 import { presentPushState } from '../../../lib/screenStatusPush.ts';
-import { ExternalLink, ListVideo, RefreshCw } from '../../../ui/icons.ts';
+import {
+  CalendarDays,
+  ChevronDown,
+  ExternalLink,
+  ListVideo,
+  ListX,
+  RefreshCw,
+} from '../../../ui/icons.ts';
 import {
   Button,
   ButtonLink,
   Card,
   CardHeader,
+  ErrorNotice,
   Icon,
+  Menu,
+  MenuItem,
+  MenuSeparator,
   Skeleton,
   SkeletonGroup,
   useToast,
 } from '../../../ui/index.ts';
 import { usePush } from '../../push/PushContext.tsx';
-import { PlaylistMosaic, PlaylistPickerDialog, PushStatePill } from '../../shared/index.ts';
+import {
+  PlaylistMosaic,
+  PlaylistPickerDialog,
+  PushStatePill,
+  SchedulePickerDialog,
+} from '../../shared/index.ts';
 import { apiErrorCode, apiErrorMessage } from './errors.ts';
 import type { AssignedPlaylistState } from './useAssignedPlaylist.ts';
 
@@ -28,42 +44,108 @@ export interface ContentCardProps {
   readonly onAssigned: (display: DisplayDto) => void;
 }
 
+/** What is being changed: a picker is open, or "Remove content" is being saved. */
 interface AssignState {
+  readonly kind: 'playlist' | 'schedule' | 'remove';
   readonly busy: boolean;
   readonly error: unknown;
 }
 
 /**
  * What is assigned to the screen (decision P2-05: assign, then push) and where the screen
- * stands between what is assigned and what it was last given.
+ * stands between what is assigned and what it was last given. A screen has a playlist or a
+ * schedule, never both: assigning one takes the place of the other.
  */
 export function ContentCard({ display, assigned, onReloadAssigned, onAssigned }: ContentCardProps) {
   const toast = useToast();
   const push = usePush();
   const [assign, setAssign] = useState<AssignState | null>(null);
   const playlist = display.assignedPlaylist;
+  const schedule = display.assignedSchedule;
+  const hasContent = playlist !== null || schedule !== null;
 
-  const assignPlaylist = (chosen: PlaylistSummaryDto | null) => {
-    if ((chosen?.id ?? null) === (playlist?.id ?? null)) {
-      setAssign(null);
-      return;
-    }
-    setAssign({ busy: true, error: null });
+  // With nothing assigned the card offers two buttons, with content one "Change" menu. When
+  // a save swaps one for the other, the control that was used is gone: focus moves to the
+  // first button that took its place, so it never falls to the document.
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const focusActions = useRef(false);
+  useEffect(() => {
+    if (!focusActions.current) return;
+    focusActions.current = false;
+    actionsRef.current?.querySelector('button')?.focus();
+  }, [hasContent]);
+
+  const save = (
+    kind: AssignState['kind'],
+    patch: {
+      readonly assignedPlaylistId?: string | null;
+      readonly assignedScheduleId?: string | null;
+    },
+    done: string,
+    detail: string,
+  ) => {
+    if (assign?.busy === true) return;
+    setAssign({ kind, busy: true, error: null });
     api
-      .patchDisplay(display.id, { assignedPlaylistId: chosen?.id ?? null })
+      .patchDisplay(display.id, patch)
       .then((saved) => {
+        const savedHasContent = saved.assignedPlaylist !== null || saved.assignedSchedule !== null;
+        focusActions.current = savedHasContent !== hasContent;
         setAssign(null);
         onAssigned(saved);
         push.refresh();
-        // Unassigning clears the assignment only: the screen keeps what it was last given.
-        toast.success(chosen === null ? 'Playlist unassigned' : `${chosen.name} assigned`, {
-          detail: assignedDetail(chosen?.name ?? null, 1),
-        });
+        toast.success(done, { detail });
       })
       .catch((error: unknown) => {
-        setAssign({ busy: false, error });
+        setAssign({ kind, busy: false, error });
       });
   };
+
+  const assignPlaylist = (chosen: PlaylistSummaryDto | null) => {
+    if (chosen === null || chosen.id === playlist?.id) {
+      setAssign(null);
+      return;
+    }
+    // A playlist id alone also clears a schedule (the display patch contract).
+    save(
+      'playlist',
+      { assignedPlaylistId: chosen.id },
+      `${chosen.name} assigned`,
+      assignedDetail(chosen.name, 1),
+    );
+  };
+
+  const assignSchedule = (chosen: ScheduleSummaryDto) => {
+    if (chosen.id === schedule?.id) {
+      setAssign(null);
+      return;
+    }
+    save(
+      'schedule',
+      { assignedScheduleId: chosen.id },
+      `${chosen.name} assigned`,
+      assignedDetail(chosen.name, 1),
+    );
+  };
+
+  // Removing clears the assignment only: the screen keeps what it was last given.
+  const removeContent = () => {
+    save(
+      'remove',
+      { assignedPlaylistId: null, assignedScheduleId: null },
+      'Content removed',
+      assignedDetail(null, 1),
+    );
+  };
+
+  const openPicker = (kind: 'playlist' | 'schedule') => {
+    if (assign?.busy === true) return;
+    setAssign({ kind, busy: false, error: null });
+  };
+  const clearAssign = () => {
+    setAssign(null);
+  };
+  const removing = assign?.kind === 'remove' ? assign : null;
 
   return (
     <Card as="section" aria-labelledby="screen-detail-content-title">
@@ -77,66 +159,163 @@ export function ContentCard({ display, assigned, onReloadAssigned, onAssigned }:
         <div className="tx-screen-detail-playlist" data-testid="screen-detail-playlist">
           <PlaylistVisual assigned={assigned} />
           <div className="tx-screen-detail-playlist__text">
-            {playlist === null ? (
+            {schedule !== null ? (
               <>
-                <span className="tx-screen-detail-playlist__name">Nothing assigned</span>
-                <span className="tx-screen-detail-note">
-                  Choose a playlist for this screen, then push it.
+                <span className="tx-screen-detail-caption">Schedule</span>
+                <span className="tx-screen-detail-playlist__name">{schedule.name}</span>
+                <span
+                  className="tx-screen-detail-note"
+                  data-testid="screen-detail-default-playlist"
+                >
+                  Default playlist: {schedule.defaultPlaylist.name}
                 </span>
+                <PlaylistMeta assigned={assigned} onRetry={onReloadAssigned} />
               </>
-            ) : (
+            ) : playlist !== null ? (
               <>
+                <span className="tx-screen-detail-caption">Playlist</span>
                 <span className="tx-screen-detail-playlist__name">{playlist.name}</span>
                 <PlaylistMeta assigned={assigned} onRetry={onReloadAssigned} />
               </>
+            ) : (
+              <>
+                <span className="tx-screen-detail-playlist__name">Nothing assigned</span>
+                <span className="tx-screen-detail-note">
+                  Choose a playlist or a schedule for this screen, then push it.
+                </span>
+              </>
             )}
           </div>
-          <div className="tx-screen-detail-playlist__actions">
-            <Button
-              size="sm"
-              variant={playlist === null ? 'primary' : 'secondary'}
-              icon={ListVideo}
-              onClick={() => {
-                setAssign({ busy: false, error: null });
-              }}
-              data-testid="screen-detail-change-playlist"
-            >
-              {playlist === null ? 'Assign playlist' : 'Change'}
-              {playlist !== null && <span className="tx-visually-hidden"> playlist</span>}
-            </Button>
-            {playlist !== null && (
+          <div className="tx-screen-detail-playlist__actions" ref={actionsRef}>
+            {hasContent ? (
+              <Menu
+                placement="bottom-end"
+                trigger={(props) => (
+                  <Button
+                    {...props}
+                    size="sm"
+                    trailingIcon={ChevronDown}
+                    busy={removing?.busy}
+                    // A busy button ignores clicks; Arrow keys must not open the menu either.
+                    onKeyDown={removing?.busy === true ? undefined : props.onKeyDown}
+                    data-testid="screen-detail-change-content"
+                  >
+                    Change
+                    <span className="tx-visually-hidden"> content</span>
+                  </Button>
+                )}
+              >
+                <MenuItem
+                  icon={ListVideo}
+                  onSelect={() => {
+                    openPicker('playlist');
+                  }}
+                >
+                  Choose a playlist…
+                </MenuItem>
+                <MenuItem
+                  icon={CalendarDays}
+                  onSelect={() => {
+                    openPicker('schedule');
+                  }}
+                >
+                  Choose a schedule…
+                </MenuItem>
+                <MenuSeparator />
+                <MenuItem icon={ListX} onSelect={removeContent}>
+                  Remove content
+                </MenuItem>
+              </Menu>
+            ) : (
+              <>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  icon={ListVideo}
+                  onClick={() => {
+                    openPicker('playlist');
+                  }}
+                  data-testid="screen-detail-choose-playlist"
+                >
+                  Assign playlist
+                </Button>
+                <Button
+                  size="sm"
+                  icon={CalendarDays}
+                  onClick={() => {
+                    openPicker('schedule');
+                  }}
+                  data-testid="screen-detail-choose-schedule"
+                >
+                  Assign schedule
+                </Button>
+              </>
+            )}
+            {schedule !== null ? (
               <ButtonLink
                 size="sm"
                 variant="ghost"
                 icon={ExternalLink}
-                to={`/playlists/${playlist.id}`}
-                data-testid="screen-detail-open-playlist"
+                to={`/schedules/${schedule.id}`}
+                data-testid="screen-detail-open-schedule"
               >
-                Open playlist
+                Open schedule
               </ButtonLink>
+            ) : (
+              playlist !== null && (
+                <ButtonLink
+                  size="sm"
+                  variant="ghost"
+                  icon={ExternalLink}
+                  to={`/playlists/${playlist.id}`}
+                  data-testid="screen-detail-open-playlist"
+                >
+                  Open playlist
+                </ButtonLink>
+              )
             )}
           </div>
         </div>
+
+        {removing !== null && removing.error !== null && (
+          <ErrorNotice
+            error={removing.error}
+            title="The content was not removed"
+            onDismiss={clearAssign}
+          />
+        )}
 
         <PushStatePart displayId={display.id} />
       </div>
 
       <PlaylistPickerDialog
-        open={assign !== null}
-        onClose={() => {
-          setAssign(null);
-        }}
+        open={assign?.kind === 'playlist'}
+        onClose={clearAssign}
         title="Assign content"
-        description={`Choose what ${display.name} should play. Nothing changes on the screen until you push.`}
+        description={`Choose the playlist for ${display.name}. Nothing changes on the screen until you push.${
+          schedule === null ? '' : ` ${SCHEDULE_REPLACED_NOTE}`
+        }`}
         confirmLabel="Assign playlist"
         currentId={playlist?.id ?? null}
-        allowNone
-        noneHint="The screen keeps what it was last given until the next push."
-        busy={assign?.busy}
-        error={assign?.error}
+        busy={assign?.kind === 'playlist' && assign.busy}
+        error={assign?.kind === 'playlist' ? assign.error : null}
         errorTitle="The playlist was not assigned"
         onConfirm={assignPlaylist}
         testId="screen-detail-playlist-picker"
+      />
+
+      <SchedulePickerDialog
+        open={assign?.kind === 'schedule'}
+        onClose={clearAssign}
+        title="Assign content"
+        description={`Choose the schedule for ${display.name}. Nothing changes on the screen until you push. Screens need player 0.4.0 or later to play a schedule's events.`}
+        confirmLabel="Assign schedule"
+        currentId={schedule?.id ?? null}
+        busy={assign?.kind === 'schedule' && assign.busy}
+        error={assign?.kind === 'schedule' ? assign.error : null}
+        errorTitle="The schedule was not assigned"
+        onConfirm={assignSchedule}
+        testId="screen-detail-schedule-picker"
       />
     </Card>
   );

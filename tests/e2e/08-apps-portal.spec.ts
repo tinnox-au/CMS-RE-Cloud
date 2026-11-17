@@ -12,6 +12,7 @@ import {
   createAppInPortal,
   cspViolations,
   expectNoWebStorage,
+  notifications,
   openScreenPage,
   pageHeading,
   pushFromHeader,
@@ -83,7 +84,7 @@ test('a Clock is created by keyboard and its preview follows 24-hour and seconds
 
   await page.waitForURL(/\/apps\/[0-9a-f-]{36}$/);
   clockId = page.url().split('/').pop() ?? '';
-  await expect(page.getByText('App created')).toBeVisible();
+  await expect(notifications(page).getByText('App created')).toBeVisible();
   await expect(pageHeading(page, clockName)).toBeVisible();
 
   const preview = page.getByTestId('app-preview');
@@ -108,7 +109,7 @@ test('poor contrast is a warning only, and the app saves', async () => {
     /hard to tell apart \(\d\.\d:1\)/,
   );
   await saveApp(page);
-  await expect(page.getByText('App saved')).toBeVisible();
+  await expect(notifications(page).getByText('App saved')).toBeVisible();
   expect((await storedApp(clockId)).content).toEqual({
     type: 'clock',
     settings: {
@@ -192,7 +193,7 @@ test('an app in a playlist cannot be deleted; once removed from it, it can', asy
   await page.getByRole('menuitem', { name: 'Delete app' }).click();
   await page.getByTestId('apps-delete-dialog-confirm').click();
   await page.waitForURL(/\/apps$/);
-  await expect(page.getByText(`${clockName} deleted`)).toBeVisible();
+  await expect(notifications(page).getByText(`${clockName} deleted`)).toBeVisible();
   await expect(page.getByTestId(`apps-row-${clockId}`)).toHaveCount(0);
   expect((await operator.api.get(`/api/apps/${clockId}`)).status()).toBe(404);
 });

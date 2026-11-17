@@ -15,6 +15,7 @@ export const PairingSessionIdSchema = UuidSchema;
 export const TagIdSchema = UuidSchema;
 export const FolderIdSchema = UuidSchema;
 export const AppIdSchema = UuidSchema;
+export const ScheduleIdSchema = UuidSchema;
 
 export type Uuid = z.infer<typeof UuidSchema>;
 export type OrgId = Uuid;
@@ -29,6 +30,7 @@ export type PairingSessionId = Uuid;
 export type TagId = Uuid;
 export type FolderId = Uuid;
 export type AppId = Uuid;
+export type ScheduleId = Uuid;
 
 /** ISO 8601 UTC timestamp, for example 2026-11-14T03:15:00.000Z. */
 export const UtcTimestampSchema = z.iso.datetime();

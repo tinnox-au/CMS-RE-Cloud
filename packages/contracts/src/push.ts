@@ -2,14 +2,14 @@ import { z } from 'zod';
 import { DisplayIdSchema, PublicationIdSchema, UtcTimestampSchema } from './ids.ts';
 import { ABSOLUTE } from './limits.ts';
 import { PublishRejectionCodeSchema } from './playlist.ts';
-import { DisplayRefSchema, PlaylistRefSchema } from './refs.ts';
+import { DisplayRefSchema, PlaylistRefSchema, ScheduleRefSchema } from './refs.ts';
 
 /**
  * Where a display stands between what is assigned to it and what it was last given
  * (portal v2 decision P2-05: assign, then push).
- * - nothing_assigned: no playlist is assigned; there is nothing to push
- * - blocked: the assigned playlist cannot be published to this display; `issues` say why
- * - never_pushed: a playlist is assigned and publishable, and the display has no publication yet
+ * - nothing_assigned: neither a playlist nor a schedule is assigned; there is nothing to push
+ * - blocked: the assigned content cannot be published to this display; `issues` say why
+ * - never_pushed: content is assigned and publishable, and the display has no publication yet
  * - changes: the publication that would be built now differs from the display's current one
  * - up_to_date: the publication that would be built now equals the display's current one
  */
@@ -37,9 +37,12 @@ export function isPushPending(state: PushState): boolean {
 const MAX_ISSUES = 100;
 
 /**
- * One reason a playlist cannot be published to a display. The same shape as an
- * entry of `error.details` in a `publication_rejected` answer: `path` is
- * `playlist` or `items[n]`, `code` is the rejection code.
+ * One reason the assigned content cannot be published to a display. The same shape as an
+ * entry of `error.details` in a `publication_rejected` answer; `code` is the rejection code.
+ * `path` is `playlist` or `items[n]` for a playlist, and `default.playlist`,
+ * `default.items[n]`, `events[n].playlist`, `events[n].items[n]` or `schedule` for a schedule
+ * (the event is the first one that uses the playlist; item numbers count inside that playlist;
+ * `schedule` is a problem of all its playlists together).
  */
 export const PushIssueSchema = z
   .object({
@@ -54,8 +57,13 @@ export type PushIssue = z.infer<typeof PushIssueSchema>;
 export const PushPlanRowSchema = z
   .object({
     display: DisplayRefSchema,
-    /** The assigned playlist; null exactly when `state` is `nothing_assigned`. */
+    /**
+     * The assigned playlist, or for a display with a schedule the schedule's default
+     * playlist; null exactly when `state` is `nothing_assigned`.
+     */
     playlist: PlaylistRefSchema.nullable(),
+    /** The assigned schedule; null for a display with a playlist or with nothing assigned. */
+    schedule: ScheduleRefSchema.nullable(),
     state: PushStateSchema,
     /** Empty unless `state` is `blocked`. */
     issues: z.array(PushIssueSchema).max(MAX_ISSUES),
@@ -69,6 +77,13 @@ export const PushPlanRowSchema = z
         code: 'custom',
         path: ['playlist'],
         message: 'playlist must be null exactly when state is nothing_assigned',
+      });
+    }
+    if (row.schedule !== null && row.playlist === null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['schedule'],
+        message: 'a row with a schedule carries the default playlist of the schedule',
       });
     }
     if (row.issues.length > 0 !== (row.state === 'blocked')) {
@@ -141,8 +156,8 @@ export type PushRequest = z.infer<typeof PushRequestSchema>;
  * - published: a publication exists for this display under this Idempotency-Key,
  *   created by this call or by an earlier call with the same key
  * - unchanged: the display's current publication already equals what would be built
- * - rejected: the assigned playlist cannot be published; the previous publication stays current
- * - skipped: no playlist is assigned
+ * - rejected: the assigned content cannot be published; the previous publication stays current
+ * - skipped: nothing is assigned
  */
 export const PUSH_OUTCOMES = ['published', 'unchanged', 'rejected', 'skipped'] as const;
 export const PushOutcomeSchema = z.enum(PUSH_OUTCOMES);

@@ -16,6 +16,8 @@ infra/.generated/
 # test artefacts
 coverage/
 test-results/
+# Vitest browser mode (component tests): failure screenshots and attachments.
+.vitest/
 playwright-report/
 blob-report/
 tests/.auth/

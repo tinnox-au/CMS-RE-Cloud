@@ -11,6 +11,9 @@ import {
   type PlaylistSummaryDto,
   type PushPlanResponse,
   type PushResponse,
+  type ScheduleDto,
+  type ScheduleInput,
+  type ScheduleSummaryDto,
   type TagDto,
 } from '@tinnox/contracts';
 import { describe, expect, it } from 'vitest';
@@ -27,6 +30,7 @@ const TAG = '55555555-5555-4555-8555-555555555555';
 const FOLDER = '66666666-6666-4666-8666-666666666666';
 const PUBLICATION = '77777777-7777-4777-8777-777777777777';
 const SITE = '88888888-8888-4888-8888-888888888888';
+const SCHEDULE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const AT = '2026-11-15T03:00:00.000Z';
 const CSRF = 'csrf-token-aaaaaaaaaaaaaaaaaaaa';
 const ATTEMPT_ID = 'push-attempt-0001';
@@ -71,6 +75,7 @@ const display: DisplayDto = {
   player: null,
   tagIds: [],
   assignedPlaylist: { id: PLAYLIST, name: 'Reception loop' },
+  assignedSchedule: null,
   createdAt: AT,
   updatedAt: AT,
 };
@@ -125,15 +130,48 @@ const summary: PlaylistSummaryDto = {
   updatedAt: AT,
 };
 
+const WEEKDAYS = [true, true, true, true, true, false, false];
+
+const schedule: ScheduleDto = {
+  id: SCHEDULE,
+  name: 'Opening hours',
+  description: null,
+  defaultPlaylist: { id: PLAYLIST, name: 'Reception loop' },
+  events: [
+    {
+      playlist: { id: PLAYLIST, name: 'Reception loop' },
+      days: WEEKDAYS,
+      start: '09:00',
+      end: '24:00',
+    },
+  ],
+  assignedDisplayCount: 1,
+  createdAt: AT,
+  updatedAt: AT,
+};
+
+const { events: _events, ...scheduleFacts } = schedule;
+const scheduleSummary: ScheduleSummaryDto = { ...scheduleFacts, eventCount: 1 };
+
+const scheduleInput: ScheduleInput = {
+  name: 'Opening hours',
+  description: null,
+  defaultPlaylistId: PLAYLIST,
+  events: [{ playlistId: PLAYLIST, days: WEEKDAYS, start: '09:00', end: '24:00' }],
+};
+
 const tag: TagDto = { id: TAG, scope: 'media', name: 'Campaign', colour: 'teal', usageCount: 1 };
 const folder: FolderDto = { id: FOLDER, name: 'Posters', itemCount: 1 };
 const clock = app(7);
+
+const summaryRef = { id: PLAYLIST, name: 'Reception loop' };
 
 const pushPlan: PushPlanResponse = {
   items: [
     {
       display: { id: DISPLAY, name: 'Reception' },
       playlist: { id: PLAYLIST, name: 'Reception loop' },
+      schedule: { id: SCHEDULE, name: 'Opening hours' },
       state: 'changes',
       issues: [],
       lastPushedAt: AT,
@@ -141,6 +179,7 @@ const pushPlan: PushPlanResponse = {
     {
       display: { id: OTHER_DISPLAY, name: 'Foyer' },
       playlist: { id: PLAYLIST, name: 'Reception loop' },
+      schedule: null,
       state: 'blocked',
       issues: [
         { path: 'items[0]', message: 'Item 1 is still being checked.', code: 'media_not_ready' },
@@ -287,6 +326,13 @@ describe('endpoints: reads', () => {
       [ROUTES.app(clock.id), clock, (api) => api.getApp(clock.id, signal), clock],
       [ROUTES.playlists, { items: [summary] }, (api) => api.listPlaylists(signal), [summary]],
       [ROUTES.playlist(PLAYLIST), playlist, (api) => api.getPlaylist(PLAYLIST, signal), playlist],
+      [
+        ROUTES.schedules,
+        { items: [scheduleSummary] },
+        (api) => api.listSchedules(signal),
+        [scheduleSummary],
+      ],
+      [ROUTES.schedule(SCHEDULE), schedule, (api) => api.getSchedule(SCHEDULE, signal), schedule],
       [ROUTES.push, pushPlan, (api) => api.getPushPlan(signal), pushPlan],
       [ROUTES.overview, overview, (api) => api.getOverview(signal), overview],
     ];
@@ -355,6 +401,22 @@ describe('endpoints: changes', () => {
         { ...display, assignedPlaylist: null },
         (api) => api.patchDisplay(DISPLAY, { assignedPlaylistId: null }),
         { ...display, assignedPlaylist: null },
+      ],
+      [
+        'PATCH',
+        ROUTES.display(DISPLAY),
+        { assignedScheduleId: SCHEDULE },
+        {
+          ...display,
+          assignedPlaylist: null,
+          assignedSchedule: { id: SCHEDULE, name: 'Opening hours', defaultPlaylist: summaryRef },
+        },
+        (api) => api.patchDisplay(DISPLAY, { assignedScheduleId: SCHEDULE }),
+        {
+          ...display,
+          assignedPlaylist: null,
+          assignedSchedule: { id: SCHEDULE, name: 'Opening hours', defaultPlaylist: summaryRef },
+        },
       ],
       [
         'PATCH',
@@ -437,6 +499,23 @@ describe('endpoints: changes', () => {
       ],
       [
         'POST',
+        ROUTES.schedules,
+        { name: 'Opening hours', defaultPlaylistId: PLAYLIST, events: [] },
+        { ...schedule, events: [] },
+        (api) =>
+          api.createSchedule({ name: 'Opening hours', defaultPlaylistId: PLAYLIST, events: [] }),
+        { ...schedule, events: [] },
+      ],
+      [
+        'PUT',
+        ROUTES.schedule(SCHEDULE),
+        scheduleInput,
+        schedule,
+        (api) => api.replaceSchedule(SCHEDULE, scheduleInput),
+        schedule,
+      ],
+      [
+        'POST',
         ROUTES.playlists,
         { name: 'New loop' },
         { ...playlist, items: [] },
@@ -463,6 +542,7 @@ describe('endpoints: changes', () => {
       [ROUTES.folder(FOLDER), (api) => api.deleteFolder(FOLDER)],
       [ROUTES.app(clock.id), (api) => api.deleteApp(clock.id)],
       [ROUTES.playlist(PLAYLIST), (api) => api.deletePlaylist(PLAYLIST)],
+      [ROUTES.schedule(SCHEDULE), (api) => api.deleteSchedule(SCHEDULE)],
     ];
     for (const [path, call] of cases) {
       const { api, calls } = await harness(null, 204);
@@ -567,6 +647,32 @@ describe('endpoints: answers the portal must not trust', () => {
         'a display without assignedPlaylist',
         { ...display, assignedPlaylist: undefined },
         (api) => api.patchDisplay(DISPLAY, { assignedPlaylistId: null }),
+      ],
+      [
+        'a display without assignedSchedule',
+        { ...display, assignedSchedule: undefined },
+        (api) => api.getDisplay(DISPLAY),
+      ],
+      [
+        'a schedule whose event ends at 00:00',
+        {
+          ...schedule,
+          events: [{ ...schedule.events[0], end: '00:00' }],
+        },
+        (api) => api.getSchedule(SCHEDULE),
+      ],
+      [
+        'a schedule list row with its events',
+        { items: [{ ...scheduleSummary, events: [] }] },
+        (api) => api.listSchedules(),
+      ],
+      [
+        'a push plan row without schedule',
+        {
+          items: [{ ...pushPlan.items[0], schedule: undefined }],
+          pendingCount: 1,
+        },
+        (api) => api.getPushPlan(),
       ],
       ['a status list that is a bare array', [status], (api) => api.listDisplayStatuses()],
       [

@@ -1,5 +1,21 @@
-import { DEFAULT_LIMITS, type AppContent, type HeartbeatV1, type Limits } from '@tinnox/contracts';
-import type { AppRecord, DisplayTarget, MediaRecord, PlaybackOptions } from './types.ts';
+import {
+  DEFAULT_LIMITS,
+  type AppContent,
+  type CapabilityProfile,
+  type HeartbeatV1,
+  type Limits,
+} from '@tinnox/contracts';
+import { checkCapabilities } from './capability.ts';
+import { planPublication, type PlanPublicationResult } from './manifest.ts';
+import { planSchedulePublication, type SchedulePlanInput } from './schedule.ts';
+import type {
+  AppRecord,
+  DisplayTarget,
+  DraftItem,
+  MediaRecord,
+  PlaybackOptions,
+  PublicationValidator,
+} from './types.ts';
 
 export const limits: Limits = DEFAULT_LIMITS;
 
@@ -21,6 +37,9 @@ export const ID = {
   pubB: '33333333-3333-4333-8333-00000000000b',
   regA: '44444444-4444-4444-8444-00000000000a',
   regB: '44444444-4444-4444-8444-00000000000b',
+  listDefault: '66666666-6666-4666-8666-00000000000a',
+  listLunch: '66666666-6666-4666-8666-00000000000b',
+  listEvening: '66666666-6666-4666-8666-00000000000c',
 } as const;
 
 export function display(overrides: Partial<DisplayTarget> = {}): DisplayTarget {
@@ -139,4 +158,76 @@ export function heartbeat(overrides: Partial<HeartbeatV1> = {}): HeartbeatV1 {
     player: { version: 'test', storagePersisted: true, online: true },
     ...overrides,
   };
+}
+
+/** A route with the browser player's profile and the given item total. */
+export function route(maxItems = 200): PublicationValidator {
+  const profile: CapabilityProfile = {
+    routeId: 'browser',
+    profileVersion: 1,
+    label: 'The browser player',
+    mediaTypes: ['image/jpeg', 'image/png', 'video/mp4'],
+    videoCodecs: ['h264'],
+    fitModes: ['contain', 'cover'],
+    maxRegions: 1,
+    audio: false,
+    supportsContentRect: true,
+    maxCanvas: { width: 16384, height: 16384 },
+    maxVideoWidthPx: 3840,
+    maxVideoHeightPx: 2160,
+    maxAssetBytes: 200 * 1024 * 1024,
+    maxItems,
+  };
+  return { capabilities: () => profile, validate: (draft) => checkCapabilities(draft, profile) };
+}
+
+export const WEEKDAYS: readonly boolean[] = [true, true, true, true, true, false, false];
+export const EVERY_DAY: readonly boolean[] = [true, true, true, true, true, true, true];
+
+export interface FixturePlaylist {
+  readonly name: string;
+  readonly items: readonly DraftItem[];
+  /** Defaults to `playback`. */
+  readonly playback?: PlaybackOptions;
+}
+
+export interface PlanScheduleOptions {
+  readonly display?: DisplayTarget;
+  readonly mediaById?: ReadonlyMap<string, MediaRecord>;
+  readonly appsById?: ReadonlyMap<string, AppRecord>;
+  readonly route?: PublicationValidator;
+}
+
+/**
+ * Plans a schedule over the given playlists (keyed by id) as the API does: each playlist goes
+ * through `planPublication` for the display, and an id that is not in the map no longer exists.
+ */
+export function planSchedule(
+  playlists: Readonly<Record<string, FixturePlaylist>>,
+  schedule: Pick<SchedulePlanInput, 'defaultPlaylistId' | 'events'>,
+  options: PlanScheduleOptions = {},
+): PlanPublicationResult {
+  const target = options.route ?? route();
+  return planSchedulePublication({
+    ...schedule,
+    planPlaylist: (id) => {
+      const playlist = playlists[id];
+      if (playlist === undefined) return undefined;
+      return {
+        name: playlist.name,
+        itemCount: playlist.items.length,
+        plan: () =>
+          planPublication({
+            display: options.display ?? display(),
+            items: playlist.items,
+            mediaById: options.mediaById ?? library(),
+            appsById: options.appsById ?? apps(),
+            limits,
+            playback: playlist.playback ?? playback,
+            route: target,
+          }),
+      };
+    },
+    route: target,
+  });
 }

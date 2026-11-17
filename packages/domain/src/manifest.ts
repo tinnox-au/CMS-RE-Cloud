@@ -3,6 +3,7 @@ import {
   MANIFEST_SCHEMA_VERSION,
   MANIFEST_SCHEMA_VERSION_V2,
   MANIFEST_SCHEMA_VERSION_V3,
+  MANIFEST_SCHEMA_VERSION_V4,
   ManifestSchema,
   type Limits,
   type Manifest,
@@ -40,8 +41,12 @@ export function needsV2(draft: PublicationDraft): boolean {
   );
 }
 
-/** The oldest manifest version that carries the draft: 3 with an app, 2 with a v2 option, else 1. */
-export function manifestVersionFor(draft: PublicationDraft): 1 | 2 | 3 {
+/**
+ * The oldest manifest version that carries the draft: 4 with a schedule, 3 with an app, 2 with
+ * a v2 option, else 1.
+ */
+export function manifestVersionFor(draft: PublicationDraft): 1 | 2 | 3 | 4 {
+  if (draft.schedule !== null) return MANIFEST_SCHEMA_VERSION_V4;
   if (draft.items.some((item) => item.kind === 'app')) return MANIFEST_SCHEMA_VERSION_V3;
   return needsV2(draft) ? MANIFEST_SCHEMA_VERSION_V2 : MANIFEST_SCHEMA_VERSION;
 }
@@ -106,6 +111,24 @@ export function buildManifest(draft: PublicationDraft, identity: ManifestIdentit
               availableUntil: item.availableUntil,
             },
       ),
+      // Version 4 is version 3 plus the schedule, copied field by field.
+      ...(draft.schedule === null
+        ? {}
+        : {
+            schedule: {
+              playlists: draft.schedule.playlists.map((playlist) => ({
+                count: playlist.count,
+                transition: playlist.transition,
+                shuffle: playlist.shuffle,
+              })),
+              events: draft.schedule.events.map((event) => ({
+                playlist: event.playlist,
+                days: [...event.days],
+                start: event.start,
+                end: event.end,
+              })),
+            },
+          }),
     };
   }
   // The discriminated union checks the candidate against the schema of its version.

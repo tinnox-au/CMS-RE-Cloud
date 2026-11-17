@@ -40,13 +40,9 @@ describe('navigation data', () => {
     const planned = sidebarLinks()
       .filter((link) => link.planned === true)
       .map((link) => link.to);
-    expect(planned).toEqual([
-      '/media/audio',
-      '/media/documents',
-      '/media/web-pages',
-      '/layouts',
-      '/schedules',
-    ]);
+    expect(planned).toEqual(['/media/audio', '/media/documents', '/media/web-pages', '/layouts']);
+    // Built in stage B, slice 3.
+    expect(sidebarLinks().find((link) => link.to === '/schedules')?.planned).toBeUndefined();
   });
 
   it('lists the account menu as Settings, Users, Audit log', () => {
@@ -103,6 +99,7 @@ describe('activeNavId', () => {
     ['/playlists/0b6f1c1e-6c1e-4b7e-9a51-0d6f3c1f2a10', 'playlists'],
     ['/layouts', 'layouts'],
     ['/schedules', 'schedules'],
+    ['/schedules/0b6f1c1e-6c1e-4b7e-9a51-0d6f3c1f2a10', 'schedules'],
     ['/screens', 'screens'],
     ['/screens/new', 'screens'],
     ['/screens/0b6f1c1e-6c1e-4b7e-9a51-0d6f3c1f2a10', 'screens'],

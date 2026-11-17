@@ -340,7 +340,7 @@ export type PushOverviewState =
   | 'up_to_date'
   /** Nothing can be pushed, and at least one screen is blocked. */
   | 'blocked_only'
-  /** There are screens, and none has a playlist assigned. */
+  /** There are screens, and none has a playlist or a schedule assigned. */
   | 'nothing_assigned'
   | 'no_screens';
 
@@ -348,7 +348,7 @@ export interface PushOverview {
   readonly state: PushOverviewState;
   /** Screens with changes waiting; equals `pendingCount` of the plan. */
   readonly pending: number;
-  /** Screens whose assigned playlist cannot be pushed as it is. */
+  /** Screens whose assigned content cannot be pushed as it is. */
   readonly blocked: number;
   /** The first screens with changes waiting, in the plan's order. */
   readonly waiting: readonly PushPlanRow[];
@@ -382,15 +382,17 @@ export function pushOverview(plan: PushPlanResponse, limit = 3): PushOverview {
   } else if (plan.items.length === 0) {
     state = 'no_screens';
     headline = 'Nothing to push yet';
-    text = 'Add a screen and assign a playlist to it. Its changes then wait here until you push.';
+    text =
+      'Add a screen and assign a playlist or a schedule to it. Its changes then wait here until you push.';
   } else if (assigned === 0) {
     state = 'nothing_assigned';
     headline = 'Nothing to push yet';
-    text = 'Assign a playlist to a screen. Its changes then wait here until you push.';
+    text =
+      'Assign a playlist or a schedule to a screen. Its changes then wait here until you push.';
   } else {
     state = 'up_to_date';
     headline = 'Everything is up to date';
-    text = 'Every screen with a playlist assigned has been given its latest version.';
+    text = 'Every screen with content assigned has been given its latest version.';
   }
 
   return {
@@ -404,7 +406,7 @@ export function pushOverview(plan: PushPlanResponse, limit = 3): PushOverview {
     blockedText:
       blocked === 0
         ? null
-        : `${pluralCount(blocked, 'screen is', 'screens are')} blocked: the assigned playlist cannot be pushed as it is.`,
+        : `${pluralCount(blocked, 'screen is', 'screens are')} blocked: the assigned content cannot be pushed as it is.`,
   };
 }
 

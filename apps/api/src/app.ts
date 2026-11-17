@@ -23,6 +23,7 @@ import { registerOverviewRoutes } from './routes/overview.ts';
 import { registerPlaylistRoutes } from './routes/playlists.ts';
 import { registerPlayerRoutes } from './routes/player.ts';
 import { registerPushRoutes } from './routes/push.ts';
+import { registerScheduleRoutes } from './routes/schedules.ts';
 import { registerTagRoutes } from './routes/tags.ts';
 
 export interface BuildAppOptions {
@@ -107,6 +108,7 @@ export async function buildApp(
     registerDisplayRoutes(api, ctx);
     registerMediaRoutes(api, ctx);
     registerAppRoutes(api, ctx);
+    registerScheduleRoutes(api, ctx);
     registerPlaylistRoutes(api, ctx);
     registerTagRoutes(api, ctx);
     registerFolderRoutes(api, ctx);

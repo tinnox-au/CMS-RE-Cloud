@@ -23,6 +23,7 @@ import {
   ManifestSchema,
   ManifestV1Schema,
   ManifestV2Schema,
+  ManifestV4Schema,
   MediaJobResultSchema,
   MediaPatchSchema,
   MediaUrlQuerySchema,
@@ -30,12 +31,15 @@ import {
   PairingClaimRequestSchema,
   PlaylistReplaceSchema,
   ROUTES,
+  ScheduleRuleSchema,
   WorkingHoursSchema,
   apiError,
   ApiErrorSchema,
+  eventCovers,
   formatPairingCode,
   limitsFromEnv,
   manifestEtag,
+  manifestPlaylists,
   manifestV2Facts,
   normalisePairingCode,
   parseManifest,
@@ -172,10 +176,10 @@ describe('manifest v1', () => {
     expect(parseManifest(manifest())).toMatchObject({ ok: true });
   });
   it('distinguishes an unsupported version from a malformed document', () => {
-    expect(parseManifest(manifest({ schemaVersion: 4 }))).toMatchObject({
+    expect(parseManifest(manifest({ schemaVersion: 5 }))).toMatchObject({
       ok: false,
       reason: 'unsupported_version',
-      message: 'manifest schemaVersion 4 is not supported (expected 1, 2 or 3)',
+      message: 'manifest schemaVersion 5 is not supported (expected 1, 2, 3 or 4)',
     });
     expect(parseManifest({ hello: 'world' })).toMatchObject({ ok: false, reason: 'malformed' });
     expect(parseManifest('<html>')).toMatchObject({ ok: false, reason: 'malformed' });
@@ -498,6 +502,235 @@ describe('time rules', () => {
       { availableFrom: '2026-12-02T09:00', availableUntil: '2026-12-01T09:00' },
     ])
       expect(ok(MediaPatchSchema, bad), JSON.stringify(bad)).toBe(false);
+  });
+});
+
+describe('schedules', () => {
+  const MON = 0;
+  const TUE = 1;
+  const SAT = 5;
+  const SUN = 6;
+  const WEEKDAYS = [true, true, true, true, true, false, false];
+  const only = (...days: number[]) => Array.from({ length: 7 }, (_, day) => days.includes(day));
+  const rule = (o: Record<string, unknown> = {}) => ({
+    days: WEEKDAYS,
+    start: '09:00',
+    end: '17:00',
+    ...o,
+  });
+
+  it('accepts a weekly rule on one day, past midnight and for the whole day', () => {
+    expect(ScheduleRuleSchema.parse(rule())).toEqual(rule());
+    expect(ok(ScheduleRuleSchema, rule({ start: '00:00', end: '24:00' }))).toBe(true);
+    expect(ok(ScheduleRuleSchema, rule({ start: '22:00', end: '02:00' }))).toBe(true);
+    expect(ok(ScheduleRuleSchema, rule({ days: only(SUN) }))).toBe(true);
+  });
+
+  it('refuses a rule with the wrong days, a second form of midnight or no length', () => {
+    for (const bad of [
+      rule({ days: WEEKDAYS.slice(0, 6) }),
+      rule({ days: [...WEEKDAYS, false] }),
+      rule({ days: only() }),
+      rule({ days: [1, 1, 1, 1, 1, 0, 0] }),
+      rule({ start: '24:00', end: '02:00' }),
+      rule({ end: '00:00' }),
+      rule({ end: '09:00' }),
+      rule({ start: '9:00' }),
+      rule({ end: '24:01' }),
+      rule({ playlistId: U(40) }),
+      { days: WEEKDAYS, start: '09:00' },
+    ])
+      expect(ok(ScheduleRuleSchema, bad), JSON.stringify(bad)).toBe(false);
+    const empty = ScheduleRuleSchema.safeParse(rule({ end: '09:00' }));
+    expect(empty.success).toBe(false);
+    if (!empty.success) {
+      expect(empty.error.issues).toMatchObject([
+        { path: ['end'], message: 'end must differ from start' },
+      ]);
+    }
+  });
+
+  it('covers a same-day window from its start up to, not including, its end', () => {
+    const office = { days: WEEKDAYS, start: '09:00', end: '17:00' };
+    expect(eventCovers(office, MON, '08:59')).toBe(false);
+    expect(eventCovers(office, MON, '09:00')).toBe(true);
+    expect(eventCovers(office, MON, '16:59')).toBe(true);
+    expect(eventCovers(office, MON, '17:00')).toBe(false);
+    // A day that is not ticked.
+    expect(eventCovers(office, SAT, '12:00')).toBe(false);
+  });
+
+  it('covers the evening of the start day and the next morning when it runs past midnight', () => {
+    const late = { days: only(MON), start: '22:00', end: '02:00' };
+    expect(eventCovers(late, MON, '21:59')).toBe(false);
+    expect(eventCovers(late, MON, '22:00')).toBe(true);
+    expect(eventCovers(late, MON, '23:59')).toBe(true);
+    expect(eventCovers(late, TUE, '00:00')).toBe(true);
+    expect(eventCovers(late, TUE, '01:59')).toBe(true);
+    expect(eventCovers(late, TUE, '02:00')).toBe(false);
+    // Monday morning belongs to an event that started on Sunday, and Tuesday is not a start day.
+    expect(eventCovers(late, MON, '01:00')).toBe(false);
+    expect(eventCovers(late, TUE, '23:00')).toBe(false);
+  });
+
+  it('runs a Sunday night into Monday', () => {
+    const sunday = { days: only(SUN), start: '23:00', end: '01:00' };
+    expect(eventCovers(sunday, SUN, '23:30')).toBe(true);
+    expect(eventCovers(sunday, MON, '00:30')).toBe(true);
+    expect(eventCovers(sunday, MON, '01:00')).toBe(false);
+    expect(eventCovers(sunday, SUN, '00:30')).toBe(false);
+  });
+
+  it('reads an end of 24:00 as the end of the day', () => {
+    const evening = { days: only(MON), start: '18:00', end: '24:00' };
+    expect(eventCovers(evening, MON, '23:59')).toBe(true);
+    expect(eventCovers(evening, TUE, '00:00')).toBe(false);
+    const wholeDay = { days: only(MON), start: '00:00', end: '24:00' };
+    expect(eventCovers(wholeDay, MON, '00:00')).toBe(true);
+    expect(eventCovers(wholeDay, MON, '23:59')).toBe(true);
+    expect(eventCovers(wholeDay, SUN, '23:59')).toBe(false);
+    expect(eventCovers(wholeDay, TUE, '00:00')).toBe(false);
+  });
+
+  const item = () => asset({ availableFrom: null, availableUntil: null });
+  const SCHEDULE = {
+    playlists: [
+      { count: 1, transition: 'fade', shuffle: false },
+      { count: 2, transition: 'cut', shuffle: true },
+    ],
+    events: [
+      { playlist: 1, ...rule() },
+      { playlist: 0, ...rule({ start: '12:00', end: '13:00' }) },
+    ],
+  };
+  const v4 = (o: Record<string, unknown> = {}): Record<string, unknown> =>
+    manifest({
+      schemaVersion: 4,
+      timeZone: 'Australia/Melbourne',
+      transition: 'fade',
+      shuffle: false,
+      rotation: 0,
+      workingHours: null,
+      assets: [item(), item(), item()],
+      schedule: SCHEDULE,
+      ...o,
+    });
+  const schedule = (o: Record<string, unknown>) => ({ ...SCHEDULE, ...o });
+
+  it('accepts a v4 manifest through every entry point', () => {
+    expect(ok(ManifestV4Schema, v4())).toBe(true);
+    expect(ok(ManifestSchema, v4())).toBe(true);
+    expect(parseManifest(v4())).toMatchObject({ ok: true, manifest: { schemaVersion: 4 } });
+    expect(manifestV2Facts(ManifestSchema.parse(v4()))).toMatchObject({
+      transition: 'fade',
+      shuffle: false,
+      timeZone: 'Australia/Melbourne',
+    });
+    // One playlist is valid: the server never writes it, a player handles it.
+    expect(
+      ok(
+        ManifestV4Schema,
+        v4({
+          schedule: schedule({
+            playlists: [{ count: 3, transition: 'fade', shuffle: false }],
+            events: [{ playlist: 0, ...rule() }],
+          }),
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('refuses a v4 manifest whose schedule does not fit its assets', () => {
+    const issuesOf = (value: unknown) => {
+      const parsed = ManifestV4Schema.safeParse(value);
+      return parsed.success ? [] : parsed.error.issues.map((i) => i.path.join('.'));
+    };
+    // Counts that do not add up.
+    expect(issuesOf(v4({ assets: [item(), item()] }))).toEqual(['schedule.playlists']);
+    // An event pointing past the playlists.
+    expect(issuesOf(v4({ schedule: schedule({ events: [{ playlist: 2, ...rule() }] }) }))).toEqual([
+      'schedule.events.0.playlist',
+    ]);
+    // The top level carries the default playlist's options.
+    expect(issuesOf(v4({ transition: 'cut' }))).toEqual(['schedule.playlists.0']);
+    expect(issuesOf(v4({ shuffle: true }))).toEqual(['schedule.playlists.0']);
+  });
+
+  it('refuses a v4 manifest with a malformed schedule, and a schedule in any other version', () => {
+    const { schedule: _removed, ...noSchedule } = v4();
+    const bad = [
+      noSchedule,
+      v4({ extra: true }),
+      v4({ schedule: schedule({ scheduleId: U(70) }) }),
+      v4({ schedule: schedule({ playlists: [] }) }),
+      v4({ schedule: schedule({ events: [] }) }),
+      v4({ schedule: schedule({ events: [{ playlist: 1, playlistId: U(40), ...rule() }] }) }),
+      v4({ schedule: schedule({ events: [{ playlist: 1, ...rule({ end: '09:00' }) }] }) }),
+      v4({ schedule: schedule({ events: [{ playlist: 1, ...rule({ days: only() }) }] }) }),
+      v4({ schedule: schedule({ events: [{ playlist: -1, ...rule() }] }) }),
+      v4({
+        schedule: schedule({
+          playlists: [
+            { count: 1, transition: 'fade', shuffle: false },
+            { count: 2, transition: 'cut', shuffle: true, from: 1 },
+          ],
+        }),
+      }),
+      v4({
+        schedule: schedule({
+          playlists: [
+            { count: 3, transition: 'fade', shuffle: false },
+            { count: 0, transition: 'cut', shuffle: true },
+          ],
+        }),
+      }),
+      v4({
+        schedule: schedule({
+          events: Array.from({ length: ABSOLUTE.maxScheduleEvents + 1 }, () => ({
+            playlist: 1,
+            ...rule(),
+          })),
+        }),
+      }),
+    ];
+    bad.forEach((m, i) => expect(ok(ManifestV4Schema, m), `case ${i}`).toBe(false));
+    // v3 is frozen: a released 0.3.0 player must refuse a schedule rather than ignore it.
+    expect(ok(ManifestV3Schema, { ...v4(), schemaVersion: 3 })).toBe(false);
+    expect(parseManifest({ ...v4(), schemaVersion: 3 })).toMatchObject({
+      ok: false,
+      reason: 'malformed',
+    });
+    expect(parseManifest(noSchedule)).toMatchObject({ ok: false, reason: 'malformed' });
+  });
+
+  it('gives the playlists of a manifest as slices of its assets', () => {
+    const two = [asset(), asset()];
+    expect(manifestPlaylists(ManifestSchema.parse(manifest({ assets: two })))).toEqual([
+      { from: 0, count: 2, transition: 'cut', shuffle: false },
+    ]);
+    const { schedule: _removed, ...v3 } = v4({ schemaVersion: 3, shuffle: true });
+    for (const schemaVersion of [2, 3]) {
+      expect(manifestPlaylists(ManifestSchema.parse({ ...v3, schemaVersion }))).toEqual([
+        { from: 0, count: 3, transition: 'fade', shuffle: true },
+      ]);
+    }
+    expect(manifestPlaylists(ManifestSchema.parse(v4()))).toEqual([
+      { from: 0, count: 1, transition: 'fade', shuffle: false },
+      { from: 1, count: 2, transition: 'cut', shuffle: true },
+    ]);
+    const three = v4({
+      assets: [item(), item(), item(), item(), item(), item()],
+      schedule: schedule({
+        playlists: [
+          { count: 1, transition: 'fade', shuffle: false },
+          { count: 2, transition: 'cut', shuffle: true },
+          { count: 3, transition: 'cut', shuffle: false },
+        ],
+      }),
+    });
+    expect(manifestPlaylists(ManifestSchema.parse(three)).map((slice) => slice.from)).toEqual([
+      0, 1, 3,
+    ]);
   });
 });
 
