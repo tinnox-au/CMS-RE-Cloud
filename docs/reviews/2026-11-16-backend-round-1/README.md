@@ -148,3 +148,11 @@ The runtime questions section 8 left open were then taken up:
 | Browser end-to-end suite | `npm run test:e2e` passed locally on 17 November 2026 with these changes (53 tests, macOS, Node 23.10): real Keycloak sign-in with TOTP, pairing, sign-out and the PostgreSQL restart, on a database migrated through 0008. |
 
 Still open: the end-to-end job has not run in CI (it needs a manual dispatch or `RUN_E2E`), so there is no end-to-end result on Node 22.
+
+## 10. Fix verification (17 November 2026)
+
+A later read-only check of `main` at `f138439` is recorded in [Fix verification for review rounds 1 and 2](../2026-11-17-fix-verification-r1-r2/README.md).
+CX-02, CX-03, CX-04 and CU-02 are fixed. CX-01 is an accepted residual (the logout fallback).
+CU-01 is partly fixed, because restore verification still fails when there are zero ready media.
+CU-03 is partly fixed, because the B12 row in `control-matrix.md` still says "CI not yet run".
+The logout fallback log says the session ended even when revocation failed; that is a new low item.
