@@ -69,5 +69,8 @@ Merged 17 Nov; CI green (lint, types, unit, component, integration 314, secret s
 **Evidence**
 PR #19 merged after CI passed (quality, integration, secret scan); CX-01 logout exception stays accepted; npm run backup:verify not yet run on the CU-01 change
 
+**Notes**
+- 18 Nov: 18 Nov: backup:verify run on realistic dev data (portal API, real sign-ins, paired players). App-only: merged script passes, pre-fix fails only on the CU-01 check. With media: both pass. Open: section c still fails a database with no publications; no automated test.
+
 ### CMS-6
 from: CMS-1
