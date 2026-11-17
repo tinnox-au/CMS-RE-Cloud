@@ -3,7 +3,8 @@
 // (and with it the imported realm), uploaded media and worker job files under ./data.
 // Keeps .env and infra/.generated so the same development secrets are reused.
 //   npm run reset -- --yes
-// Afterwards: npm run infra:up && npm run db:migrate && npm run db:seed
+// Afterwards: npm run setup -- --quiet && npm run infra:up && npm run db:migrate && npm run db:seed
+// (setup keeps .env and recreates ./data/jobs, without which the media worker stays unhealthy)
 import { spawnSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -53,4 +54,6 @@ if (data.startsWith(root + '/') && existsSync(data)) {
   rmSync(data, { recursive: true, force: true });
   console.log('Removed ./data');
 }
-console.log('Local state removed. Next: npm run infra:up && npm run db:migrate && npm run db:seed');
+console.log(
+  'Local state removed. Next: npm run setup -- --quiet && npm run infra:up && npm run db:migrate && npm run db:seed',
+);

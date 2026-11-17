@@ -24,7 +24,7 @@ Run everything from the repository root. You should not need `npm install`; `nod
 | `npm run build` | `vite build` for portal and player. The API and worker run from TypeScript source. |
 | `npm run audit` | `npm audit --audit-level=high`. |
 | `npm run scan:secrets` | gitleaks (container, no network) over git history and all non-ignored files. |
-| `npm run reset -- --yes` | Deletes the database volume, the Keycloak container and `./data`. Keeps `.env`. |
+| `npm run reset -- --yes` | Deletes the database volume, the Keycloak container and `./data`. Keeps `.env`. Run `npm run setup -- --quiet` afterwards: it recreates `./data/jobs`, without which the media worker stays unhealthy. |
 | `npm run otp` | Prints the current TOTP code of the development operator (`-- --show-password`, `-- --second`). |
 | `npm run fixtures` | Writes synthetic sample media to `apps/api/test-fixtures/out/`. |
 | `npm run backup:verify` | Backup and restore exercise (API must be stopped). |

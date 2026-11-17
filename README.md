@@ -93,6 +93,7 @@ The end-to-end suite writes screenshots of key states and its measurements to `t
 ```sh
 npm run infra:down                  # stop the containers, keep the data
 npm run reset -- --yes              # delete the database volume, Keycloak state and ./data (uploaded media)
+npm run setup -- --quiet            # recreate ./data/jobs (the media worker's inbox and outbox); keeps .env
 npm run infra:up && npm run db:migrate && npm run db:seed -- --second-org
 ```
 
