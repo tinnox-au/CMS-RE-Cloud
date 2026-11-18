@@ -2,7 +2,7 @@
 
 Date: 2026-11-14. Companion to `docs/security/threat-model.md` and `docs/security/control-matrix.md`.
 
-Status of this page: procedures written on 2026-11-14. **The backup and restore procedure (section 2) was executed once on 2026-11-14** with `npm run backup:verify` (results in section 2.4). The incident runbook has not been rehearsed. The release-checklist statuses in section 5 were updated by the integration step. This page states no legal conclusion; where the law is mentioned, it is OAIC's published description, and whether it applies to TINNOX is for TINNOX and its advisers to determine (`docs/security/control-matrix.md` section 6).
+Status of this page: procedures written on 2026-11-14. **The backup and restore procedure (section 2) was executed on 2026-11-14 (twice) and on 2026-11-18** with `npm run backup:verify` (results in section 2.4). The incident runbook has not been rehearsed. The release-checklist statuses in section 5 were updated by the integration step. This page states no legal conclusion; where the law is mentioned, it is OAIC's published description, and whether it applies to TINNOX is for TINNOX and its advisers to determine (`docs/security/control-matrix.md` section 6).
 
 Contents: 1 incident response; 2 backup and restore; 3 retention; 4 data locations; 5 pre-customer-release checklist; 6 dependency updates.
 
@@ -106,7 +106,7 @@ Root cause, fix, a regression test, an update to the threat model and control ma
 
 Purpose: prove that a database backup and a media backup taken together restore to a consistent state, where every `ready` media row has its file with the recorded size and SHA-256, and every publication's assets resolve.
 
-The steps below are automated, with stricter checks, by `scripts/backup-restore-check.sh` (`npm run backup:verify`): it refuses to run while the API listens on port 4000, verifies every media item of every publication against the SHA-256 and size frozen in the immutable manifest (not only the media row; app items have no file and are only counted), checks that every thumbnail a media row names was restored as a non-empty file (no thumbnail hash is stored), and also checks that the restored database still hides rows from `tinnox_app` without an organisation context and still refuses a publication update. The manual commands remain as the reference procedure; the script is what was run.
+The steps below are automated, with stricter checks, by `scripts/backup-restore-check.sh` (`npm run backup:verify`): it refuses to run while the API listens on port 4000 and the database to back up is the API's (the one in `DATABASE_URL`), verifies every media item of every publication against the SHA-256 and size frozen in the immutable manifest (not only the media row; app items have no file and are only counted), checks that every thumbnail a media row names was restored as a non-empty file (no thumbnail hash is stored), and also checks that the restored database still hides rows from `tinnox_app` without an organisation context (in every table that role may read) and still refuses changes to publications. It also compares the number of `ready` media rows as a cross-check. A database with no ready media (only apps) or with no publications yet is valid, and the result says when no file was compared; a database with no organisation is empty and fails as "nothing to verify". The immutability check runs in a transaction that is rolled back and counts only the `publication` trigger's own refusal: an update when publications exist (otherwise the row trigger must be present and enabled), and a `TRUNCATE` (statement trigger) always. The number of tables `tinnox_app` may read must match the source, and the scratch database and directory are removed even when a step aborts. `tests/integration/backup-restore-check.test.ts`, part of the integration suite (`npm run test:integration`, which CI runs), runs the unchanged script against its own `_test` databases through the `BACKUP_SOURCE_DB`, `BACKUP_RESTORE_DB` and `BACKUP_MEDIA_ROOT` overrides: valid databases must pass; a changed or missing file, a missing thumbnail, an empty database, a dropped publication trigger, lost forced row-level security and a leaking policy must fail. The manual commands remain as the reference procedure; the script is what was run.
 
 Facts the procedure relies on:
 
@@ -221,6 +221,15 @@ rm -rf "$RESTORE_ROOT"
 
 Re-run on 2026-11-14 at 12:48 UTC by the review-fix step, after migration 0004, with the API stopped: `RESULT: restore verified`. 11 table counts matched (organization 2, membership 2, display 28, player_registration 18, media 42, playlist 30, playlist_item 21, publication 33, publication_asset 72, display_delivery 20, audit_event 1,461); 39 ready media rows and 72 publication assets of 33 publications matched by SHA-256 and size, with nothing missing; 17 of 17 tables with forced row-level security, 12 triggers (including the publication-asset guard and the audit time stamp from 0004) and 17 `sec` functions owned by `tinnox_definer`; a publication update was refused. The new insert triggers did not hinder the restore, because `pg_restore` creates triggers after loading data. The backup set was deleted afterwards.
 
+Runs on 2026-11-18 (local development machine, PostgreSQL 17.12 container, API stopped), on realistic synthetic data created through the portal API with real Keycloak sign-ins: two organisations, four screens, eight apps, and two paired browser players. Backend review round 1 (CU-01) was reproduced and its fix confirmed:
+
+| Data | Script | Result |
+|---|---|---|
+| Apps only: 4 publications with 11 app items, no media | as merged after review round 1 (`fix/verification-r1-r2`) | `RESULT: restore verified`; "media rows: none ready, nothing to check" |
+| The same backup | as before that fix | `RESULT: FAILED`, only on "media rows: nothing to check (empty database?)" |
+| Media added: 3 ready media (2 with thumbnails), 6 publications with 3 media and 16 app items | both versions | `RESULT: restore verified`, every file matched |
+| The same data | as changed on `fix/backup-check-gaps` | `RESULT: restore verified`: 25 tables (24 data tables and `schema_migrations`) and the ready-media count match; 3 media rows, 2 thumbnails and 3 publication assets matched; 24 of 24 tables with forced row-level security, 20 triggers, 18 `sec` functions; `tinnox_app` sees 0 of 98 rows in the 20 tables it may read; publication update and truncate refused by the `publication` triggers |
+
 ### 2.5 What this exercise does not establish
 
 It is a manual, local, same-machine exercise. It does not establish scheduled backups, off-site or cross-region copies, encryption of backups, point-in-time recovery, recovery-time or recovery-point objectives, or identity-provider recovery. A backup holds every organisation's data and bypasses row-level security; treat backup access as administrator access. Deletion requests and retention limits must also reach backups (section 3).
@@ -305,6 +314,7 @@ Tooling facts (from `docs/dev-handoff.md`): exact versions, committed `package-l
 Routine, at least monthly, and whenever an advisory arrives:
 
 1. `npm run audit` and review. High and critical findings in run-time dependencies are fixed or mitigated before the next release; anything left open is recorded in the table below with an owner and a review date. Do not use `npm audit fix --force`.
+   `npm run audit` (`scripts/audit.ts`, run in CI) fails on any high or critical advisory. The one way to let such an advisory pass is a dated exception, for a development-only advisory with no fixed release: list it in `scripts/audit-exceptions.json` (advisory id, package, reason, owner, review date at most 90 days ahead) and in the table below. The check fails again after the review date, as soon as the advisory reaches a run-time dependency (`npm audit --omit=dev`), and once the advisory is no longer reported, so the entry is then removed or renewed with a new date.
 2. `npm outdated` to list available updates. Group them: security fixes first, then run-time, then development tooling.
 3. Update one group at a time with exact versions. Read the changelog for anything touching authentication, sessions, parsing, multipart upload, image or video handling, the database driver or the web framework.
 4. Review the lockfile diff: new transitive packages, changed registries or integrity hashes, new install scripts.
@@ -319,7 +329,7 @@ Open exceptions (keep current):
 
 | Finding | Where | Severity | Why open | Owner | Review by |
 |---|---|---|---|---|---|
-| `minimatch` advisory inside the typescript-eslint toolchain (7 moderate findings, as reported by the foundation step on 2026-11-14; not re-run by the author) | Development only | Moderate | Awaiting upstream release; not in run-time code | _to be named_ | _to be set_ |
+| `picomatch` GHSA-fc5q-39xc-vjpf, ReDoS through single-branch repeated extglobs (every high finding in `npm audit` on 2026-11-18 comes from this one advisory, reached through `vite`, `vitest`, `tinyglobby`, `fdir` and `typescript-eslint`) | Development only (`npm audit --omit=dev` clean on 2026-11-18) | High | No fixed release: the advisory covers `<=4.0.7` and 4.0.7 is the latest (checked 2026-11-18). Allowed in CI only through `scripts/audit-exceptions.json` until the review date | Michael Fu | 2026-12-18 |
 | Host Node 23.10 is outside the supported engine ranges of eslint 10 and vitest 5 | Development machine | Low | CI uses Node 22 | _to be named_ | _to be set_ |
 
 Not in place: automated update pull requests, a software bill of materials, licence checks, static analysis, image scanning. Add these before external release (checklist items 7 and 12).

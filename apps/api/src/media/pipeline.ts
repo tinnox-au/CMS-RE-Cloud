@@ -732,6 +732,15 @@ export class MediaPipeline {
    * is removed and the sweep waits for the backlog to drain (review round 3, SCX-02).
    */
   async sweep(): Promise<number> {
+    const now = this.#now().getTime();
+    for (const [jobId, since] of this.#inFlight) {
+      if (now - since > IN_FLIGHT_MAX_MS) this.#inFlight.delete(jobId);
+    }
+    // Noted before the pending jobs are read. An upload that is committed and queued while
+    // this sweep runs is in neither the pending list (read too early) nor #inFlight (cleared
+    // by then), and its bytes may be older than the grace period: without this note the
+    // sweep would remove them. An upload that starts later has files newer than the cutoff.
+    const inFlightAtStart = new Set(this.#inFlight.keys());
     const jobs = await this.#pending(PENDING_LIST_CAP);
     if (jobs.length >= PENDING_LIST_CAP) {
       this.#log.warn(
@@ -741,16 +750,13 @@ export class MediaPipeline {
       return 0;
     }
     const pending = new Set(jobs.map((job) => job.mediaId));
-    const now = this.#now().getTime();
-    for (const [jobId, since] of this.#inFlight) {
-      if (now - since > IN_FLIGHT_MAX_MS) this.#inFlight.delete(jobId);
-    }
     const cutoff = now - ORPHAN_GRACE_MS;
     let removed = 0;
     for (const dir of [this.#inbox, this.#outbox]) {
       for (const name of await readdir(dir)) {
         const id = name.slice(0, 36);
-        if (!UUID.test(id) || pending.has(id) || this.#inFlight.has(id)) continue;
+        if (!UUID.test(id) || pending.has(id)) continue;
+        if (inFlightAtStart.has(id) || this.#inFlight.has(id)) continue;
         const path = join(dir, name);
         try {
           const info = await lstat(path);

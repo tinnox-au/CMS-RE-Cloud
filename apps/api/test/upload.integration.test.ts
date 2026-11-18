@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFile, mkdir, stat, symlink, unlink, utimes, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, rm, stat, symlink, unlink, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import type { MediaJobResult } from '@tinnox/contracts';
 import { withOrg } from '@tinnox/db';
 import { LocalObjectStorage } from '@tinnox/storage';
@@ -508,6 +509,60 @@ describe('upload limits and validation results', () => {
       await t.ctx.media.sweep();
     }
     expect(await listDir(inbox)).toEqual([]);
+  });
+
+  it('keeps the bytes of an upload that is queued while the sweep runs', async () => {
+    // A pool that runs `afterPendingRead` once, right after the sweep has read the pending
+    // jobs: the moment an upload in progress can be committed and queued behind its back.
+    let afterPendingRead: (() => Promise<void>) | null = null;
+    const pool = new Proxy(t.pool, {
+      get(target, key) {
+        const value: unknown = Reflect.get(target, key);
+        if (key !== 'query') {
+          return typeof value === 'function'
+            ? (value as (...args: unknown[]) => unknown).bind(target)
+            : value;
+        }
+        return async (text: string, values?: unknown[]) => {
+          const result = await target.query(text, values);
+          if (text.includes('sec.media_processing_jobs') && afterPendingRead !== null) {
+            const hook = afterPendingRead;
+            afterPendingRead = null;
+            await hook();
+          }
+          return result;
+        };
+      },
+    });
+    const silent = { info: () => undefined, warn: () => undefined, error: () => undefined };
+    const pipeline = new MediaPipeline({
+      jobsDir: t.jobsDir,
+      pool,
+      storage: await LocalObjectStorage.create({ root: t.mediaRoot }),
+      limits: t.config.limits,
+      logger: silent,
+    });
+    await pipeline.prepare();
+    const inbox = join(t.jobsDir, 'inbox');
+    const received = await pipeline.receive(Readable.from([await pngBytes()]), UPLOAD_LIMIT);
+    try {
+      // The last byte arrived five minutes ago: the upload has waited that long for its row.
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      await utimes(join(inbox, `${received.jobId}.part`), fiveMinutesAgo, fiveMinutesAgo);
+      afterPendingRead = () => pipeline.enqueue(received.jobId);
+
+      await pipeline.sweep();
+
+      expect(afterPendingRead).toBeNull();
+      expect(await listDir(inbox)).toEqual(
+        expect.arrayContaining([received.jobId, `${received.jobId}.json`]),
+      );
+    } finally {
+      // No media row was written for this job, so nothing else cleans up after it.
+      for (const suffix of ['', '.json', '.part']) {
+        await rm(join(inbox, `${received.jobId}${suffix}`), { force: true });
+      }
+    }
   });
 
   it('keeps validated media whose commit went through when the answer to COMMIT was lost (round 3, SCX-03)', async () => {

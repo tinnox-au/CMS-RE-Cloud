@@ -22,6 +22,7 @@ import {
   previewStateOf,
   pushRowFor,
   REPORTED_FACTS_NOTE,
+  endPairingWords,
   revokeOutcomeText,
   sameTagIds,
   SCREEN_DETAIL_TABS,
@@ -266,6 +267,18 @@ describe('pairing', () => {
     expect(revokeOutcomeText('30000000-0000-4000-8000-000000000001', 2)).toMatch(
       /revoked\.[^]* 2 pairing codes accepted for this screen but not yet collected by a player were cancelled\.$/,
     );
+    // With no player paired the action is still offered, as cancelling a pending pairing.
+    expect(endPairingWords(true)).toMatchObject({
+      button: 'Revoke player',
+      dialogTitle: 'Revoke this player?',
+      cancelLabel: 'Cancel',
+    });
+    expect(endPairingWords(false)).toMatchObject({
+      button: 'Cancel pending pairing',
+      confirmLabel: 'Cancel pairing',
+      cancelLabel: 'Keep it',
+      errorTitle: 'The pending pairing was not cancelled',
+    });
     expect(pairingStateText(null)).toBe('No player is paired with this screen.');
     expect(pairingStateText('1 Jan')).toMatch(/since 1 Jan/);
   });

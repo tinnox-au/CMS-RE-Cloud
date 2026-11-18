@@ -344,6 +344,42 @@ export function revokeOutcomeText(
   ].join(' ');
 }
 
+/** The words of the action that ends a screen's pairing. */
+export interface EndPairingWords {
+  readonly button: string;
+  /** Said next to the button. */
+  readonly note: string;
+  readonly dialogTitle: string;
+  readonly confirmLabel: string;
+  readonly cancelLabel: string;
+  readonly errorTitle: string;
+}
+
+/**
+ * While a player holds a credential the action revokes it. While none does, the same request
+ * still cancels a code that was accepted for the screen and not yet collected by a player,
+ * so the action is offered under that name instead of being disabled.
+ */
+export function endPairingWords(paired: boolean): EndPairingWords {
+  return paired
+    ? {
+        button: 'Revoke player',
+        note: 'Revoking stops the paired player from fetching manifests and media. It cannot erase content already cached on a device that does not report.',
+        dialogTitle: 'Revoke this player?',
+        confirmLabel: 'Revoke player',
+        cancelLabel: 'Cancel',
+        errorTitle: 'The player was not revoked',
+      }
+    : {
+        button: 'Cancel pending pairing',
+        note: 'No player holds a credential. If a pairing code was accepted for this screen by mistake, cancel it here before the player collects its credential.',
+        dialogTitle: 'Cancel the pending pairing?',
+        confirmLabel: 'Cancel pairing',
+        cancelLabel: 'Keep it',
+        errorTitle: 'The pending pairing was not cancelled',
+      };
+}
+
 /** The sentence about who holds a credential now. `since` is an already formatted time. */
 export function pairingStateText(since: string | null): string {
   return since === null
