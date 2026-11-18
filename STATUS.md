@@ -3,7 +3,7 @@ contract: status/v2
 repo: tinnox-au/tinnox-cms
 initiative: TINNOX CMS
 key: CMS
-next_id: 7
+next_id: 8
 phase: Not written yet: one sentence on what this project is and where it stands
 gate: -
 seeded: 17 Nov 2026 by status init
@@ -38,6 +38,7 @@ None.
 | Id | Card | Agreed | PR | Since |
 |---|---|---|---|---|
 | CMS-2 | Layouts (stage B): split a screen into zones, each with its own content | Michael 18 Nov | - | 18 Nov |
+| CMS-7 | Backup check: pass valid databases with no publications, fail only empty ones, add an automated test | Michael 18 Nov | - | 18 Nov |
 
 ## In review
 
@@ -80,3 +81,6 @@ PR #19 merged after CI passed (quality, integration, secret scan); CX-01 logout 
 
 ### CMS-6
 from: CMS-1
+
+### CMS-7
+from: CMS-5
