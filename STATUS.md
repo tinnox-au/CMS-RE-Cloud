@@ -40,13 +40,13 @@ None.
 | Id | Card | Agreed | PR | Since |
 |---|---|---|---|---|
 | CMS-2 | Layouts (stage B): split a screen into zones, each with its own content | Michael 18 Nov | - | 18 Nov |
-| CMS-8 | CI audit gate: dated exception for picomatch GHSA-fc5q-39xc-vjpf (high, development tooling only, no fixed release); every other high or critical still blocks | Michael 18 Nov | - | 18 Nov |
 
 ## In review
 
 | Id | Card | Agreed | PR | Since |
 |---|---|---|---|---|
 | CMS-7 | Backup check: pass valid databases with no publications, fail only empty ones, add an automated test | Michael 18 Nov | #21 | 18 Nov |
+| CMS-8 | CI audit gate: dated exception for picomatch GHSA-fc5q-39xc-vjpf (high, development tooling only, no fixed release); every other high or critical still blocks | Michael 18 Nov | #22 | 18 Nov |
 
 ## Done, last 14 days
 
