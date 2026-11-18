@@ -72,6 +72,13 @@ echo "dump bytes: $(wc -c < "$BACKUP_DIR/tinnox.dump" | tr -d ' ')"
 echo "media archive bytes: $(wc -c < "$BACKUP_DIR/media-objects.tar" | tr -d ' ')"
 echo "media objects in archive: $(tar -tf "$BACKUP_DIR/media-objects.tar" | grep -Ec '/[0-9a-f-]{36}$' || true)"
 
+# The scratch database and directory go whatever happens next, also when a step aborts.
+cleanup() {
+  "${DC[@]}" exec -T postgres dropdb -U postgres --if-exists "$RESTORE_DB" >/dev/null 2>&1 || true
+  rm -rf "$RESTORE_ROOT"
+}
+trap cleanup EXIT
+
 echo "== restore into database $RESTORE_DB and $RESTORE_ROOT"
 mkdir -p "$RESTORE_ROOT"
 ( cd "$BACKUP_DIR" && shasum -a 256 -c SHA256SUMS )
@@ -175,7 +182,7 @@ ORGS=$(psql_in "$RESTORE_DB" -c "SELECT count(*) FROM organization")
 if [ "$ORGS" = "0" ]; then
   echo "NOTHING TO VERIFY: the database has no organisation (empty database?)"; FAIL=1
 elif [ "$READY_MEDIA" = "0" ] && [ "$MEDIA_ITEMS" = "0" ]; then
-  echo "note: this backup holds no media file; rows, manifests and controls were verified"
+  echo "note: no ready media and no published media item, so no file was compared; rows, manifests and controls were verified"
 fi
 
 echo "== d. controls after restore"
@@ -190,6 +197,10 @@ echo "data tables in public: $TABLES; with forced row-level security: $FORCED; t
 # in every table it may read (not only media, which an app-only database leaves empty).
 APP_TABLES="FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r' AND has_table_privilege('tinnox_app', oid, 'SELECT')"
 APP_TABLE_COUNT=$(psql_in "$RESTORE_DB" -c "SELECT count(*) $APP_TABLES")
+SOURCE_APP_TABLE_COUNT=$(psql_in "$SOURCE_DB" -c "SELECT count(*) $APP_TABLES")
+if [ "$APP_TABLE_COUNT" != "$SOURCE_APP_TABLE_COUNT" ]; then
+  echo "TABLES TINNOX_APP MAY READ DIFFER: $SOURCE_APP_TABLE_COUNT in the source, $APP_TABLE_COUNT restored (grants lost?)"; FAIL=1
+fi
 if [ "$APP_TABLE_COUNT" = "0" ]; then
   echo "TINNOX_APP CAN READ NO TABLE (grants lost?)"; FAIL=1
 else
@@ -217,15 +228,20 @@ refused_by_trigger() { # $1: operation as the trigger names it (UPDATE, TRUNCATE
   fi
 }
 if [ "$PUBS" = "0" ]; then
-  echo "publication update: not tried (no publications)"
+  # Nothing to update, so at least the row trigger must be there and enabled.
+  ROW_TRIGGER=$(psql_in "$RESTORE_DB" -c "SELECT count(*) FROM pg_trigger WHERE tgrelid = 'public.publication'::regclass AND tgname = 'publication_immutable' AND tgenabled IN ('O', 'A')")
+  if [ "$ROW_TRIGGER" = "1" ]; then
+    echo "publication update: not tried (no publications); its trigger is present and enabled"
+  else
+    echo "PUBLICATION UPDATE TRIGGER MISSING OR DISABLED"; FAIL=1
+  fi
 else
   refused_by_trigger UPDATE "UPDATE publication SET idempotency_key = idempotency_key"
 fi
 refused_by_trigger TRUNCATE "TRUNCATE publication CASCADE"
 
 echo "== clean up"
-"${DC[@]}" exec -T postgres dropdb -U postgres "$RESTORE_DB"
-rm -rf "$RESTORE_ROOT"
+cleanup
 echo "backup seconds: $((T1 - T0)); restore seconds: $((T2 - T1))"
 if [ "$FAIL" -eq 0 ]; then
   echo "RESULT: restore verified. Backup set kept in $BACKUP_DIR"

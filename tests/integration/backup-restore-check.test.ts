@@ -404,7 +404,9 @@ describe('backup and restore check: valid databases pass', () => {
         'publication assets: no media items to check (every item is an app)',
       );
       expect(run.output).toContain('publications: 2; media items: 0; app items (no file): 4');
-      expect(run.output).toContain('note: this backup holds no media file');
+      expect(run.output).toContain(
+        'note: no ready media and no published media item, so no file was compared',
+      );
       expect(run.output).toMatch(ISOLATION_LINE);
       expect(run.output).toContain('publication update refused by trigger: yes');
       expect(run.output).toContain('publication truncate refused by trigger: yes');
@@ -429,7 +431,9 @@ describe('backup and restore check: valid databases pass', () => {
       );
       expect(run.output).toContain('thumbnails: checked 1; missing or empty 0');
       expect(run.output).toContain('publication assets: no publications to check');
-      expect(run.output).toContain('publication update: not tried (no publications)');
+      expect(run.output).toContain(
+        'publication update: not tried (no publications); its trigger is present and enabled',
+      );
       expect(run.output).toContain('publication truncate refused by trigger: yes');
       expect(run.output).toContain('RESULT: restore verified');
       expect(run.status, run.output).toBe(0);
@@ -447,7 +451,9 @@ describe('backup and restore check: valid databases pass', () => {
       const run = runCheck();
       expect(run.output).toContain('counts match');
       expect(run.output).toContain('publication assets: no publications to check');
-      expect(run.output).toContain('note: this backup holds no media file');
+      expect(run.output).toContain(
+        'note: no ready media and no published media item, so no file was compared',
+      );
       expect(run.output).toMatch(ISOLATION_LINE);
       expect(run.output).toContain('RESULT: restore verified');
       expect(run.status, run.output).toBe(0);
@@ -477,7 +483,9 @@ describe('backup and restore check: valid databases pass', () => {
         'publication assets: checked 2; missing 0; hash mismatches 0; size mismatches 0',
       );
       expect(run.output).toContain('publications: 2; media items: 2; app items (no file): 2');
-      expect(run.output).not.toContain('note: this backup holds no media file');
+      expect(run.output).not.toContain(
+        'note: no ready media and no published media item, so no file was compared',
+      );
       expect(run.output).toMatch(ISOLATION_LINE);
       expect(run.output).toContain('RESULT: restore verified');
       expect(run.status, run.output).toBe(0);
@@ -565,6 +573,22 @@ describe('backup and restore check: restored controls are verified', () => {
   );
 
   it(
+    'fails when the publication update trigger is gone and there are no publications to try',
+    async () => {
+      await arrange(async (c) => {
+        const a = await melbourne(c);
+        await addReadyImage(c, a, 'showroom-banner.jpg');
+      });
+      await alterSource('DROP TRIGGER publication_immutable ON publication');
+      const run = runCheck();
+      expect(run.output).toContain('PUBLICATION UPDATE TRIGGER MISSING OR DISABLED');
+      expect(run.output).toContain('RESULT: FAILED');
+      expect(run.status, run.output).toBe(1);
+    },
+    RUN_TIMEOUT_MS,
+  );
+
+  it(
     "fails when only publication_asset's trigger refuses the truncate",
     async () => {
       await publishedImage();
@@ -585,7 +609,7 @@ describe('backup and restore check: restored controls are verified', () => {
       await alterSource('ALTER TABLE media NO FORCE ROW LEVEL SECURITY');
       const run = runCheck();
       expect(run.output).toMatch(
-        /data tables in public: (\d+); with forced row-level security: (?!\1)\d+/,
+        /data tables in public: (\d+); with forced row-level security: (?!\1;)\d+;/,
       );
       expect(run.output).toContain('RESULT: FAILED');
       expect(run.status, run.output).toBe(1);
@@ -639,7 +663,9 @@ describe('backup and restore check: overrides cannot point the restore at the so
     // 63 bytes is the limit; a longer restore name could resolve to the 63-byte source.
     const source = 'a'.repeat(63);
     const run = runCheck({ BACKUP_SOURCE_DB: source, BACKUP_RESTORE_DB: `${source}_restore` });
-    expect(run.output).toContain('invalid database name');
+    // The 63-byte source itself is valid; only the longer restore name is refused.
+    expect(run.output).toContain(`invalid database name: ${source}_restore`);
+    expect(run.output).not.toContain(`invalid database name: ${source}\n`);
     expect(run.status).toBe(2);
   });
 });
