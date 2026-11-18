@@ -5,9 +5,11 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_LIMITS, DELIVERY_ROUTE_IDS, type HeartbeatV1 } from '@tinnox/contracts';
 import {
   buildManifest,
+  planLayoutPublication,
   planPublication,
   type DisplayTarget,
   type MediaRecord,
+  type PublicationValidator,
 } from '@tinnox/domain';
 import * as deliveryPackage from '../src/index.ts';
 import { createBrowserRoute, createDeliveryRegistry } from '../src/index.ts';
@@ -119,6 +121,46 @@ describe('domain publishing is independent of the browser route', () => {
     expect(viaFake.issues[0]?.message).toContain('The test-only still-image target');
   });
 
+  it('refuses a layout on the test-only route, which shows one region', () => {
+    const planLayout = (route: PublicationValidator) =>
+      planLayoutPublication({
+        canvas: display.canvas,
+        contentRect: null,
+        zones: [
+          { playlistId: PNG, x: 0, y: 0, width: 10_000, height: 8500 },
+          { playlistId: PNG, x: 0, y: 8500, width: 10_000, height: 1500 },
+        ],
+        planPlaylist: () => ({
+          name: 'Stills',
+          itemCount: 1,
+          plan: () =>
+            planPublication({
+              display,
+              items: [png],
+              mediaById,
+              appsById: new Map(),
+              limits: DEFAULT_LIMITS,
+              playback: { transition: 'cut', shuffle: false },
+              route,
+            }),
+        }),
+        route,
+      });
+    expect(planLayout(createFakeStillImageRoute())).toEqual({
+      ok: false,
+      issues: [
+        {
+          index: null,
+          code: 'multiple_regions_unsupported',
+          path: 'layout',
+          message:
+            'The test-only still-image target can show 1 content region(s); this publication needs 2.',
+        },
+      ],
+    });
+    expect(planLayout(createBrowserRoute()).ok).toBe(true);
+  });
+
   it('domain source imports only contracts and its own files', () => {
     const domainSrc = join(here, '..', '..', 'domain', 'src');
     const files = readdirSync(domainSrc).filter((f) => f.endsWith('.ts') && !f.includes('.test'));
@@ -161,14 +203,14 @@ describe('domain publishing is independent of the browser route', () => {
 describe('browser route', () => {
   const route = createBrowserRoute();
 
-  it('declares the M0 capability profile', () => {
+  it('declares capability profile version 2, with up to four regions for a layout', () => {
     expect(route.capabilities()).toMatchObject({
       routeId: 'browser',
-      profileVersion: 1,
+      profileVersion: 2,
       mediaTypes: ['image/jpeg', 'image/png', 'video/mp4'],
       videoCodecs: ['h264'],
       fitModes: ['contain', 'cover'],
-      maxRegions: 1,
+      maxRegions: 4,
       audio: false,
       supportsContentRect: true,
     });

@@ -219,7 +219,7 @@
   margin-inline-end: var(--s-2);
 }
 
-/* A long playlist or schedule name gives way first; when it was last pushed stays whole. */
+/* A long playlist, schedule or layout name gives way first; when it was last pushed stays whole. */
 .tx-push-row__meta > .tx-push-row__playlist {
   flex: 0 1 auto;
   display: inline-flex;

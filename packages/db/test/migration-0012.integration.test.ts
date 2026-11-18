@@ -1,13 +1,13 @@
 /**
- * Upgrade test for migration 0011 on a database that already holds pairing sessions.
+ * Upgrade test for migration 0012 on a database that already holds pairing sessions.
  *
  * Before migration 0010, revoking a screen's player or claiming the screen again left
  * older claims in place. A claim like that, not yet collected by its player when the
  * database is upgraded, could still complete afterwards and hand out a lasting
- * credential (security review round 3, SCX-01, second check). 0011 cancels them.
+ * credential (security review round 3, SCX-01, second check). 0012 cancels them.
  *
- * This file rebuilds the test database at migration 0010, leaves pairing sessions in
- * every state, with claims as the code before 0010 could leave them, then applies 0011
+ * This file rebuilds the test database at migration 0011, leaves pairing sessions in
+ * every state, with claims as the code before 0010 could leave them, then applies 0012
  * with the real migration runner and checks what was cancelled, what was left alone and
  * what was audited.
  *
@@ -52,7 +52,7 @@ const MIGRATIONS = join(
   'db',
   'migrations',
 );
-const TARGET = '0011_pairing_upgrade_cleanup.sql';
+const TARGET = '0012_pairing_upgrade_cleanup.sql';
 
 interface Pairing {
   readonly pairingId: string;
@@ -163,8 +163,8 @@ beforeAll(async () => {
   const names = (await readdir(MIGRATIONS)).filter((n) => n.endsWith('.sql')).sort();
   const before = names.filter((n) => n < TARGET);
   expect(names).toContain(TARGET);
-  expect(before).toHaveLength(10);
-  scratch = await mkdtemp(join(tmpdir(), 'tinnox-migration-0011-'));
+  expect(before).toHaveLength(11);
+  scratch = await mkdtemp(join(tmpdir(), 'tinnox-migration-0012-'));
   for (const name of before) await copyFile(join(MIGRATIONS, name), join(scratch, name));
 
   await resetTestDatabase(migratorUrl());
@@ -213,10 +213,10 @@ afterAll(async () => {
   if (scratch !== undefined) await rm(scratch, { recursive: true, force: true });
 });
 
-describe('migration 0011 on a database that already holds pairing sessions', () => {
-  it('is applied on top of 0010, and is not applied twice', async () => {
+describe('migration 0012 on a database that already holds pairing sessions', () => {
+  it('is applied on top of 0011, and is not applied twice', async () => {
     const later = (await readdir(MIGRATIONS)).filter((n) => n.endsWith('.sql') && n > TARGET);
-    expect(upgrade.alreadyApplied).toHaveLength(10);
+    expect(upgrade.alreadyApplied).toHaveLength(11);
     expect(upgrade.applied).toEqual([TARGET, ...later.sort()]);
     const again = await runMigrations({ connectionString: migratorUrl(), directory: MIGRATIONS });
     expect(again.applied).toEqual([]);

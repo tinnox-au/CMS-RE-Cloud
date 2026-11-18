@@ -1,6 +1,6 @@
-import { scheduleTotalMessage } from './capability.ts';
 import type { PlanPublicationResult } from './manifest.ts';
-import type { PublicationDraft, PublicationValidator, PublishIssue } from './types.ts';
+import { planSources, type PlanPlaylist } from './sources.ts';
+import type { PublicationDraft, PublicationValidator } from './types.ts';
 
 export interface SchedulePlanInput {
   readonly defaultPlaylistId: string;
@@ -11,19 +11,8 @@ export interface SchedulePlanInput {
     readonly start: string;
     readonly end: string;
   }[];
-  /**
-   * One playlist for the target display: its name, its number of items, and `plan`, which
-   * plans it (planPublication with the display, records, limits and route bound) when
-   * called. Undefined: the playlist no longer exists. Called once per distinct playlist,
-   * with the id in lower case; `plan` at most once.
-   */
-  readonly planPlaylist: (playlistId: string) =>
-    | {
-        readonly name: string;
-        readonly itemCount: number;
-        readonly plan: () => PlanPublicationResult;
-      }
-    | undefined;
+  /** Called once per distinct playlist, so `plan` runs at most once per playlist. */
+  readonly planPlaylist: PlanPlaylist;
   /** Judges the combined draft: the total number of items. */
   readonly route: PublicationValidator;
 }
@@ -48,55 +37,14 @@ export function planSchedulePublication(input: SchedulePlanInput): PlanPublicati
     if (!sources.has(id)) sources.set(id, `events[${n}]`);
   });
 
-  const found = [...sources].map(([id, source]) => ({ source, playlist: input.planPlaylist(id) }));
-  if (sources.size > 1 && found.every(({ playlist }) => playlist !== undefined)) {
-    const total = found.reduce((sum, { playlist }) => sum + (playlist?.itemCount ?? 0), 0);
-    const profile = input.route.capabilities();
-    // shortcut: one total for all playlists of a schedule; give schedules their own limit if 200 proves tight.
-    if (total > profile.maxItems) {
-      return {
-        ok: false,
-        issues: [
-          {
-            index: null,
-            code: 'too_many_items',
-            path: 'schedule',
-            message: scheduleTotalMessage(total, profile.label, profile.maxItems),
-          },
-        ],
-      };
-    }
-  }
-
-  // shortcut: a display-level refusal (canvas, content rectangle) is repeated once per playlist; the browser route never raises one. De-duplicate when a route that can ships.
-  const issues: PublishIssue[] = [];
-  const drafts: PublicationDraft[] = [];
-  for (const { source, playlist } of found) {
-    if (playlist === undefined) {
-      issues.push({
-        index: null,
-        code: 'playlist_empty',
-        path: `${source}.playlist`,
-        message:
-          'A playlist of this schedule no longer exists. Open the schedule and choose another.',
-      });
-      continue;
-    }
-    const plan = playlist.plan();
-    if (!plan.ok) {
-      for (const issue of plan.issues) {
-        issues.push({
-          index: issue.index,
-          code: issue.code,
-          path: `${source}.${issue.index === null ? 'playlist' : `items[${issue.index}]`}`,
-          message: `In playlist "${playlist.name}": ${issue.message}`,
-        });
-      }
-    } else {
-      drafts.push(plan.draft);
-    }
-  }
-  if (issues.length > 0) return { ok: false, issues };
+  const planned = planSources(
+    [...sources].map(([playlistId, source]) => ({ source, playlistId })),
+    input.planPlaylist,
+    input.route,
+    'schedule',
+  );
+  if (!planned.ok) return planned;
+  const drafts = planned.drafts;
 
   const [defaultDraft] = drafts;
   // Unreachable: with no issue there is one draft per playlist, and the default is the first.

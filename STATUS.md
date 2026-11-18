@@ -37,9 +37,7 @@ None.
 
 ## In progress
 
-| Id | Card | Agreed | PR | Since |
-|---|---|---|---|---|
-| CMS-2 | Layouts (stage B): split a screen into zones, each with its own content | Michael 18 Nov | - | 18 Nov |
+None.
 
 ## In review
 
@@ -53,6 +51,7 @@ None.
 | CMS-8 | 18 Nov | CI audit gate: dated exception for picomatch GHSA-fc5q-39xc-vjpf (high, development tooling only, no fixed release); every other high or critical still blocks | #22 |
 | CMS-7 | 18 Nov | Backup check: pass valid databases with no publications, fail only empty ones, add an automated test | #21 |
 | CMS-5 | 18 Nov | Backend review round 1: decide and fix the two medium findings (CX-01 audit with credential changes, CU-01 backup check with apps) | #19 |
+| CMS-2 | 18 Nov | Layouts (stage B): split a screen into zones, each with its own content | #25 |
 | CMS-1 | 17 Nov | Schedules (stage B slice 3): choose which playlist a screen shows by day and time | #13 |
 
 ## Parked
@@ -74,6 +73,10 @@ Merged 17 Nov; CI green (lint, types, unit, component, integration 314, secret s
 
 **Notes**
 - 18 Nov: 18 Nov: built on feat/stage-b-layouts (uncommitted): spec in stage-b.md slice 4; migration 0011, manifest v5, player 0.5.0; typecheck, lint, unit, component, integration and the full e2e suite (incl. new 12 and 13) pass. Multi-agent review blocked by the weekly usage limit until 22 Nov
+- 18 Nov: five-lens adversarial review done: no Critical or High; one Medium (player garbage collection across zones) and five Low fixed; all checks and the full e2e suite pass again. Still uncommitted on feat/stage-b-layouts
+
+**Evidence**
+merged to main; CI green; full e2e suite (132 tests) passed on the merged tree
 
 ### CMS-5
 

@@ -2,6 +2,7 @@ import type { DisplayDto, PlaylistSummaryDto } from '@tinnox/contracts';
 import { useCallback, useId, useMemo, useState } from 'react';
 import { api } from '../../../api/index.ts';
 import { useLoad } from '../../../hooks/useLoad.ts';
+import { assignedContent } from '../../../lib/assignedContent.ts';
 import { countLabel, matchesSearch } from '../../../lib/listView.ts';
 import { playlistSummaryLabel } from '../../../lib/mediaName.ts';
 import {
@@ -54,6 +55,8 @@ export function ContentStep({
   const load = useCallback((signal: AbortSignal) => api.listPlaylists(signal), []);
   const { state, reload } = useLoad(load);
   const assignedId = display.assignedPlaylist?.id ?? null;
+  // A schedule or a layout that the playlist assigned here would replace.
+  const replaced = assignedContent(display)?.kind;
   const [chosen, setChosen] = useState<string | null>(assignedId);
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
@@ -144,11 +147,11 @@ export function ContentStep({
           </Banner>
         )}
 
-        {display.assignedSchedule !== null && (
+        {(replaced === 'schedule' || replaced === 'layout') && (
           <Banner tone="info">
-            <span data-testid="screen-wizard-schedule-note">
-              This screen has a schedule. It gets the playlist you assign here instead of its
-              schedule.
+            <span data-testid={`screen-wizard-${replaced}-note`}>
+              This screen has a {replaced}. It gets the playlist you assign here instead of its{' '}
+              {replaced}.
             </span>
           </Banner>
         )}

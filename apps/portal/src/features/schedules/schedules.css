@@ -111,19 +111,6 @@
   padding-inline-end: var(--s-4);
 }
 
-/* A playlist select with the link to the chosen playlist beside it; the link wraps under. */
-.tx-schedule-pick {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s-2) var(--s-3);
-}
-
-.tx-schedule-pick > .tx-select {
-  flex: 1 1 220px;
-  min-inline-size: 0;
-}
-
 /* ---------- Events ---------- */
 
 .tx-schedule-editor__help {

@@ -239,6 +239,36 @@ At any moment every item on air comes from one playlist.
 - **Daylight saving.** The rule is the wall clock, as for working hours: an event wholly inside the skipped hour does not play that day, one that starts inside it starts when the clock resumes, and in the repeated hour an event edge applies twice.
 - A clock that is wrong but not behind the publication picks the wrong event with no signal to the server. The diagnostics overlay of the browser player shows what the events ask for at its corrected clock ("Schedule picks").
 
+### Manifest v5 (stage B, slice 4: layouts)
+
+`ManifestV5Schema` is the v3 document with `schemaVersion: 5` and one added field, `zones`. It keeps every v3 field and has no `schedule`. The server writes v5 exactly when the screen has a layout assigned (section 9).
+
+The fields that differ from v3 (here `assets` holds four items, the main zone's three and then the band's one):
+
+```json
+{
+  "schemaVersion": 5,
+  "transition": "cut",
+  "shuffle": false,
+  "zones": [
+    { "rect": { "x": 0, "y": 0, "width": 1920, "height": 918 }, "count": 3, "transition": "cut", "shuffle": false },
+    { "rect": { "x": 0, "y": 918, "width": 1920, "height": 162 }, "count": 1, "transition": "cut", "shuffle": false }
+  ]
+}
+```
+
+- `assets` stays one flat list. `zones` cuts it into consecutive runs: the first `count` items are zone 0, the next `count` items are zone 1, and so on. The counts add up to `assets.length`. There are 2 to 4 zones. Zone 0 is the **main zone**; the top-level `transition` and `shuffle` equal its own.
+- `rect` is in canvas pixels, already resolved by the server for this screen, at least 16 px each way, inside the content rectangle (the whole canvas when there is none). Zones never overlap; touching is allowed. Anything outside every zone is black.
+- A playlist used by two zones is sent twice, once in each run.
+- The manifest holds no layout id or name. `activeItemIndex` in the heartbeat is the main zone's item, and its index into the flat `assets` (the main zone's run starts at 0). `POST /player/media-urls` and the media route cover the media of every zone.
+
+Required player behaviour (`player-web/0.5.0`, `apps/player-web/src/core/zones.ts`, `ui/stage.ts`):
+
+- Each zone plays on its own, as a v3 publication of its own run (`manifestZones` in `packages/contracts/src/manifest.ts` builds one v3 view per zone with the zone's rectangle as its content rectangle). So every v3 rule applies inside each zone: availability windows, working hours, transition, shuffle, failures and item-boundary checks.
+- The main zone speaks for the screen: the playback phase, `activePublicationId`, `activeItemIndex`, the waiting and fault slates. A band zone whose items all fail goes black and is tried again after 30 seconds; its failures are reported as `playback_error` as usual, and the player does not report a playback fault for it.
+- A change of publication reaches the main zone at its next item. At that moment zones that the new publication no longer has stop (a video in them is cut), the other zones take the new publication at their own next item (a still or an app ends at once, a video finishes first), and new zones start. For up to one video length the old and the new geometry can share the screen.
+- The whole canvas (rotation, scale, letterbox) follows the main zone's publication.
+
 ## 6. Media download
 
 ### `POST /player/media-urls`
@@ -342,16 +372,18 @@ What the portal derives (`GET /api/displays/:id/status`, `DeliveryStatusViewSche
 
 M0 negotiates on the server, at publish time, not with each device.
 
-- Every display has a `route` (only `browser` exists). Each route has a capability profile (`CapabilityProfileSchema`, `packages/delivery`). For the browser route, profile version 1: JPEG, PNG and MP4 with H.264 (8-bit 4:2:0); `contain` and `cover`; one full-frame region; muted; optional content rectangle; canvas up to 16384 px per side; video up to 3840x2160; assets up to the upload limit; up to 200 items.
+- Every display has a `route` (only `browser` exists). Each route has a capability profile (`CapabilityProfileSchema`, `packages/delivery`). For the browser route, profile version 2: JPEG, PNG and MP4 with H.264 (8-bit 4:2:0); `contain` and `cover`; up to four regions (the zones of a layout; one without a layout; version 1 had one full-frame region); muted; optional content rectangle; canvas up to 16384 px per side; video up to 3840x2160; assets up to the upload limit; up to 200 items.
 - `POST /api/playlists/:id/publish` checks the playlist against the profile of the target display's route. A playlist the route cannot show is refused with `422 publication_rejected` and one readable reason per item (`PUBLISH_REJECTION_CODES`). Nothing unsupported reaches a manifest.
 - A schedule (stage B, slice 3) is checked the same way when it is pushed: the item total of all its playlists is checked first (over the limit it is the only issue), then each playlist on its own, then the combined list, so the item limit of the profile applies to **all playlists of a schedule together** (`too_many_items`, issue path `schedule`). There is no separate limit for schedules.
+- A layout (stage B, slice 4) is checked the same way, after one more step first: its zones are resolved to pixels of the screen's content area, and a zone under 16 px either way blocks that screen alone (`zone_too_small`, issue path `zones[n]`); other screens with the layout are pushed. Then the item total of all its zones (`too_many_items`, issue path `layout`), each zone's playlist on its own (`zones[n].playlist`, `zones[n].items[k]`), and the combined list (path `layout`). A playlist used by two zones counts twice.
 - A player declares nothing about itself except `player.version`. If a device cannot play an asset that the profile allows (for example a browser build without H.264), it reports `unsupported_media` or `decode_failed` in the heartbeat and keeps the previous version. Per-device capability reports are a later addition and would be a new field in a new heartbeat schema version.
-- Version handling: `schemaVersion` is explicit in the manifest and the heartbeat. There is no per-player version negotiation. The server writes manifest v4 exactly when the screen's assigned schedule has an event that uses a playlist other than its default; a schedule without such an event (no events, or events that all name the default playlist) is sent as its default playlist, v1 to v3. Otherwise it writes v3 when any item is an app; otherwise v2 when the publication needs it (a transition other than `cut`, shuffle, a rotation other than 0, working hours, or an availability window on any item); otherwise v1. So a screen whose settings did not change keeps getting the same kind of document; removing every app makes the next push v2 or v1 again, and removing the schedule, or its last event that uses another playlist, makes it v1 to v3 again. The ETag stays the publication id; there is no request header, `Vary` or down-conversion.
+- Version handling: `schemaVersion` is explicit in the manifest and the heartbeat. There is no per-player version negotiation. The server writes manifest v5 exactly when the screen has a layout assigned. It writes manifest v4 exactly when the screen's assigned schedule has an event that uses a playlist other than its default; a schedule without such an event (no events, or events that all name the default playlist) is sent as its default playlist, v1 to v3. Otherwise it writes v3 when any item is an app; otherwise v2 when the publication needs it (a transition other than `cut`, shuffle, a rotation other than 0, working hours, or an availability window on any item); otherwise v1. So a screen whose settings did not change keeps getting the same kind of document; removing every app makes the next push v2 or v1 again, and removing the schedule, or its last event that uses another playlist, makes it v1 to v3 again. The ETag stays the publication id; there is no request header, `Vary` or down-conversion.
 - A v1 player (before `player-web/0.2.0`) that receives v2 reports `manifest_unsupported_version` and keeps playing its last content. Nothing reloads a running player: it moves to v2 only when its page is reloaded. The portal says so under that error on the screen's Overview tab.
 - A player before `player-web/0.3.0` that receives v3 reports `manifest_unsupported_version` and keeps playing its last content, or its waiting slate when it has none; the same Overview hint applies.
 - A player before `player-web/0.4.0` that receives v4 reports `manifest_unsupported_version` and keeps playing its last content, or its waiting slate when it has none; the same Overview hint applies. Such a player also fetches the manifest again and sends a heartbeat about every 2 seconds until its page is reloaded (read from the 0.3.0 code, not measured): it does not remember a publication it refused, so every heartbeat reply that names it starts another attempt. Both stay under the route limits. Reload every screen before the first push of a schedule with events.
 - From `player-web/0.4.0` a player remembers the publication of a manifest it refused (unsupported version or malformed, when the id can be read) and retries it on its update backoff, not after every heartbeat. This is for the next version's rollout; a released 0.3.0 cannot be fixed.
-- Version rule: a new manifest schema version is cut whenever a released player would reject the document. Players parse every version with strict objects, so any new field or item shape needs a new version. v2 and v3 are frozen. v4 is frozen when `player-web/0.4.0` is released, so the next addition is v5.
+- A player before `player-web/0.5.0` that receives v5 reports `manifest_unsupported_version` and keeps playing its last content, or its waiting slate when it has none; the same Overview hint applies. A 0.4.0 player retries it on its update backoff, not every 2 seconds. Reload every screen before the first layout push.
+- Version rule: a new manifest schema version is cut whenever a released player would reject the document. Players parse every version with strict objects, so any new field or item shape needs a new version. v2, v3 and v4 are frozen. v5 is frozen when `player-web/0.5.0` is released, so the next addition (dated events, layouts in schedules) is v6.
 
 A later LED route (a dedicated player over HDMI, or controller-native playback) gets its own profile and its own `route` id. Nothing in this protocol claims compatibility with any LED controller.
 

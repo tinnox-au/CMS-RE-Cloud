@@ -129,6 +129,18 @@ export interface DraftSchedule {
 }
 
 /**
+ * One zone of a layout's publication: a rectangle in canvas pixels, already resolved for the
+ * target display, and a run of `count` consecutive entries of the draft's `items`. [0] is the
+ * main zone; its run starts at 0.
+ */
+export interface DraftZone {
+  readonly rect: Rect;
+  readonly count: number;
+  readonly transition: Transition;
+  readonly shuffle: boolean;
+}
+
+/**
  * Vendor-neutral description of what is about to be published. It carries no
  * route-specific data; a delivery route validates it against its capability profile.
  */
@@ -136,12 +148,13 @@ export interface PublicationDraft {
   readonly displayId: string;
   readonly canvas: Canvas;
   readonly contentRect: Rect | null;
-  /** M0 publishes single-region, muted playlists only. Modelled explicitly so a route can refuse otherwise. */
-  readonly regions: 1;
   readonly audio: false;
-  /** With a schedule: every playlist's items in one list, default playlist first. */
+  /**
+   * With a schedule: every playlist's items in one list, default playlist first. With a
+   * layout: every zone's items, main zone first.
+   */
   readonly items: readonly ResolvedItem[];
-  /** With a schedule: the default playlist's. */
+  /** With a schedule: the default playlist's. With a layout: the main zone's. */
   readonly transition: Transition;
   readonly shuffle: boolean;
   readonly rotation: Rotation;
@@ -149,6 +162,8 @@ export interface PublicationDraft {
   readonly timeZone: string;
   /** Null unless an event of the assigned schedule uses a playlist other than its default. */
   readonly schedule: DraftSchedule | null;
+  /** Null unless a layout is assigned. Never set together with `schedule`. */
+  readonly zones: readonly DraftZone[] | null;
 }
 
 /**

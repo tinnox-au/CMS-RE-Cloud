@@ -146,6 +146,7 @@ export class ErrorLog {
     this.#items = initial.slice(0, this.#max);
   }
 
+  // shortcut: the log dedupes only against the newest entry, so failures from two zones in turn can push older entries out; dedupe by code and asset if support reports it.
   add(error: PlayerError): void {
     const clean: PlayerError = { ...error, message: sanitiseMessage(error.message) };
     const newest = this.#items[0];

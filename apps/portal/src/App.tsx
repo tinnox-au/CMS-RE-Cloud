@@ -61,6 +61,8 @@ const playlists = () => import('./features/playlists/PlaylistsPage.tsx');
 const playlistEditor = () => import('./features/playlists/PlaylistEditorPage.tsx');
 const schedulesPage = () => import('./features/schedules/SchedulesPage.tsx');
 const scheduleEditor = () => import('./features/schedules/ScheduleEditorPage.tsx');
+const layoutsPage = () => import('./features/layouts/LayoutsPage.tsx');
+const layoutEditor = () => import('./features/layouts/LayoutEditorPage.tsx');
 const displays = () => import('./features/displays/DisplaysPage.tsx');
 const displayWizard = () => import('./features/displays/DisplayWizardPage.tsx');
 const displayDetail = () => import('./features/displays/DisplayDetailPage.tsx');
@@ -127,7 +129,12 @@ const router = createBrowserRouter([
           <m.AppEditorPage />
         </PerObject>
       )),
-      page('layouts', planned, (m) => <m.PlannedPage section="layouts" />),
+      page('layouts', layoutsPage, (m) => <m.LayoutsPage />),
+      page('layouts/:id', layoutEditor, (m) => (
+        <PerObject>
+          <m.LayoutEditorPage />
+        </PerObject>
+      )),
       page('users', planned, (m) => <m.PlannedPage section="users" />),
 
       page('playlists', playlists, (m) => <m.PlaylistsPage />),

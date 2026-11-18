@@ -65,6 +65,7 @@ function row(n: number, state: PushState, name = `Screen ${n}`): PushPlanRow {
     display: { id: id(n), name },
     playlist: state === 'nothing_assigned' ? null : { id: PLAYLIST, name: 'Foyer loop' },
     schedule: null,
+    layout: null,
     state,
     issues: state === 'blocked' ? [ISSUE] : [],
     lastPushedAt: state === 'changes' || state === 'up_to_date' ? PUSHED_AT : null,
@@ -149,6 +150,15 @@ describe('scope and search', () => {
     // The default playlist of the schedule still matches, as the playlist of any row does.
     expect(searchRows(plan, 'foyer loop')).toHaveLength(2);
   });
+
+  it('finds a screen by the name of its layout', () => {
+    const laidOut: PushPlanRow = {
+      ...row(5, 'changes', 'Canteen'),
+      layout: { id: id(700), name: 'Menu band' },
+    };
+    const plan = [row(1, 'changes', 'Foyer north'), laidOut];
+    expect(searchRows(plan, 'menu band').map((r) => r.display.name)).toEqual(['Canteen']);
+  });
 });
 
 describe('groups', () => {
@@ -196,7 +206,7 @@ describe('groups', () => {
       'The assigned content differs from what these screens were last given.',
       'The assigned content cannot be pushed as it is. Each screen keeps the version it has.',
       'The last push already matches the assigned content. There is nothing to push.',
-      'Assign a playlist or a schedule to a screen before pushing to it.',
+      'Assign a playlist, a schedule or a layout to a screen before pushing to it.',
     ]);
   });
 
@@ -729,7 +739,7 @@ describe('words', () => {
     const unassigned = nothingWaitingNotice([row(5, 'nothing_assigned')]);
     expect(unassigned?.tone).toBe('info');
     expect(unassigned?.text).toBe(
-      'No screen has content assigned yet. Assign a playlist or a schedule to a screen, then push.',
+      'No screen has content assigned yet. Assign a playlist, a schedule or a layout to a screen, then push.',
     );
     for (const notice of [upToDate, blocked, unassigned]) {
       expect(`${notice?.title} ${notice?.text}`.toLowerCase()).not.toMatch(

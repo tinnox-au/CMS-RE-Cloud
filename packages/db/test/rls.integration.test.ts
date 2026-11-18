@@ -30,15 +30,19 @@ const TENANT_TABLES = [
   'app',
   'schedule',
   'schedule_event',
+  'layout',
+  'layout_zone',
 ] as const;
 /**
  * Rows that `createOrg` gives one organisation, where that is not exactly one:
- * registrations and heartbeats come from a player, and there is one tag per scope.
+ * registrations and heartbeats come from a player, there is one tag per scope, and the
+ * layout has two zones.
  */
 const ROWS_PER_ORG: Partial<Record<(typeof TENANT_TABLES)[number], number>> = {
   player_registration: 0,
   heartbeat_log: 0,
   tag: 2,
+  layout_zone: 2,
 };
 const LOCKED_TABLES = [
   'session',
@@ -286,6 +290,9 @@ describe('with organisation A as context', () => {
         ['SELECT 1 FROM schedule WHERE default_playlist_id = $1', b.playlistId],
         ['SELECT 1 FROM schedule_event WHERE schedule_id = $1', b.scheduleId],
         ['SELECT 1 FROM schedule_event WHERE playlist_id = $1', b.playlistId],
+        ['SELECT 1 FROM layout WHERE id = $1', b.layoutId],
+        ['SELECT 1 FROM layout_zone WHERE layout_id = $1', b.layoutId],
+        ['SELECT 1 FROM layout_zone WHERE playlist_id = $1', b.playlistId],
       ];
       for (const [sql, id] of probes) expect((await tx.query(sql, [id])).rowCount, sql).toBe(0);
     });
@@ -337,6 +344,9 @@ describe('with organisation A as context', () => {
         ["UPDATE schedule SET name = 'hijacked' WHERE id = $1", b.scheduleId],
         ['DELETE FROM schedule_event WHERE schedule_id = $1', b.scheduleId],
         ['DELETE FROM schedule WHERE id = $1', b.scheduleId],
+        ["UPDATE layout SET name = 'hijacked' WHERE id = $1", b.layoutId],
+        ['DELETE FROM layout_zone WHERE layout_id = $1', b.layoutId],
+        ['DELETE FROM layout WHERE id = $1', b.layoutId],
       ];
       for (const [sql, id] of stageA) expect((await tx.query(sql, [id])).rowCount, sql).toBe(0);
     });
@@ -414,6 +424,11 @@ describe('with organisation A as context', () => {
         "INSERT INTO schedule_event (org_id, schedule_id, position, playlist_id, days, start_time, end_time) VALUES ($1, $2, 9, $3, '{t,t,t,t,t,t,t}', '09:00', '17:00')",
         [b.orgId, b.scheduleId, b.playlistId],
       ],
+      ['INSERT INTO layout (org_id, name) VALUES ($1, $2)', [b.orgId, 'planted']],
+      [
+        'INSERT INTO layout_zone (org_id, layout_id, position, playlist_id, x_bp, y_bp, width_bp, height_bp) VALUES ($1, $2, 3, $3, 0, 0, 1, 1)',
+        [b.orgId, b.layoutId, b.playlistId],
+      ],
       [
         'INSERT INTO media_tag (org_id, media_id, tag_id) VALUES ($1, $2, $3)',
         [b.orgId, b.mediaId, b.mediaTagId],
@@ -459,6 +474,8 @@ describe('with organisation A as context', () => {
       ['UPDATE app SET org_id = $1 WHERE id = $2', a.appId],
       ['UPDATE schedule SET org_id = $1 WHERE id = $2', a.scheduleId],
       ['UPDATE schedule_event SET org_id = $1 WHERE schedule_id = $2', a.scheduleId],
+      ['UPDATE layout SET org_id = $1 WHERE id = $2', a.layoutId],
+      ['UPDATE layout_zone SET org_id = $1 WHERE layout_id = $2', a.layoutId],
     ] as const) {
       expect(await pgCode(withOrg(pool, a.orgId, (tx) => tx.query(sql, [b.orgId, id]))), sql).toBe(
         PG.insufficientPrivilege,
@@ -541,6 +558,21 @@ describe('with organisation A as context', () => {
       [
         'INSERT INTO display (org_id, site_id, name, canvas_width, canvas_height, assigned_schedule_id) VALUES ($1, $2, $3, 100, 100, $4)',
         [a.orgId, a.siteId, 'cross-schedule', b.scheduleId],
+      ],
+      // Its own layout with a zone on the other organisation's playlist.
+      [
+        'INSERT INTO layout_zone (org_id, layout_id, position, playlist_id, x_bp, y_bp, width_bp, height_bp) VALUES ($1, $2, 3, $3, 0, 0, 1, 1)',
+        [a.orgId, a.layoutId, b.playlistId],
+      ],
+      // Its own zone in the other organisation's layout.
+      [
+        'INSERT INTO layout_zone (org_id, layout_id, position, playlist_id, x_bp, y_bp, width_bp, height_bp) VALUES ($1, $2, 3, $3, 0, 0, 1, 1)',
+        [a.orgId, b.layoutId, a.playlistId],
+      ],
+      // Its own display with the other organisation's layout assigned.
+      [
+        'INSERT INTO display (org_id, site_id, name, canvas_width, canvas_height, assigned_layout_id) VALUES ($1, $2, $3, 100, 100, $4)',
+        [a.orgId, a.siteId, 'cross-layout', b.layoutId],
       ],
     ];
     for (const [sql, values] of attempts) {
@@ -924,7 +956,7 @@ describe('immutable publications and append-only audit', () => {
     expect(
       await pgCode(insert(id, { ...good, displayId: b.displayId }, 'key-aaaaaaaaaaaaaaaa')),
     ).toBe(PG.check);
-    expect(await pgCode(insert(id, { ...good, schemaVersion: 5 }, 'key-aaaaaaaaaaaaaaaa'))).toBe(
+    expect(await pgCode(insert(id, { ...good, schemaVersion: 6 }, 'key-aaaaaaaaaaaaaaaa'))).toBe(
       PG.check,
     );
     expect(await pgCode(insert(id, { ...good, assets: [] }, 'key-aaaaaaaaaaaaaaaa'))).toBe(

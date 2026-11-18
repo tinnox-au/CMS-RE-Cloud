@@ -771,7 +771,7 @@ describe('pairing', () => {
     );
   });
 
-  it("takes the screen's lock only for the organisation that owns the screen (migration 0011)", async () => {
+  it("takes the screen's lock only for the organisation that owns the screen (migration 0012)", async () => {
     const org = await createOrg(migrator, 'Cancel lock');
     const cancel = 'SELECT sec.pairing_cancel_claims($1) AS ids';
     // The second transaction would fail on its lock timeout if it had to wait for the first.

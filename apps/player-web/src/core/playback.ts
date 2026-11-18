@@ -219,7 +219,7 @@ export interface PlaybackDeps {
  * event playlists of the active publication that failed lately (at most one entry per playlist).
  * A new active version is picked up only between items, never in the middle of one.
  */
-// shortcut: for manifests without a schedule (v1 to v3) rules are checked at item boundaries; an item may overrun an edge by its own length. A video is never cut, in any version.
+// shortcut: for manifests without a schedule (v1 to v3, and the v3 views of v5 zones) rules are checked at item boundaries; an item may overrun an edge by its own length. A video is never cut, in any version.
 export class PlaybackLoop {
   readonly #deps: PlaybackDeps;
   readonly #timings: PlaybackTimings;

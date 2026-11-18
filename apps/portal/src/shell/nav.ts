@@ -91,14 +91,7 @@ export const PRIMARY_NAV: readonly NavItem[] = [
   },
   { kind: 'link', id: 'apps', label: 'Apps', to: '/apps', icon: Blocks },
   { kind: 'link', id: 'playlists', label: 'Playlists', to: '/playlists', icon: ListVideo },
-  {
-    kind: 'link',
-    id: 'layouts',
-    label: 'Layouts',
-    to: '/layouts',
-    icon: LayoutTemplate,
-    planned: true,
-  },
+  { kind: 'link', id: 'layouts', label: 'Layouts', to: '/layouts', icon: LayoutTemplate },
   { kind: 'link', id: 'schedules', label: 'Schedules', to: '/schedules', icon: CalendarDays },
   { kind: 'link', id: 'screens', label: 'Screens', to: '/screens', icon: Monitor },
 ];

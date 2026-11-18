@@ -82,6 +82,35 @@ export interface ScheduleInput {
   }[];
 }
 
+/** A layout as `POST` and `PUT /api/layouts` take it; zones in basis points, [0] is the main zone. */
+export interface LayoutInput {
+  readonly name: string;
+  readonly zones: readonly {
+    readonly playlistId: string;
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  }[];
+}
+
+/** The portal's one preset: a main zone over a band along the bottom, `percent` of the height. */
+export function bandLayout(
+  name: string,
+  mainPlaylistId: string,
+  bandPlaylistId: string,
+  percent = 15,
+): LayoutInput {
+  const band = percent * 100;
+  return {
+    name,
+    zones: [
+      { playlistId: mainPlaylistId, x: 0, y: 0, width: 10_000, height: 10_000 - band },
+      { playlistId: bandPlaylistId, x: 0, y: 10_000 - band, width: 10_000, height: band },
+    ],
+  };
+}
+
 export interface StatusView {
   readonly paired: boolean;
   readonly registrationId: string | null;
@@ -253,6 +282,26 @@ export class OperatorApi {
   async assignSchedule(displayId: string, scheduleId: string): Promise<void> {
     const response = await this.patch(`/api/displays/${displayId}`, {
       assignedScheduleId: scheduleId,
+    });
+    expect(response.status(), await response.text()).toBe(200);
+  }
+
+  async createLayout(input: LayoutInput): Promise<{ id: string }> {
+    const response = await this.post('/api/layouts', input);
+    expect(response.status(), await response.text()).toBe(201);
+    return (await response.json()) as { id: string };
+  }
+
+  /** Replaces the whole layout: its name and zones. */
+  async replaceLayout(id: string, input: LayoutInput): Promise<void> {
+    const response = await this.put(`/api/layouts/${id}`, input);
+    expect(response.status(), await response.text()).toBe(200);
+  }
+
+  /** Assigns a layout to a screen (this clears a playlist or a schedule). Nothing is pushed. */
+  async assignLayout(displayId: string, layoutId: string): Promise<void> {
+    const response = await this.patch(`/api/displays/${displayId}`, {
+      assignedLayoutId: layoutId,
     });
     expect(response.status(), await response.text()).toBe(200);
   }

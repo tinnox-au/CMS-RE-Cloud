@@ -179,6 +179,14 @@ export function elementBox(
   }, testId);
 }
 
+/** The client rectangle of a zone's box: test id `content` for the main zone, `zone-{n}` for zone n. */
+export function zoneBox(
+  page: Page,
+  zone: number,
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  return elementBox(page, zone === 0 ? 'content' : `zone-${zone}`);
+}
+
 /** Screenshot of the player window decoded for pixel sampling (CSS pixel coordinates). */
 export async function capturePixels(page: Page): Promise<(x: number, y: number) => Rgb> {
   const png = decodePng(await page.screenshot({ scale: 'css' }));

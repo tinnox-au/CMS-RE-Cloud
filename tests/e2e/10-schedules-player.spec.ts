@@ -191,7 +191,7 @@ test('an event that covers every moment plays its playlist, from a version 4 man
   );
   // What the events ask for at the player's corrected clock, and the build that can read them.
   await expectDiagnostics('Schedule picks', 'playlist 2 of 2');
-  await expectDiagnostics('Build', /^player-web\/0\.4\.0/);
+  await expectDiagnostics('Build', /^player-web\/0\.5\.0/);
 });
 
 test('an event on another weekday leaves the default playlist on screen', async () => {

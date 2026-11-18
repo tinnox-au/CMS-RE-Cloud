@@ -9,8 +9,10 @@ import type {
   ManifestV2,
   ManifestV3,
   ManifestV4,
+  ManifestV5,
   MediaUrlsResponse,
   PlayerError,
+  Rect,
   Transition,
 } from '@tinnox/contracts';
 import { AbortedError, PlayerFault, RevokedError } from './errors.ts';
@@ -176,6 +178,31 @@ export function makeManifestV4(
       })),
       events: events.map((event) => ({ ...event, days: [...event.days] })),
     },
+    ...overrides,
+  };
+}
+
+/** One zone of a v5 test manifest: its rectangle in canvas pixels and its playlist. */
+export interface TestZone extends TestPlaylist {
+  readonly rect: Rect;
+}
+
+/** A v5 manifest (v3 defaults plus zones); `zones[0]` is the main zone. Media items get no windows. */
+export function makeManifestV5(
+  zones: readonly TestZone[],
+  overrides: Partial<ManifestV5> = {},
+): ManifestV5 {
+  return {
+    ...makeManifestV3(zones.flatMap((zone) => zone.items)),
+    schemaVersion: 5,
+    transition: zones[0]?.transition ?? 'cut',
+    shuffle: zones[0]?.shuffle ?? false,
+    zones: zones.map((zone) => ({
+      rect: zone.rect,
+      count: zone.items.length,
+      transition: zone.transition ?? 'cut',
+      shuffle: zone.shuffle ?? false,
+    })),
     ...overrides,
   };
 }

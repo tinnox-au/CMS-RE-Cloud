@@ -4,5 +4,7 @@ export * from './playlist.ts';
 export * from './capability.ts';
 export * from './manifest.ts';
 export * from './schedule.ts';
+export * from './sources.ts';
+export * from './layout.ts';
 export * from './push.ts';
 export * from './delivery-state.ts';

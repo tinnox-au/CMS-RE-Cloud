@@ -19,11 +19,13 @@ import {
   auditEvents,
   createApp,
   createDisplay,
+  createLayout,
   createOrg,
   createPlaylist,
   createSchedule,
   desiredPublicationId,
   imageItem,
+  layoutZones,
   pairPlayer,
   readyImage,
   readyVideo,
@@ -464,6 +466,45 @@ describe('playlists: description, summary, duplicate and delete', () => {
       expect((await alice.fetch(`/api/playlists/${special}`, { method: 'DELETE' })).status).toBe(
         204,
       );
+    });
+
+    it('refuses with 409 playlist_in_use while a layout uses the playlist, as its main zone or as the band', async () => {
+      const main = await createPlaylist(alice, 'Main zone loop');
+      const band = await createPlaylist(alice, 'Band zone loop');
+      const spare = await createPlaylist(alice, 'Spare zone loop');
+      const zulu = await createLayout(alice, 'zulu split', layoutZones(main, band));
+      const alpha = await createLayout(alice, 'Alpha split', layoutZones(band, spare));
+
+      const cases: [string, string[]][] = [
+        [main, ['zulu split']],
+        // By name: as the band of one layout and the main zone of the other.
+        [band, ['Alpha split', 'zulu split']],
+      ];
+      for (const [id, names] of cases) {
+        const refused = await alice.fetch(`/api/playlists/${id}`, { method: 'DELETE' });
+        expect(refused.status).toBe(409);
+        const body = (await refused.json()) as ErrorBody;
+        expect(body.error.code).toBe('playlist_in_use');
+        expect(body.error.message).toBe(
+          'This playlist is used by a layout. Choose another playlist in the layout first.',
+        );
+        expect(body.error.details).toEqual(names.map((message) => ({ path: 'layout', message })));
+        expect((await summaries(alice)).map((item) => item.id)).toContain(id);
+      }
+
+      // Once no layout uses it, each can go: one by an edit, one by deleting the layouts.
+      const replaced = await alice.fetch(`/api/layouts/${zulu.id}`, {
+        method: 'PUT',
+        json: { name: 'zulu split', zones: layoutZones(spare, band) },
+      });
+      expect(replaced.status).toBe(200);
+      expect((await alice.fetch(`/api/playlists/${main}`, { method: 'DELETE' })).status).toBe(204);
+      for (const layout of [zulu, alpha]) {
+        expect((await alice.fetch(`/api/layouts/${layout.id}`, { method: 'DELETE' })).status).toBe(
+          204,
+        );
+      }
+      expect((await alice.fetch(`/api/playlists/${band}`, { method: 'DELETE' })).status).toBe(204);
     });
 
     it('hides a deleted playlist from every route and keeps what displays were given', async () => {

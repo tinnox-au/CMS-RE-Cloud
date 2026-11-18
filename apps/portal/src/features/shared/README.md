@@ -309,7 +309,7 @@ const assignPlaylist = async (playlist: PlaylistSummaryDto | null) => {
 
 <PlaylistPickerDialog open={assign !== null} onClose={() => setAssign(null)}
   title="Assign content"
-  description={`Nothing changes on the screen until you push.${display.assignedSchedule ? ` ${SCHEDULE_REPLACED_NOTE}` : ''}`}
+  description={`Nothing changes on the screen until you push.${anyHasOtherContent([display]) ? ` ${CONTENT_REPLACED_NOTE}` : ''}`}
   confirmLabel="Assign playlist" currentId={display.assignedPlaylist?.id ?? null}
   busy={assign?.busy} error={assign?.error} errorTitle="The playlist was not assigned"
   onConfirm={(playlist) => { void assignPlaylist(playlist); }} />
@@ -319,7 +319,11 @@ Loads `api.listPlaylists()` afresh each time it opens. A search field (name and 
 
 Test ids: `shared-playlist-picker`, `-search`, `-none`, `-option` (each playlist radio; its `value` is the playlist id), `-confirm`.
 
-Since stage B slice 3 a screen has a playlist or a schedule assigned, never both. A non-null `assignedPlaylistId` also takes a schedule off the screen, so say so in `description` when a target has one: `SCHEDULE_REPLACED_NOTE` in `lib/screensList.ts` ("A screen that has a schedule gets this playlist instead of its schedule."), with `anyHasSchedule(displays)` to decide. `{ assignedPlaylistId: null }` alone leaves a schedule in place, so do not offer `allowNone` for a screen that has a schedule (the screens list does not); the screen page no longer uses `allowNone` at all and removes content with its own "Remove content" item, which sends both ids as null.
+Since stage B slice 4 a screen has at most one of a playlist, a schedule or a layout. A non-null `assignedPlaylistId` also takes a schedule or a layout off the screen, so say so in `description` when a target has one: `CONTENT_REPLACED_NOTE` in `lib/assignedContent.ts` ("A screen that has a schedule or a layout gets this playlist instead."), with `anyHasOtherContent(displays)` to decide. `{ assignedPlaylistId: null }` alone leaves a schedule or a layout in place, so do not offer `allowNone` for such a screen (the screens list does not); the screen page removes content with its own "Remove content" item, which sends all three ids as null. `lib/assignedContent.ts` (`assignedContent`, `planRowContent`, `contentHref`, `CONTENT_KIND_LABEL`) is the one place that says what a screen or a push-plan row is about.
+
+## PlaylistSelect, LibraryPickerDialog and LayoutPickerDialog
+
+`PlaylistSelect` (moved here from the schedule editor) is a native select of playlists with an "Open playlist" link beside it; the schedule editor and the layout editor use it. `LibraryPickerDialog<T>` is the body that `SchedulePickerDialog` and `LayoutPickerDialog` share: it takes `load`, `meta`, `searchTexts`, `icon` and a `noun`, and builds its texts from the noun. `LayoutPickerDialog` has the props of `SchedulePickerDialog` with `onConfirm(layout: LayoutDto)`; defaults "Choose a layout", "Choose layout", `shared-layout-picker`; rows show the name and "Main zone: {playlist} · Band 15%".
 
 ## SchedulePickerDialog
 
@@ -380,7 +384,7 @@ interface ScreenPickerDialogProps {
   onConfirm={(displays) => assignTo(displays)} />
 ```
 
-Loads `api.listDisplays()` and `api.listDisplayStatuses()` afresh each time it opens. Each row: the screen's name, "Assigned: Reception loop", "Assigned: schedule Weekdays" (a screen with a schedule) or "Nothing assigned", and its `ScreenStatusPill` with the time of the last report. Search matches the name, the description and the assigned playlist or schedule. `description` may be a function of the chosen screens, because the picker loads the screens itself and the caller cannot otherwise know what they hold: the two playlist pages use it to add `SCHEDULE_REPLACED_NOTE` once a ticked screen has a schedule. With `multiple`: an "All screens" box (or "All screens found" while searching) with the mixed state, and "2 of 33 screens chosen" in the footer; Space toggles a row and Enter does not confirm. Single: Enter on a chosen radio confirms. If only the statuses cannot be read, the screens are still listed and a warning says so with the error code. Other states as in `PlaylistPickerDialog` ("No screens yet" links to Add screen).
+Loads `api.listDisplays()` and `api.listDisplayStatuses()` afresh each time it opens. Each row: the screen's name, "Assigned: Reception loop", "Assigned: schedule Weekdays" (a screen with a schedule), "Assigned: layout Lobby split" (a screen with a layout) or "Nothing assigned", and its `ScreenStatusPill` with the time of the last report. Search matches the name, the description and the assigned playlist, schedule or layout. `description` may be a function of the chosen screens, because the picker loads the screens itself and the caller cannot otherwise know what they hold: the two playlist pages use it to add `CONTENT_REPLACED_NOTE` once a ticked screen has a schedule or a layout. With `multiple`: an "All screens" box (or "All screens found" while searching) with the mixed state, and "2 of 33 screens chosen" in the footer; Space toggles a row and Enter does not confirm. Single: Enter on a chosen radio confirms. If only the statuses cannot be read, the screens are still listed and a warning says so with the error code. Other states as in `PlaylistPickerDialog` ("No screens yet" links to Add screen).
 
 Test ids: `shared-screen-picker`, `-search`, `-all`, `-option` (each row's input; its `value` is the display id), `-count`, `-confirm`.
 

@@ -28,6 +28,7 @@ const RELATED_LABELS: { readonly [K in ActivityObject['kind']]: string } = {
   display: 'Screen',
   playlist: 'Playlist',
   schedule: 'Schedule',
+  layout: 'Layout',
   media: 'Media',
   tag: 'Tag',
   folder: 'Folder',

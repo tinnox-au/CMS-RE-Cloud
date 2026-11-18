@@ -5,6 +5,7 @@ import {
   fitRect,
   placeOnCanvas,
   stageTransform,
+  zoneRect,
 } from './geometry.ts';
 
 const frame = (width: number, height: number, x = 0, y = 0) => ({ x, y, width, height });
@@ -189,6 +190,68 @@ describe('stageTransform', () => {
     expect(stageTransform(270, stage)).toEqual({
       viewport: { width: 1080, height: 1920 },
       prefix: 'translate(0,1080px) rotate(270deg)',
+    });
+  });
+});
+
+describe('zoneRect', () => {
+  /** A main zone and a band along the bottom, `percent` of the height, in basis points. */
+  const band = (percent: number) =>
+    [
+      { x: 0, y: 0, width: 10_000, height: 10_000 - percent * 100 },
+      { x: 0, y: 10_000 - percent * 100, width: 10_000, height: percent * 100 },
+    ] as const;
+
+  it('resolves a 15 % band on 1920 x 1080, sharing the edge with the main zone', () => {
+    const main = zoneRect(frame(1920, 1080), band(15)[0]);
+    const bottom = zoneRect(frame(1920, 1080), band(15)[1]);
+    expect(main).toEqual({ x: 0, y: 0, width: 1920, height: 918 });
+    expect(bottom).toEqual({ x: 0, y: 918, width: 1920, height: 162 });
+    expect(main.y + main.height).toBe(bottom.y);
+  });
+
+  it('offsets every zone by the origin of the content rectangle', () => {
+    const area = frame(1000, 500, 100, 50);
+    expect(band(15).map((zone) => zoneRect(area, zone))).toEqual([
+      { x: 100, y: 50, width: 1000, height: 425 },
+      { x: 100, y: 475, width: 1000, height: 75 },
+    ]);
+  });
+
+  it('rounds the edges, so zones that share an edge in basis points never gap or overlap', () => {
+    const thirds = [
+      { x: 0, y: 0, width: 3333, height: 10_000 },
+      { x: 3333, y: 0, width: 3333, height: 10_000 },
+      { x: 6666, y: 0, width: 3334, height: 10_000 },
+    ].map((zone) => zoneRect(frame(1000, 1000), zone));
+    expect(thirds.map((r) => r.x)).toEqual([0, 333, 667]);
+    expect(thirds.map((r) => r.width)).toEqual([333, 334, 333]);
+    expect(thirds.reduce((sum, r) => sum + r.width, 0)).toBe(1000);
+  });
+
+  it('is exact at the largest canvas side', () => {
+    const area = frame(16_384, 16_384);
+    expect(zoneRect(area, { x: 0, y: 0, width: 10_000, height: 10_000 })).toEqual(area);
+    expect(zoneRect(area, { x: 5000, y: 5000, width: 5000, height: 5000 })).toEqual({
+      x: 8192,
+      y: 8192,
+      width: 8192,
+      height: 8192,
+    });
+  });
+
+  it('gives a thin band on a small LED canvas, which the planner refuses under 16 px', () => {
+    expect(zoneRect(frame(192, 96), band(10)[1])).toEqual({
+      x: 0,
+      y: 86,
+      width: 192,
+      height: 10,
+    });
+    expect(zoneRect(frame(192, 96), band(20)[1])).toEqual({
+      x: 0,
+      y: 77,
+      width: 192,
+      height: 19,
     });
   });
 });

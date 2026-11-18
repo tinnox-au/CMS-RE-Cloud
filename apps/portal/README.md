@@ -32,11 +32,12 @@ listens on 127.0.0.1 only and proxies `/api` to the API, so the session cookie i
   Nothing is written to `localStorage`, `sessionStorage`, IndexedDB or a cookie by the portal.
 - State-changing requests carry `X-CSRF-Token`. A `csrf_failed` answer triggers one session
   refresh and one retry. Any `401` returns the operator to the sign-in screen.
-- Content reaches a screen in two steps (decision P2-05): a playlist or a schedule is assigned
-  to a screen (one or the other, never both; assigning one takes the other off), then "Push
+- Content reaches a screen in two steps (decision P2-05): a playlist, a schedule or a layout is
+  assigned to a screen (at most one; assigning one takes the others off), then "Push
   to screens" (`POST /api/push`) builds one immutable publication per chosen screen. A
   schedule (stage B, slice 3) is a default playlist plus weekly events; the push copies all of
-  its playlists into the publication and the player picks between them. The push dialog sends one `Idempotency-Key` per opening and reuses it only while the
+  its playlists into the publication and the player picks between them. A layout (stage B,
+  slice 4) splits the screen into zones, each with its own playlist; the push copies every zone. The push dialog sends one `Idempotency-Key` per opening and reuses it only while the
   outcome of an attempt is unknown (`src/lib/pushDialog.ts`).
 - Player status is shown exactly as the API reports it, in the words of decision P2-04 (In
   sync, Standing by, Updating, Not reporting, Error, Waiting for player, Nothing pushed, Not
@@ -63,7 +64,8 @@ src/features    one folder per area, each with its routed page(s), parts and one
                 dashboard, media (library/, detail/), apps (list, create dialog, editor
                 with a live preview drawn by @tinnox/app-render), playlists (list/, editor/),
                 schedules (list, create dialog, editor: a default playlist and an ordered
-                list of weekly events),
+                list of weekly events), layouts (list, create dialog, editor: a main zone and
+                a bottom band with a preview on a screen shape),
                 displays (list/, wizard/, detail/: the operator's "Screens" under /screens),
                 push (PushProvider and the push dialog), settings (settings and tags),
                 audit, planned, shared (parts several pages use: tags, folders,

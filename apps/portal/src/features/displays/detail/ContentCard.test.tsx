@@ -34,6 +34,7 @@ const DISPLAY: DisplayDto = {
     name: 'Shop week',
     defaultPlaylist: { id: ID(20), name: 'Loop' },
   },
+  assignedLayout: null,
   createdAt: T,
   updatedAt: T,
 };
@@ -48,13 +49,13 @@ const PUSH: PushContextValue = {
   refreshPending: () => undefined,
 };
 
-function renderCard() {
+function renderCard(display: DisplayDto = DISPLAY) {
   return render(
     <MemoryRouter>
       <ToastProvider>
         <PushContext value={PUSH}>
           <ContentCard
-            display={DISPLAY}
+            display={display}
             assigned={{ status: 'loading' }}
             onReloadAssigned={() => undefined}
             onAssigned={() => undefined}
@@ -90,6 +91,7 @@ describe('ContentCard: the Change menu while "Remove content" is saved', () => {
     expect(patchDisplay).toHaveBeenCalledWith(DISPLAY.id, {
       assignedPlaylistId: null,
       assignedScheduleId: null,
+      assignedLayoutId: null,
     });
     await expect.element(change).toHaveAttribute('aria-busy', 'true');
 
@@ -105,5 +107,47 @@ describe('ContentCard: the Change menu while "Remove content" is saved', () => {
     await change.click({ force: true });
     expect(screen.getByRole('menuitem').elements()).toHaveLength(0);
     expect(patchDisplay).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ContentCard: layouts', () => {
+  it('shows a layout with its main zone and a link to it', async () => {
+    const screen = await renderCard({
+      ...DISPLAY,
+      assignedSchedule: null,
+      assignedLayout: {
+        id: ID(40),
+        name: 'Foyer band',
+        mainPlaylist: { id: ID(20), name: 'Loop' },
+      },
+    });
+    const card = screen.getByTestId('screen-detail-playlist');
+    await expect.element(card.getByText('Layout', { exact: true })).toBeVisible();
+    await expect.element(card.getByText('Foyer band')).toBeVisible();
+    await expect
+      .element(screen.getByTestId('screen-detail-main-playlist'))
+      .toHaveTextContent('Main zone: Loop');
+    await expect
+      .element(screen.getByTestId('screen-detail-open-layout'))
+      .toHaveAttribute('href', `/layouts/${ID(40)}`);
+    await expect
+      .element(screen.getByTestId('screen-detail-open-layout'))
+      .toHaveTextContent('Open layout');
+  });
+
+  it('offers a layout beside a playlist and a schedule when nothing is assigned', async () => {
+    const screen = await renderCard({ ...DISPLAY, assignedSchedule: null });
+    await expect.element(screen.getByTestId('screen-detail-choose-playlist')).toBeVisible();
+    await expect.element(screen.getByTestId('screen-detail-choose-schedule')).toBeVisible();
+    await expect
+      .element(screen.getByTestId('screen-detail-choose-layout'))
+      .toHaveTextContent('Assign layout');
+    await expect
+      .element(
+        screen.getByText(
+          'Choose a playlist, a schedule or a layout for this screen, then push it.',
+        ),
+      )
+      .toBeVisible();
   });
 });

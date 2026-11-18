@@ -39,7 +39,8 @@ export interface AssignedPreviewProps {
  * The first item of the assigned playlist, drawn inside a frame in the shape of the canvas
  * with the content rectangle where content goes. It is a mock-up made from the library file (or,
  * for an app, by the player's renderer), never a picture of the physical screen, and says so.
- * With a schedule assigned it draws the schedule's default playlist, and the caption says so.
+ * With a schedule assigned it draws the schedule's default playlist, and with a layout the
+ * main zone's playlist; the caption says so.
  */
 export function AssignedPreview({ display, assigned }: AssignedPreviewProps) {
   const content =
@@ -52,9 +53,13 @@ export function AssignedPreview({ display, assigned }: AssignedPreviewProps) {
   const first = assigned.status === 'ready' ? assigned.content.first : null;
   const caption = previewCaption(
     state,
-    display.assignedPlaylist?.name ?? display.assignedSchedule?.defaultPlaylist.name ?? null,
+    display.assignedPlaylist?.name ??
+      display.assignedSchedule?.defaultPlaylist.name ??
+      display.assignedLayout?.mainPlaylist.name ??
+      null,
     first === null ? null : first.name,
     display.assignedSchedule?.name ?? null,
+    display.assignedLayout?.name ?? null,
   );
   const shape = shapeOfDisplay(display);
   const app = first !== null && 'app' in first ? first.app : null;

@@ -1,4 +1,4 @@
--- 0011: follow-up to 0010 from the second check of security review round 3
+-- 0012: follow-up to 0010 from the second check of security review round 3
 -- (docs/reviews/2026-11-17-security-round-3/, section 13).
 --
 --   1. Claims accepted before 0010 are cancelled. Before 0010, revoking a screen's

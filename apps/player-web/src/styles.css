@@ -39,7 +39,7 @@ body {
   position: absolute;
   background: #000;
   overflow: hidden;
-  /* Rotation transforms are composed from the top-left corner (ui/presenter.ts). */
+  /* Rotation transforms are composed from the top-left corner (ui/stage.ts). */
   transform-origin: 0 0;
 }
 

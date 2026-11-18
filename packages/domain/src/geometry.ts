@@ -1,4 +1,11 @@
-import type { Canvas, FitMode, Rect, Rotation } from '@tinnox/contracts';
+import {
+  LAYOUT_UNITS,
+  type Canvas,
+  type FitMode,
+  type LayoutBox,
+  type Rect,
+  type Rotation,
+} from '@tinnox/contracts';
 
 export interface Size {
   readonly width: number;
@@ -49,6 +56,21 @@ export function effectiveContentRect(canvas: Canvas, contentRect: Rect | null): 
     throw new RangeError('content rectangle lies outside the canvas');
   }
   return contentRect;
+}
+
+/**
+ * A zone's rectangle in canvas pixels. `area` is the effective content rectangle (the content
+ * rectangle, or the whole canvas) and `zone` is in basis points of it (LAYOUT_UNITS). Edges are
+ * rounded, not sizes: two zones that share an edge in basis points share it in pixels, so they
+ * never gap or overlap, and rounding is monotone, so disjoint zones stay disjoint. The products
+ * are at most 16 384 × 10 000, exact in doubles.
+ */
+export function zoneRect(area: Rect, zone: LayoutBox): Rect {
+  const x0 = area.x + Math.round((area.width * zone.x) / LAYOUT_UNITS);
+  const x1 = area.x + Math.round((area.width * (zone.x + zone.width)) / LAYOUT_UNITS);
+  const y0 = area.y + Math.round((area.height * zone.y) / LAYOUT_UNITS);
+  const y1 = area.y + Math.round((area.height * (zone.y + zone.height)) / LAYOUT_UNITS);
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
 /**

@@ -570,18 +570,24 @@ export function previewStateOf(
 
 /**
  * One sentence under the preview frame that says what is, or is not, drawn in it. With a
- * schedule assigned the playlist is the schedule's default playlist, and a second sentence
- * says so: the preview never shows what an event would play.
+ * schedule assigned the playlist is the schedule's default playlist, and with a layout the
+ * main zone's playlist; a second sentence says so: the preview never shows what an event or
+ * another zone would play.
  */
 export function previewCaption(
   state: PreviewState,
   playlistName: string | null,
   firstItemName: string | null,
   scheduleName: string | null = null,
+  layoutName: string | null = null,
 ): string {
   const caption = playlistCaption(state, playlistName, firstItemName);
-  if (scheduleName === null || state === 'nothing_assigned') return caption;
-  return `${caption} This is the default playlist of the schedule “${scheduleName}”. Events may show other playlists.`;
+  if (state === 'nothing_assigned') return caption;
+  if (scheduleName !== null) {
+    return `${caption} This is the default playlist of the schedule “${scheduleName}”. Events may show other playlists.`;
+  }
+  if (layoutName !== null) return `${caption} This is the main zone of the layout “${layoutName}”.`;
+  return caption;
 }
 
 function playlistCaption(
@@ -592,7 +598,7 @@ function playlistCaption(
   const playlist = playlistName === null ? 'the assigned playlist' : `“${playlistName}”`;
   switch (state) {
     case 'nothing_assigned':
-      return 'No playlist or schedule is assigned to this screen, so there is nothing to preview.';
+      return 'No playlist, schedule or layout is assigned to this screen, so there is nothing to preview.';
     case 'loading':
       return `Loading the first item of ${playlist}.`;
     case 'unavailable':

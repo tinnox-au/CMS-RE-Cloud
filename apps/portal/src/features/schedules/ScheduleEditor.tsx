@@ -44,9 +44,10 @@ import {
   useToast,
 } from '../../ui/index.ts';
 import { usePush } from '../push/PushContext.tsx';
+import { PlaylistSelect } from '../shared/index.ts';
 import { useLeaveGuard } from '../shared/useLeaveGuard.tsx';
 import { DeleteScheduleDialog } from './DeleteScheduleDialog.tsx';
-import { PlaylistSelect, ScheduleEventRow } from './ScheduleEventRow.tsx';
+import { ScheduleEventRow } from './ScheduleEventRow.tsx';
 import './schedules.css';
 
 export const SCHEDULES_BACK = { to: '/schedules', label: 'Schedules' } as const;

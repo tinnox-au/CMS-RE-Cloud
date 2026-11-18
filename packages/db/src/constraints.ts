@@ -35,9 +35,9 @@ export const STAGE_A_CONSTRAINTS = Object.freeze({
 export type StageAConstraint = (typeof STAGE_A_CONSTRAINTS)[keyof typeof STAGE_A_CONSTRAINTS];
 
 /**
- * The one name of db/migrations/0009_stage_b_schedules.sql that a caller has to tell
- * apart. Deleted playlists keep their stage A names: `playlist_delete_guard` now also
- * refuses while a schedule uses the playlist.
+ * The names of db/migrations/0009_stage_b_schedules.sql and 0011_stage_b_layouts.sql
+ * that a caller has to tell apart. Deleted playlists keep their stage A names:
+ * `playlist_delete_guard` now also refuses while a schedule or a layout uses the playlist.
  */
 export const STAGE_B_CONSTRAINTS = Object.freeze({
   /**
@@ -45,6 +45,11 @@ export const STAGE_B_CONSTRAINTS = Object.freeze({
    * schedule, a delete was attempted while a display has it assigned.
    */
   displayAssignedSchedule: 'display_assigned_schedule_fk',
+  /**
+   * 23503: on a display, the layout does not exist in this organisation; on a layout, a
+   * delete was attempted while a display has it assigned.
+   */
+  displayAssignedLayout: 'display_assigned_layout_fk',
 });
 
 /** The constraint a PostgreSQL error names, or null when it names none. */

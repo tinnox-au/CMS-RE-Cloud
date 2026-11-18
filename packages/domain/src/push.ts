@@ -1,18 +1,21 @@
 import {
   isMediaItem,
   MANIFEST_SCHEMA_VERSION_V4,
+  MANIFEST_SCHEMA_VERSION_V5,
   manifestV2Facts,
   type AppContent,
   type Manifest,
   type ManifestAssetV1,
   type ManifestAssetV2,
   type ManifestSchedule,
+  type ManifestZone,
   type PushState,
   type Rect,
+  type Transition,
   type WorkingHours,
 } from '@tinnox/contracts';
 import { manifestVersionFor, type PlanPublicationResult } from './manifest.ts';
-import type { DraftSchedule, PublicationDraft, ResolvedMediaItem } from './types.ts';
+import type { DraftSchedule, DraftZone, PublicationDraft, ResolvedMediaItem } from './types.ts';
 
 /**
  * The facts of one media entry that a player is given, besides the asset id.
@@ -45,7 +48,8 @@ export type PlaybackField =
   | 'rotation'
   | 'workingHours'
   | 'timeZone'
-  | 'schedule';
+  | 'schedule'
+  | 'zones';
 
 /** The first place where a draft and a manifest disagree. */
 export type DraftManifestDifference =
@@ -77,6 +81,17 @@ function sameHours(a: WorkingHours | null, b: WorkingHours | null): boolean {
   });
 }
 
+interface Run {
+  readonly count: number;
+  readonly transition: Transition;
+  readonly shuffle: boolean;
+}
+
+/** One run of the flat list: the same item count, transition and shuffle. */
+function sameRun(a: Run, b: Run): boolean {
+  return a.count === b.count && a.transition === b.transition && a.shuffle === b.shuffle;
+}
+
 /**
  * Compared key by key, as `sameHours`: the playlists (count, transition, shuffle) and the
  * events in order (playlist, each of the seven days, start, end). Never `JSON.stringify`.
@@ -86,12 +101,7 @@ function sameSchedule(a: DraftSchedule, b: ManifestSchedule): boolean {
     a.playlists.length === b.playlists.length &&
     a.playlists.every((playlist, i) => {
       const other = b.playlists[i];
-      return (
-        other !== undefined &&
-        playlist.count === other.count &&
-        playlist.transition === other.transition &&
-        playlist.shuffle === other.shuffle
-      );
+      return other !== undefined && sameRun(playlist, other);
     }) &&
     a.events.length === b.events.length &&
     a.events.every((event, i) => {
@@ -104,6 +114,17 @@ function sameSchedule(a: DraftSchedule, b: ManifestSchedule): boolean {
         event.start === other.start &&
         event.end === other.end
       );
+    })
+  );
+}
+
+/** Compared key by key, as `sameSchedule`: each zone's rectangle, item count, transition and shuffle. */
+function sameZones(a: readonly DraftZone[], b: readonly ManifestZone[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((zone, i) => {
+      const other = b[i];
+      return other !== undefined && sameRect(zone.rect, other.rect) && sameRun(zone, other);
     })
   );
 }
@@ -129,27 +150,29 @@ function sameContent(a: AppContent, b: AppContent): boolean {
  * given (`manifest`) and returns the first difference, or null when publishing
  * the draft would hand the player the same content.
  *
- * Compared: the manifest version the draft needs (`manifestVersionFor`: v4 with
- * a schedule in which an event uses a playlist other than the default, v3 with
- * an app, v2 with a v2 option or time rule, else v1, so removing the schedule or
- * the last such event, removing the last app or turning every v2 option off
- * offers a push back), the display, the canvas, the content rectangle, the
- * playback options (transition, shuffle, rotation, working hours, and the time
- * zone when the manifest is v2 or later; a v1 manifest counts as all defaults;
- * with a schedule the transition and shuffle are the default playlist's), and
- * the play list entry by entry in order: whether each is media or an app; for
- * media the asset id, SHA-256, size, media type, kind, time on screen, fit,
- * pixel size and availability window; for an app the app id, time on screen and
+ * Compared: the manifest version the draft needs (`manifestVersionFor`: v5 with
+ * a layout, v4 with a schedule in which an event uses a playlist other than the
+ * default, v3 with an app, v2 with a v2 option or time rule, else v1, so
+ * removing the layout, the schedule or the last such event, removing the last
+ * app or turning every v2 option off offers a push back), the display, the
+ * canvas, the content rectangle, the playback options (transition, shuffle,
+ * rotation, working hours, and the time zone when the manifest is v2 or later;
+ * a v1 manifest counts as all defaults; with a schedule the transition and
+ * shuffle are the default playlist's, with a layout the main zone's), and the
+ * play list entry by entry in order: whether each is media or an app; for media
+ * the asset id, SHA-256, size, media type, kind, time on screen, fit, pixel
+ * size and availability window; for an app the app id, time on screen and
  * content (type and every setting). The draft carries every fit already
  * resolved from the display's default, so a changed default shows up as a
- * changed fit. With a schedule the play list is every playlist's items in one
- * list, so a changed item is reported at its flat index; last comes the
- * schedule itself: each playlist's item count, transition and shuffle, and the
- * events in order (playlist, days, start, end).
+ * changed fit. With a schedule or a layout the play list is every playlist's
+ * (or zone's) items in one list, so a changed item is reported at its flat
+ * index; last comes the schedule itself (each playlist's item count, transition
+ * and shuffle, and the events in order: playlist, days, start, end) or the
+ * zones (each zone's rectangle, item count, transition and shuffle).
  *
- * Not compared: `publicationId` and `createdAt`, which identify a publication
- * rather than describe its content, and `muted` and the region count, which
- * have one possible value in a manifest and in a draft.
+ * Not compared: `publicationId`, `createdAt` and `muted`: the first two
+ * identify a publication rather than describe its content, and `muted` has one
+ * possible value.
  */
 export function firstDraftManifestDifference(
   draft: PublicationDraft,
@@ -216,6 +239,13 @@ export function firstDraftManifestDifference(
   ) {
     return { kind: 'playback', field: 'schedule' };
   }
+  if (
+    draft.zones !== null &&
+    manifest.schemaVersion === MANIFEST_SCHEMA_VERSION_V5 &&
+    !sameZones(draft.zones, manifest.zones)
+  ) {
+    return { kind: 'playback', field: 'zones' };
+  }
   return null;
 }
 
@@ -230,8 +260,9 @@ export function draftMatchesManifest(draft: PublicationDraft, manifest: Manifest
 export interface PushStateInput {
   /**
    * Result of `planPublication` for the display's assigned playlist as it is
-   * now (`planSchedulePublication` for an assigned schedule), or null when
-   * nothing is assigned.
+   * now (`planSchedulePublication` for an assigned schedule,
+   * `planLayoutPublication` for an assigned layout), or null when nothing is
+   * assigned.
    */
   readonly plan: PlanPublicationResult | null;
   /** Manifest of the display's current (desired) publication, or null when it has none. */

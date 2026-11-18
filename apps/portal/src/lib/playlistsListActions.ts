@@ -5,6 +5,7 @@ import {
   type PushState,
 } from '@tinnox/contracts';
 import { isApiRequestError } from '../api/client.ts';
+import { planRowContent } from './assignedContent.ts';
 import { bulkFailureTitle, countOf, type BulkFailure, type BulkOutcome } from './bulkOutcome.ts';
 
 /**
@@ -49,19 +50,23 @@ const nameList = new Intl.ListFormat('en-AU', { style: 'long', type: 'conjunctio
 export interface DeleteFailureText extends FailureText {
   /** What to do about it, when the portal knows; else null. */
   readonly hint: string | null;
-  /** True when the server refused because a screen has the playlist assigned or a schedule uses it. */
+  /** True when the server refused because a screen has the playlist assigned or a schedule or a layout uses it. */
   readonly inUse: boolean;
-  /** True when that refusal names the schedules that use the playlist. */
-  readonly bySchedule: boolean;
+  /**
+   * What that refusal names: the schedules or the layouts that use the playlist, else the
+   * screens that have it assigned (also when it names nothing). Null when not refused as in use.
+   */
+  readonly refusedBy: 'display' | 'schedule' | 'layout' | null;
 }
 
 /**
  * The names an in-use refusal lists in its details: the screens (`display`) that have the
- * object assigned, or the schedules (`schedule`) that use it. The server names up to five.
+ * object assigned, or the schedules (`schedule`) or layouts (`layout`) that use it. The
+ * server names up to five.
  */
 export function refusalNames(
   details: readonly ApiErrorDetail[],
-  path: 'display' | 'schedule',
+  path: 'display' | 'schedule' | 'layout',
 ): string[] {
   return details
     .filter((detail) => detail.path === path && detail.message.trim() !== '')
@@ -70,34 +75,35 @@ export function refusalNames(
 
 /**
  * Why a playlist was not deleted. The `playlist_in_use` refusal names up to five of the
- * screens that have the playlist assigned, or of the schedules that use it (in `details`);
- * `assignedDisplayCount` is the count the list last showed, used only to say that there are
- * more screens than the server named.
+ * schedules or the layouts that use the playlist, or of the screens that have it assigned
+ * (in `details`); `assignedDisplayCount` is the count the list last showed, used only to say
+ * that there are more screens than the server named.
  */
 export function deleteFailureText(error: unknown, assignedDisplayCount: number): DeleteFailureText {
   if (!isApiRequestError(error) || !isInUseRefusal(error)) {
-    return { ...failureText(error), hint: null, inUse: false, bySchedule: false };
+    return { ...failureText(error), hint: null, inUse: false, refusedBy: null };
   }
-  const schedules = refusalNames(error.details, 'schedule');
-  if (schedules.length > 0) {
-    const several = schedules.length > 1;
+  for (const kind of ['schedule', 'layout'] as const) {
+    const names = refusalNames(error.details, kind);
+    if (names.length === 0) continue;
+    const several = names.length > 1;
     return {
-      message: `Used by the ${several ? 'schedules' : 'schedule'} ${nameList.format(schedules)}.`,
+      message: `Used by the ${kind}${several ? 's' : ''} ${nameList.format(names)}.`,
       code: error.code,
-      hint: `Choose another playlist in ${several ? 'those schedules' : 'that schedule'}, then delete the playlist.`,
+      hint: `Choose another playlist in ${several ? `those ${kind}s` : `that ${kind}`}, then delete the playlist.`,
       inUse: true,
-      bySchedule: true,
+      refusedBy: kind,
     };
   }
   const screens = refusalNames(error.details, 'display');
   if (screens.length === 0) {
-    // No names: the refusal of a delete that raced an assignment, which may be either kind.
+    // No names: the refusal of a delete that raced an assignment, which may be any kind.
     return {
-      message: 'A screen has this playlist assigned or a schedule uses it.',
+      message: 'A screen has this playlist assigned, or a schedule or a layout uses it.',
       code: error.code,
-      hint: 'Assign other content to the screen, or choose another playlist in the schedule, then delete the playlist.',
+      hint: 'Assign other content to the screen, or choose another playlist in the schedule or layout, then delete the playlist.',
       inUse: true,
-      bySchedule: false,
+      refusedBy: 'display',
     };
   }
   const more = Math.max(0, assignedDisplayCount - screens.length);
@@ -107,11 +113,11 @@ export function deleteFailureText(error: unknown, assignedDisplayCount: number):
     code: error.code,
     hint: `Assign other content to ${several ? 'those screens' : 'that screen'}, then delete the playlist.`,
     inUse: true,
-    bySchedule: false,
+    refusedBy: 'display',
   };
 }
 
-/** True when the server refused a delete because a screen has the playlist assigned or a schedule uses it. */
+/** True when the server refused a delete because a screen has the playlist assigned or a schedule or a layout uses it. */
 export function isInUseRefusal(error: unknown): boolean {
   return isApiRequestError(error) && error.code === 'playlist_in_use';
 }
@@ -119,7 +125,7 @@ export function isInUseRefusal(error: unknown): boolean {
 /**
  * The failed deletes that "Try again" repeats: every one but a `playlist_in_use` refusal,
  * which can only be refused again until the screens are given other content or the schedules
- * another playlist. An empty list means "Try again" is not offered.
+ * and layouts another playlist. An empty list means "Try again" is not offered.
  */
 export function deleteRetryItems<T>(failed: readonly BulkFailure<T>[]): T[] {
   return failed.filter((failure) => !isInUseRefusal(failure.error)).map((f) => f.item);
@@ -213,9 +219,9 @@ export interface AssignPushView {
 /**
  * Reads the push plan for the screens a playlist was just assigned to. A row counts only
  * when it already names that playlist, assigned directly: a plan read before the assignment
- * would otherwise be taken for the state after it. The row of a scheduled screen carries the
- * schedule's default playlist, so a stale row of a schedule whose default is this playlist
- * does not count either.
+ * would otherwise be taken for the state after it. The row of a screen with a schedule or a
+ * layout carries the default or the main zone's playlist, so a stale row of a schedule or a
+ * layout that uses this playlist does not count either.
  */
 export function assignPushView(
   assignedDisplayIds: readonly string[],
@@ -226,7 +232,11 @@ export function assignPushView(
   if (plan !== null) {
     const wanted = new Set(assignedDisplayIds);
     for (const row of plan.items) {
-      if (wanted.has(row.display.id) && row.schedule === null && row.playlist?.id === playlistId) {
+      if (
+        wanted.has(row.display.id) &&
+        planRowContent(row)?.kind === 'playlist' &&
+        row.playlist?.id === playlistId
+      ) {
         stateById.set(row.display.id, row.state);
       }
     }

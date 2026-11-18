@@ -53,11 +53,17 @@ export function scopeRows(
   return items.filter((row) => wanted.has(idKey(row.display.id)));
 }
 
-/** Rows whose screen name, playlist name or schedule name contains every word of the query. */
+/**
+ * Rows whose screen name, playlist name, schedule name or layout name contains every word of
+ * the query.
+ */
 export function searchRows(rows: readonly PushPlanRow[], query: string): readonly PushPlanRow[] {
   if (query.trim() === '') return rows;
   return rows.filter((row) =>
-    matchesSearch([row.display.name, row.playlist?.name, row.schedule?.name], query),
+    matchesSearch(
+      [row.display.name, row.playlist?.name, row.schedule?.name, row.layout?.name],
+      query,
+    ),
   );
 }
 
@@ -108,7 +114,7 @@ const GROUP_TEXT: {
   },
   nothing_assigned: {
     title: 'Nothing assigned',
-    note: 'Assign a playlist or a schedule to a screen before pushing to it.',
+    note: 'Assign a playlist, a schedule or a layout to a screen before pushing to it.',
   },
 };
 
@@ -565,7 +571,7 @@ export function nothingWaitingNotice(rows: readonly PushPlanRow[]): PushIdleNoti
   return {
     tone: 'info',
     title: 'No changes waiting',
-    text: 'No screen has content assigned yet. Assign a playlist or a schedule to a screen, then push.',
+    text: 'No screen has content assigned yet. Assign a playlist, a schedule or a layout to a screen, then push.',
   };
 }
 

@@ -16,6 +16,18 @@ no CSP violation) and `e2e/08-apps-portal.spec.ts` (creating and editing an app 
 the portal by keyboard, the contrast warning, adding an app to a playlist and pushing,
 deleting an app in use, the still ticker preview, no CSP violation and no web storage).
 
+Stage B slice 4 (layouts) added `e2e/12-layouts-portal.spec.ts` (creating a layout through the
+dialog by keyboard; a band with no playlist refused, with the error summary leading to its
+field; the band height stepped with the keyboard and the preview's pixel sizes on landscape,
+portrait and a small LED shape; assigning the layout on a screen's page and pushing it; the
+refusals to delete a layout a screen has and a playlist a layout uses; a playlist replacing the
+layout; phone width; no CSP violation and no web storage) and `e2e/13-layouts-player.spec.ts`
+(a main zone and a Ticker band on four canvases, rotation and a content rectangle included:
+version 5, the zone boxes within 1 px, the ticker size, the reduced-motion wrap, a band-height
+change, and back to version 1). `support/operator.ts` gains `bandLayout`, `createLayout`,
+`replaceLayout` and `assignLayout`; `support/portal.ts` gains `createLayoutInPortal`,
+`saveLayout` and `assignLayoutOnScreenPage`; `support/player.ts` gains `zoneBox`.
+
 Stage B slice 3 (schedules) added `e2e/09-schedules-portal.spec.ts` (creating a schedule
 through the dialog by keyboard; an event with no playlist refused, with the error summary
 leading to its field; events filled in, reordered and removed with focus kept in the

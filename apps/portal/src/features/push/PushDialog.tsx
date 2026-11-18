@@ -3,6 +3,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiRequestError } from '../../api/client.ts';
 import { api } from '../../api/index.ts';
 import {
+  CONTENT_KIND_LABEL,
+  contentHref,
+  planRowContent,
+  type ContentKind,
+} from '../../lib/assignedContent.ts';
+import {
   afterAttempt,
   isRetryOf,
   keyForPush,
@@ -54,6 +60,7 @@ import {
   CircleCheck,
   CircleDashed,
   CircleExclamationPoint,
+  LayoutTemplate,
   ListVideo,
   Monitor,
   Plus,
@@ -100,6 +107,13 @@ const STATIC_ICON: { readonly [K in Exclude<PushGroupId, 'waiting'>]: IconCompon
   blocked: CircleExclamationPoint,
   up_to_date: CircleCheck,
   nothing_assigned: CircleDashed,
+};
+
+/** The icon before what a row's screen has assigned. */
+const CONTENT_ICON: { readonly [K in ContentKind]: IconComponent } = {
+  playlist: ListVideo,
+  schedule: CalendarDays,
+  layout: LayoutTemplate,
 };
 
 /**
@@ -333,7 +347,8 @@ export function PushDialog({
                     </ButtonLink>
                   }
                 >
-                  Add a screen and assign a playlist or a schedule to it, then push from here.
+                  Add a screen and assign a playlist, a schedule or a layout to it, then push from
+                  here.
                 </EmptyState>
               </div>
             ) : (
@@ -578,21 +593,27 @@ function PushRow({
 }) {
   const view = presentRow(row, result);
   const lastPushed = lastPushedLabel(row, now);
+  const content = planRowContent(row);
   const name = <span className="tx-push-row__name">{row.display.name}</span>;
   const meta = (
     <span className="tx-push-row__meta">
-      {row.schedule !== null ? (
-        <span className="tx-push-row__playlist" title={`Schedule: ${row.schedule.name}`}>
-          <Icon icon={CalendarDays} size={14} />
-          <span className="tx-push-row__playlist-name">Schedule: {row.schedule.name}</span>
-        </span>
-      ) : row.playlist === null ? (
+      {content === null ? (
         <span>Nothing assigned</span>
-      ) : (
-        <span className="tx-push-row__playlist" title={row.playlist.name}>
-          <Icon icon={ListVideo} size={14} />
+      ) : content.kind === 'playlist' ? (
+        <span className="tx-push-row__playlist" title={content.name}>
+          <Icon icon={CONTENT_ICON.playlist} size={14} />
           <span className="tx-visually-hidden">Playlist: </span>
-          <span className="tx-push-row__playlist-name">{row.playlist.name}</span>
+          <span className="tx-push-row__playlist-name">{content.name}</span>
+        </span>
+      ) : (
+        <span
+          className="tx-push-row__playlist"
+          title={`${CONTENT_KIND_LABEL[content.kind]}: ${content.name}`}
+        >
+          <Icon icon={CONTENT_ICON[content.kind]} size={14} />
+          <span className="tx-push-row__playlist-name">
+            {CONTENT_KIND_LABEL[content.kind]}: {content.name}
+          </span>
         </span>
       )}
       {lastPushed !== null && <span>{lastPushed}</span>}
@@ -635,26 +656,15 @@ function PushRow({
             <StatusPill tone={view.pill.tone}>{view.pill.label}</StatusPill>
           )}
         </span>
-        {row.schedule !== null && view.issues.length > 0 && (
+        {content !== null && view.issues.length > 0 && (
           <ButtonLink
             variant="secondary"
             size="sm"
-            to={`/schedules/${row.schedule.id}`}
+            to={contentHref(content.kind, content.id)}
             onClick={onNavigate}
           >
-            Open schedule
-            <span className="tx-visually-hidden"> {row.schedule.name}</span>
-          </ButtonLink>
-        )}
-        {row.schedule === null && row.playlist !== null && view.issues.length > 0 && (
-          <ButtonLink
-            variant="secondary"
-            size="sm"
-            to={`/playlists/${row.playlist.id}`}
-            onClick={onNavigate}
-          >
-            Open playlist
-            <span className="tx-visually-hidden"> {row.playlist.name}</span>
+            Open {content.kind}
+            <span className="tx-visually-hidden"> {content.name}</span>
           </ButtonLink>
         )}
         {group.id === 'nothing_assigned' && (
