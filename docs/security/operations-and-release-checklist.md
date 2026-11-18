@@ -314,6 +314,7 @@ Tooling facts (from `docs/dev-handoff.md`): exact versions, committed `package-l
 Routine, at least monthly, and whenever an advisory arrives:
 
 1. `npm run audit` and review. High and critical findings in run-time dependencies are fixed or mitigated before the next release; anything left open is recorded in the table below with an owner and a review date. Do not use `npm audit fix --force`.
+   `npm run audit` (`scripts/audit.ts`, run in CI) fails on any high or critical advisory. The one way to let such an advisory pass is a dated exception, for a development-only advisory with no fixed release: list it in `scripts/audit-exceptions.json` (advisory id, package, reason, owner, review date at most 90 days ahead) and in the table below. The check fails again after the review date, as soon as the advisory reaches a run-time dependency (`npm audit --omit=dev`), and once the advisory is no longer reported, so the entry is then removed or renewed with a new date.
 2. `npm outdated` to list available updates. Group them: security fixes first, then run-time, then development tooling.
 3. Update one group at a time with exact versions. Read the changelog for anything touching authentication, sessions, parsing, multipart upload, image or video handling, the database driver or the web framework.
 4. Review the lockfile diff: new transitive packages, changed registries or integrity hashes, new install scripts.
@@ -328,6 +329,7 @@ Open exceptions (keep current):
 
 | Finding | Where | Severity | Why open | Owner | Review by |
 |---|---|---|---|---|---|
+| `picomatch` GHSA-fc5q-39xc-vjpf, ReDoS through single-branch repeated extglobs (11 high findings on 2026-11-18, all from this one advisory, reached through `vite`, `vitest`, `tinyglobby`, `fdir` and `typescript-eslint`) | Development only (`npm audit --omit=dev` clean on 2026-11-18) | High | No fixed release: the advisory covers `<=4.0.7` and 4.0.7 is the latest (checked 2026-11-18). Allowed in CI only through `scripts/audit-exceptions.json` until the review date | Michael Fu | 2026-12-18 |
 | `minimatch` advisory inside the typescript-eslint toolchain (7 moderate findings, as reported by the foundation step on 2026-11-14; not re-run by the author) | Development only | Moderate | Awaiting upstream release; not in run-time code | _to be named_ | _to be set_ |
 | Host Node 23.10 is outside the supported engine ranges of eslint 10 and vitest 5 | Development machine | Low | CI uses Node 22 | _to be named_ | _to be set_ |
 
