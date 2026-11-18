@@ -46,12 +46,12 @@ None.
 | Id | Card | Agreed | PR | Since |
 |---|---|---|---|---|
 | CMS-7 | Backup check: pass valid databases with no publications, fail only empty ones, add an automated test | Michael 18 Nov | #21 | 18 Nov |
-| CMS-8 | CI audit gate: dated exception for picomatch GHSA-fc5q-39xc-vjpf (high, development tooling only, no fixed release); every other high or critical still blocks | Michael 18 Nov | #22 | 18 Nov |
 
 ## Done, last 14 days
 
 | Id | Date | Outcome | PR |
 |---|---|---|---|
+| CMS-8 | 18 Nov | CI audit gate: dated exception for picomatch GHSA-fc5q-39xc-vjpf (high, development tooling only, no fixed release); every other high or critical still blocks | #22 |
 | CMS-5 | 18 Nov | Backend review round 1: decide and fix the two medium findings (CX-01 audit with credential changes, CU-01 backup check with apps) | #19 |
 | CMS-1 | 17 Nov | Schedules (stage B slice 3): choose which playlist a screen shows by day and time | #13 |
 
@@ -88,6 +88,11 @@ from: CMS-1
 
 ### CMS-7
 from: CMS-5
+
+### CMS-8
+
+**Evidence**
+PR 22 merged to main 18 Nov with CI green, audit step included (picomatch allowed until 18 Dec; any other high or critical still fails)
 
 ### CMS-9
 due: 18 Dec 2026
