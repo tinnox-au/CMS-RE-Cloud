@@ -250,7 +250,6 @@ async function publish(c: pg.Client, org: Org, items: readonly ResolvedItem[]): 
       displayId: org.displayId,
       canvas: org.canvas,
       contentRect: null,
-      regions: 1,
       audio: false,
       items,
       transition: 'cut',
@@ -259,6 +258,7 @@ async function publish(c: pg.Client, org: Org, items: readonly ResolvedItem[]): 
       workingHours: null,
       timeZone: org.timeZone,
       schedule: null,
+      zones: null,
     },
     { publicationId, createdAt: new Date() },
   );
