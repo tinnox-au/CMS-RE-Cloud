@@ -37,13 +37,13 @@ None.
 
 ## In progress
 
-| Id | Card | Agreed | PR | Since |
-|---|---|---|---|---|
-| CMS-2 | Layouts (stage B): split a screen into zones, each with its own content | Michael 18 Nov | - | 18 Nov |
+None.
 
 ## In review
 
-None.
+| Id | Card | Agreed | PR | Since |
+|---|---|---|---|---|
+| CMS-2 | Layouts (stage B): split a screen into zones, each with its own content | Michael 18 Nov | #25 | 18 Nov |
 
 ## Done, last 14 days
 
