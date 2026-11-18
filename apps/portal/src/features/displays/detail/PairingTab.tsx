@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { api } from '../../../api/index.ts';
 import { formatTimestamp } from '../../../lib/format.ts';
 import {
+  endPairingWords,
   PAIRING_CODE_PROBLEM,
   pairingAcceptedText,
   pairingHelp,
@@ -20,14 +21,17 @@ export interface PairingTabProps {
   readonly display: DisplayDto;
   /** After a code was accepted: read the screen and its status again. */
   readonly onPaired: () => void;
-  /** Opens the confirmation to revoke the player. */
+  /** Opens the confirmation to revoke the player or, with none paired, cancel a pending pairing. */
   readonly onRevoke: () => void;
   /** The revocation started from this tab, while its outcome is shown. */
   readonly revoke: RevokeState | null;
   readonly onDismissRevoke: () => void;
 }
 
-/** Pair a player with the code it shows, replace the paired player, or revoke it (as M0). */
+/**
+ * Pair a player with the code it shows, replace the paired player, or revoke it (as M0).
+ * With no player paired, the last action cancels a code accepted but not yet collected.
+ */
 export function PairingTab({
   display,
   onPaired,
@@ -43,6 +47,7 @@ export function PairingTab({
   const [busy, setBusy] = useState(false);
   const [claimed, setClaimed] = useState<{ replaced: boolean } | null>(null);
   const paired = display.player !== null;
+  const endPairing = endPairingWords(paired);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -161,29 +166,22 @@ export function PairingTab({
 
       <section className="tx-screen-detail-section" aria-labelledby="screen-detail-revoke-title">
         <h3 id="screen-detail-revoke-title" className="tx-screen-detail-caption">
-          Revoke
+          {paired ? 'Revoke' : 'Pending pairing'}
         </h3>
-        <p className="tx-screen-detail-note">
-          Revoking stops the paired player from fetching manifests and media. It cannot erase
-          content already cached on a device that does not report.
+        <p id="screen-detail-revoke-note" className="tx-screen-detail-note">
+          {endPairing.note}
         </p>
         <div className="tx-screen-detail-form__actions">
           <Button
-            variant="danger"
+            variant={paired ? 'danger' : 'secondary'}
             icon={Unlink}
             busy={revoke?.busy === true}
-            aria-disabled={!paired || undefined}
-            aria-describedby={paired ? undefined : 'screen-detail-revoke-none'}
+            aria-describedby="screen-detail-revoke-note"
             onClick={onRevoke}
             data-testid="screen-detail-revoke"
           >
-            Revoke player
+            {endPairing.button}
           </Button>
-          {!paired && (
-            <span id="screen-detail-revoke-none" className="tx-screen-detail-note">
-              There is no credential to revoke.
-            </span>
-          )}
         </div>
         {revoke !== null && revoke.result !== null && (
           <Banner tone="ok" live="polite" onDismiss={onDismissRevoke}>
@@ -193,7 +191,7 @@ export function PairingTab({
         {revoke !== null && revoke.error !== null && (
           <ErrorNotice
             error={revoke.error}
-            title="The player was not revoked"
+            title={endPairing.errorTitle}
             onDismiss={onDismissRevoke}
           />
         )}

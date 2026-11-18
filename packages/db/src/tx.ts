@@ -34,16 +34,21 @@ export class CommitOutcomeUnknownError extends Error {
   }
 }
 
+/** SQLSTATE 40003, statement_completion_unknown: class 40, yet it confirms nothing. */
+const STATEMENT_COMPLETION_UNKNOWN = '40003';
+
 /**
  * True when the server answered COMMIT with an error that it raises only while rolling
  * the transaction back: a deferred constraint (class 23) or a serialization failure
- * (class 40). Anything else (a lost connection, a timeout, a server shutting down) may
- * have come after the commit was durable.
+ * (class 40, except 40003, which says the server itself does not know). Anything else (a
+ * lost connection, a timeout, a server shutting down) may have come after the commit was
+ * durable.
  */
 function commitRefused(error: unknown): boolean {
   return (
     error instanceof pg.DatabaseError &&
     typeof error.code === 'string' &&
+    error.code !== STATEMENT_COMPLETION_UNKNOWN &&
     (error.code.startsWith('23') || error.code.startsWith('40'))
   );
 }

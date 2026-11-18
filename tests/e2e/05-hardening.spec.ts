@@ -1,11 +1,14 @@
 /**
  * Review findings of 2026-11-14 checked in a real browser: a player with a wrong clock can
- * pair, and the portal and player pages cannot be framed by another site.
+ * pair, and the portal and player pages cannot be framed by another site. Also, from the
+ * feedback on security review round 3: an operator can cancel a pairing code that was
+ * accepted for a screen before any player collects its credential.
  */
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { operatorSession, type OperatorSession } from './support/contexts.ts';
-import { expectPhase, openPlayer, pairingCode } from './support/player.ts';
+import { expectPhase, openPlayer, pairingCode, playerFetch } from './support/player.ts';
+import { openScreenPage } from './support/portal.ts';
 import { API_URL, PLAYER_URL, PORTAL_URL } from './support/stack.ts';
 
 const runId = randomUUID().slice(0, 8);
@@ -79,4 +82,45 @@ test('portal and player pages refuse to be framed and are not content-sniffed', 
     expect(headers['x-frame-options'], url).toBe('DENY');
     expect(headers['x-content-type-options'], url).toBe('nosniff');
   }
+});
+
+test('an accepted pairing code can be cancelled from the screen page before a player collects it', async () => {
+  const page = operator.page;
+  const { id } = await operator.api.createDisplay({
+    name: `E2E cancel pairing ${runId}`,
+    canvas: { width: 1920, height: 1080 },
+  });
+  // A player that shows a code and then does not check in again.
+  const created = await fetch(`${API_URL}/player/pairing`, { method: 'POST' });
+  expect(created.status).toBe(201);
+  const pairing = (await created.json()) as {
+    pairingId: string;
+    code: string;
+    pollingToken: string;
+  };
+  const poll = async (): Promise<unknown> =>
+    (await playerFetch(`/player/pairing/${pairing.pairingId}`, pairing.pollingToken)).json();
+
+  await openScreenPage(page, id, 'pairing');
+  await page.getByTestId('screen-detail-pairing-code').fill(pairing.code);
+  await page.getByTestId('screen-detail-pair').click();
+  await expect(page.getByText('Code accepted')).toBeVisible();
+
+  // No player holds a credential yet, and the action is offered all the same.
+  const cancel = page.getByTestId('screen-detail-revoke');
+  await expect(cancel).toHaveText('Cancel pending pairing');
+  await expect(cancel).toBeEnabled();
+  await cancel.click();
+  const dialog = page.getByRole('dialog', { name: 'Cancel the pending pairing?' });
+  await dialog.getByRole('button', { name: 'Cancel pairing' }).click();
+  await expect(
+    page.getByText(
+      'A pairing code accepted for this screen but not yet collected by a player was cancelled.',
+    ),
+  ).toBeVisible();
+
+  // The player that held the code is told to start again; it gets no credential.
+  expect(await poll()).toEqual({ status: 'expired' });
+  const stored = await operator.context.request.get(`${PORTAL_URL}/api/displays/${id}`);
+  expect(((await stored.json()) as { player: unknown }).player).toBeNull();
 });

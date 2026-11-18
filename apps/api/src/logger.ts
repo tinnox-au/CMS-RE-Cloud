@@ -4,7 +4,7 @@
  * query string (which carries `sig`, `code` and `state`) is never written.
  */
 import { REDACTED_HEADERS, REDACTED_QUERY_PARAMS } from '@tinnox/contracts';
-import { pino, type Logger } from 'pino';
+import { pino, type DestinationStream, type Logger } from 'pino';
 
 const SECRET_FIELDS = [
   'token',
@@ -44,14 +44,15 @@ function errorFields(error: Error): Record<string, unknown> {
   return {
     type: error.name,
     message: error.message.slice(0, 500),
-    ...(typeof code === 'string' ? { code } : {}),
+    // Not `code`: that name is redacted everywhere (it also names the OAuth code).
+    ...(typeof code === 'string' ? { errorCode: code.slice(0, 64) } : {}),
   };
 }
 
 /**
- * How an error is logged: name, message, code and stack, and the same for its cause (one
- * level), so a wrapper such as CommitOutcomeUnknownError still says what went wrong
- * underneath. Never the bind values or detail of a database error.
+ * How an error is logged: name, message, error code (a SQLSTATE such as 40001, or a Node
+ * code such as ECONNRESET) and stack, and the same for its cause (one level), so a wrapper
+ * such as CommitOutcomeUnknownError still says what went wrong underneath. Never the bind values or detail of a database error.
  */
 export function serializeError(error: unknown): Record<string, unknown> {
   if (!(error instanceof Error)) return { message: 'non-error value thrown' };
@@ -63,8 +64,12 @@ export function serializeError(error: unknown): Record<string, unknown> {
   };
 }
 
-export function createLogger(level: string, pretty: boolean): Logger {
-  return pino({
+export function createLogger(
+  level: string,
+  pretty: boolean,
+  destination?: DestinationStream,
+): Logger {
+  const options = {
     level,
     redact: { paths: REDACT_PATHS, censor: '[redacted]' },
     serializers: {
@@ -84,5 +89,7 @@ export function createLogger(level: string, pretty: boolean): Logger {
           },
         }
       : {}),
-  });
+  };
+  // `destination` is for tests that read what is written; the default is stdout.
+  return destination === undefined ? pino(options) : pino(options, destination);
 }
