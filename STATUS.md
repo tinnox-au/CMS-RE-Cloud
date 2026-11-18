@@ -74,6 +74,7 @@ Merged 17 Nov; CI green (lint, types, unit, component, integration 314, secret s
 
 **Notes**
 - 18 Nov: 18 Nov: built on feat/stage-b-layouts (uncommitted): spec in stage-b.md slice 4; migration 0011, manifest v5, player 0.5.0; typecheck, lint, unit, component, integration and the full e2e suite (incl. new 12 and 13) pass. Multi-agent review blocked by the weekly usage limit until 22 Nov
+- 18 Nov: five-lens adversarial review done: no Critical or High; one Medium (player garbage collection across zones) and five Low fixed; all checks and the full e2e suite pass again. Still uncommitted on feat/stage-b-layouts
 
 ### CMS-5
 
