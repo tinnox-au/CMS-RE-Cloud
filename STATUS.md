@@ -3,7 +3,7 @@ contract: status/v2
 repo: tinnox-au/tinnox-cms
 initiative: TINNOX CMS
 key: CMS
-next_id: 9
+next_id: 10
 phase: Not written yet: one sentence on what this project is and where it stands
 gate: -
 seeded: 17 Nov 2026 by status init
@@ -31,7 +31,9 @@ None.
 
 ## To do
 
-None.
+| Id | Card | Agreed | PR | Since |
+|---|---|---|---|---|
+| CMS-9 | Review picomatch audit exception GHSA-fc5q-39xc-vjpf: upgrade if fixed, else renew or remove (CI fails once its date passes) | Michael 18 Nov | - | 18 Nov |
 
 ## In progress
 
@@ -86,3 +88,7 @@ from: CMS-1
 
 ### CMS-7
 from: CMS-5
+
+### CMS-9
+due: 18 Dec 2026
+from: CMS-8
