@@ -329,8 +329,7 @@ Open exceptions (keep current):
 
 | Finding | Where | Severity | Why open | Owner | Review by |
 |---|---|---|---|---|---|
-| `picomatch` GHSA-fc5q-39xc-vjpf, ReDoS through single-branch repeated extglobs (11 high findings on 2026-11-18, all from this one advisory, reached through `vite`, `vitest`, `tinyglobby`, `fdir` and `typescript-eslint`) | Development only (`npm audit --omit=dev` clean on 2026-11-18) | High | No fixed release: the advisory covers `<=4.0.7` and 4.0.7 is the latest (checked 2026-11-18). Allowed in CI only through `scripts/audit-exceptions.json` until the review date | Michael Fu | 2026-12-18 |
-| `minimatch` advisory inside the typescript-eslint toolchain (7 moderate findings, as reported by the foundation step on 2026-11-14; not re-run by the author) | Development only | Moderate | Awaiting upstream release; not in run-time code | _to be named_ | _to be set_ |
+| `picomatch` GHSA-fc5q-39xc-vjpf, ReDoS through single-branch repeated extglobs (every high finding in `npm audit` on 2026-11-18 comes from this one advisory, reached through `vite`, `vitest`, `tinyglobby`, `fdir` and `typescript-eslint`) | Development only (`npm audit --omit=dev` clean on 2026-11-18) | High | No fixed release: the advisory covers `<=4.0.7` and 4.0.7 is the latest (checked 2026-11-18). Allowed in CI only through `scripts/audit-exceptions.json` until the review date | Michael Fu | 2026-12-18 |
 | Host Node 23.10 is outside the supported engine ranges of eslint 10 and vitest 5 | Development machine | Low | CI uses Node 22 | _to be named_ | _to be set_ |
 
 Not in place: automated update pull requests, a software bill of materials, licence checks, static analysis, image scanning. Add these before external release (checklist items 7 and 12).
