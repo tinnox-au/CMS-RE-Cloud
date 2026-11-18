@@ -236,9 +236,9 @@ describe('push state wording', () => {
     }
   });
 
-  it('speaks of content, because a screen has a playlist or a schedule', () => {
+  it('speaks of content, because a screen has a playlist, a schedule or a layout', () => {
     expect(presentPushState('nothing_assigned').detail).toBe(
-      'No playlist or schedule is assigned to this screen, so there is nothing to push.',
+      'No playlist, schedule or layout is assigned to this screen, so there is nothing to push.',
     );
     expect(presentPushState('never_pushed').detail).toBe(
       'Content is assigned, but nothing has been pushed to this screen yet.',

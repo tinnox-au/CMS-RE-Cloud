@@ -188,7 +188,7 @@ describe('the audit trail of the stage A routes', () => {
     expect(mediaRefused.events).toEqual([]);
 
     // Displays: the assignment is recorded with the playlist, in lower case; the
-    // stage B fields are named like the others. (A schedule: further down.)
+    // stage B fields are named like the others. (A schedule and a layout: further down.)
     const displayUpdate = await eventsOf(
       () =>
         operator.fetch(`/api/displays/${upper(display)}`, {
@@ -508,6 +508,116 @@ describe('the audit trail of the stage A routes', () => {
         objectType: 'schedule',
         objectId: schedule,
         detail: { eventCount: 2 },
+      }),
+    ]);
+
+    // Layouts: the main zone's playlist and a count, in lower case whatever the request
+    // used; the assignment is recorded with the layout as it is with a playlist.
+    const zones = (band: number, playlistId = upper(playlist)): unknown[] => [
+      { playlistId, x: 0, y: 0, width: 10000, height: 10000 - band },
+      { playlistId, x: 0, y: 10000 - band, width: 10000, height: band },
+    ];
+    const layoutCreate = await eventsOf(
+      () =>
+        operator.fetch('/api/layouts', {
+          method: 'POST',
+          json: {
+            name: `${TYPED} layout`,
+            description: `${TYPED} description`,
+            zones: zones(1500),
+          },
+        }),
+      201,
+    );
+    const layout = idOf(layoutCreate.body);
+    expect(layoutCreate.events).toEqual([
+      expect.objectContaining({
+        action: 'layout.create',
+        result: 'success',
+        objectType: 'layout',
+        objectId: layout,
+        detail: { mainPlaylistId: playlist, zoneCount: 2 },
+      }),
+    ]);
+    const layoutUpdate = await eventsOf(
+      () =>
+        operator.fetch(`/api/layouts/${upper(layout)}`, {
+          method: 'PUT',
+          json: { name: `${TYPED} layout two`, zones: zones(2000) },
+        }),
+      200,
+    );
+    expect(layoutUpdate.events).toEqual([
+      expect.objectContaining({
+        action: 'layout.update',
+        objectType: 'layout',
+        objectId: layout,
+        detail: { mainPlaylistId: playlist, zoneCount: 2 },
+      }),
+    ]);
+    const layoutRefused = await eventsOf(
+      () =>
+        operator.fetch(`/api/layouts/${layout}`, {
+          method: 'PUT',
+          json: { name: 'kept out', zones: zones(1500, randomUUID()) },
+        }),
+      400,
+    );
+    expect(layoutRefused.events).toEqual([]);
+    const layoutAssign = await eventsOf(
+      () =>
+        operator.fetch(`/api/displays/${upper(unassigned)}`, {
+          method: 'PATCH',
+          json: { assignedLayoutId: upper(layout) },
+        }),
+      200,
+    );
+    expect(layoutAssign.events).toEqual([
+      expect.objectContaining({
+        action: 'display.update',
+        objectId: unassigned,
+        detail: {
+          fields: ['assignedLayoutId'],
+          assignedLayoutId: layout,
+          assignedPlaylistId: null,
+        },
+      }),
+    ]);
+    const layoutInUse = await eventsOf(
+      () => operator.fetch(`/api/layouts/${layout}`, { method: 'DELETE' }),
+      409,
+    );
+    expect(layoutInUse.events).toEqual([]);
+    // A playlist in its place: the trail says the layout was taken off the screen.
+    const playlistBack = await eventsOf(
+      () =>
+        operator.fetch(`/api/displays/${unassigned}`, {
+          method: 'PATCH',
+          json: { assignedPlaylistId: upper(playlist) },
+        }),
+      200,
+    );
+    expect(playlistBack.events).toEqual([
+      expect.objectContaining({
+        action: 'display.update',
+        objectId: unassigned,
+        detail: {
+          fields: ['assignedPlaylistId'],
+          assignedPlaylistId: playlist,
+          assignedLayoutId: null,
+        },
+      }),
+    ]);
+    const layoutDelete = await eventsOf(
+      () => operator.fetch(`/api/layouts/${upper(layout)}`, { method: 'DELETE' }),
+      204,
+    );
+    expect(layoutDelete.events).toEqual([
+      expect.objectContaining({
+        action: 'layout.delete',
+        objectType: 'layout',
+        objectId: layout,
+        detail: { zoneCount: 2 },
       }),
     ]);
 

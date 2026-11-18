@@ -1,21 +1,17 @@
 import { renderApp, type AppView } from '@tinnox/app-render';
 import {
   isMediaItem,
-  manifestV2Facts,
-  type Canvas,
   type ManifestAppItem,
   type ManifestAssetV1,
   type Manifest,
   type ManifestItem,
-  type Rect,
-  type Rotation,
   type Transition,
 } from '@tinnox/contracts';
-import { canvasToViewport, effectiveContentRect, stageTransform } from '@tinnox/domain';
 import { PlayerFault, throwIfAborted } from '../core/errors.ts';
 import type { Presenter, ShownItem } from '../core/playback.ts';
 import { releaseVideo } from '../platform/media.ts';
 import { el } from './dom.ts';
+import type { DomStage } from './stage.ts';
 
 /** Longest wait for an item to become displayable before it is skipped. */
 const READY_TIMEOUT_MS = 15_000;
@@ -51,21 +47,24 @@ function withTimeout<T>(work: Promise<T>, ms: number, onTimeout: () => Error): P
 }
 
 /**
- * Draws the publication canvas in the window: scaled to fit, centred, black
- * around it. Content appears only inside the content rectangle. Two stacked
- * layers give a cut without a black frame: the next item is prepared hidden on
- * top, revealed when it can be displayed, and only then is the old one released
- * (after a 500 ms fade, for image to image when the item's playlist asks for it).
+ * Draws one zone: its items appear only inside the zone's box on the stage (for zone 0 of a
+ * manifest without zones, the content rectangle). Two stacked layers give a cut without a black
+ * frame: the next item is prepared hidden on top, revealed when it can be displayed, and only
+ * then is the old one released (after a 500 ms fade, for image to image when the item's
+ * playlist asks for it).
  *
  * Every object URL made here is revoked when its layer is disposed, and elements
  * are removed from the document, so nothing accumulates however long the loop runs.
  */
 export class DomPresenter implements Presenter {
-  readonly #stage: HTMLElement;
+  readonly #stage: DomStage;
+  readonly #zone: number;
   readonly #getBlob: (sha256: string) => Promise<Blob | null>;
-  readonly #canvasEl: HTMLDivElement;
   readonly #contentEl: HTMLDivElement;
-  #geometry: { canvas: Canvas; contentRect: Rect | null; rotation: Rotation } | null = null;
+  /** The view this zone's box was last placed from. */
+  #view: Manifest | null = null;
+  /** Set by `remove`: a show that was still preparing must not touch a new zone with this number. */
+  #removed = false;
   #current: Layer | null = null;
   /** The previous image while it fades out under the current one. */
   #leaving: Layer | null = null;
@@ -75,22 +74,16 @@ export class DomPresenter implements Presenter {
   readonly #now: () => number;
 
   constructor(
-    stage: HTMLElement,
+    stage: DomStage,
+    zone: number,
     getBlob: (sha256: string) => Promise<Blob | null>,
     now: () => number,
   ) {
     this.#stage = stage;
+    this.#zone = zone;
     this.#getBlob = getBlob;
     this.#now = now;
-    this.#contentEl = el('div', { className: 'content' });
-    this.#canvasEl = el('div', { className: 'canvas' }, [this.#contentEl]);
-    this.#canvasEl.setAttribute('data-testid', 'canvas');
-    this.#contentEl.setAttribute('data-testid', 'content');
-    this.#canvasEl.hidden = true;
-    stage.replaceChildren(this.#canvasEl);
-    addEventListener('resize', () => {
-      this.#layout();
-    });
+    this.#contentEl = stage.box(zone);
   }
 
   /** Hashes of the assets on screen or being prepared; these must not be garbage-collected. */
@@ -102,45 +95,11 @@ export class DomPresenter implements Presenter {
     return set;
   }
 
-  #layout(): void {
-    const geometry = this.#geometry;
-    if (geometry === null) return;
-    const stage = { width: this.#stage.clientWidth, height: this.#stage.clientHeight };
-    if (stage.width <= 0 || stage.height <= 0) return;
-    // A screen mounted on its side: lay the canvas out in the turned frame, then turn it.
-    const { viewport, prefix } = stageTransform(geometry.rotation, stage);
-    const { scale, offsetX, offsetY } = canvasToViewport(geometry.canvas, viewport);
-    const rect = effectiveContentRect(geometry.canvas, geometry.contentRect);
-    const px = (value: number): string => `${Math.round(value * 1000) / 1000}px`;
-    const canvasStyle = this.#canvasEl.style;
-    if (geometry.rotation === 0) {
-      canvasStyle.left = px(offsetX);
-      canvasStyle.top = px(offsetY);
-      canvasStyle.transform = '';
-    } else {
-      canvasStyle.left = '0px';
-      canvasStyle.top = '0px';
-      canvasStyle.transform = `${prefix} translate(${px(offsetX)},${px(offsetY)})`;
-    }
-    canvasStyle.width = px(geometry.canvas.width * scale);
-    canvasStyle.height = px(geometry.canvas.height * scale);
-    const contentStyle = this.#contentEl.style;
-    contentStyle.left = px(rect.x * scale);
-    contentStyle.top = px(rect.y * scale);
-    contentStyle.width = px(rect.width * scale);
-    contentStyle.height = px(rect.height * scale);
-    this.#canvasEl.dataset.canvas = `${geometry.canvas.width}x${geometry.canvas.height}`;
-  }
-
   /** Geometry only changes with a new publication. */
-  #applyGeometry(manifest: Manifest): void {
-    this.#geometry = {
-      canvas: manifest.canvas,
-      contentRect: manifest.contentRect,
-      rotation: manifestV2Facts(manifest).rotation,
-    };
-    this.#layout();
-    this.#canvasEl.hidden = false;
+  #applyGeometry(view: Manifest): void {
+    if (this.#removed) return;
+    this.#view = view;
+    this.#stage.place(this.#zone, view);
   }
 
   async show(
@@ -151,8 +110,8 @@ export class DomPresenter implements Presenter {
   ): Promise<ShownItem> {
     this.#dropLeaving();
     let layer: NewLayer | null = null;
-    // The geometry the item on screen was laid out with; an app changes it before it is ready.
-    const shownGeometry = this.#geometry;
+    // The view the item on screen was laid out with; an app changes it before it is ready.
+    const shownView = this.#view;
     try {
       let built: { layer: NewLayer; ready: Promise<void>; finished: Promise<void> | null };
       if (isMediaItem(asset)) {
@@ -202,11 +161,13 @@ export class DomPresenter implements Presenter {
     } catch (err) {
       layer?.dispose();
       // An app lays out and shows the canvas before it is ready: put back what was on screen.
-      if (this.#current === null) {
-        this.#canvasEl.hidden = true;
-      } else if (this.#geometry !== shownGeometry) {
-        this.#geometry = shownGeometry;
-        this.#layout();
+      if (this.#removed) {
+        // The box is gone, and the zone number may belong to a new presenter.
+      } else if (this.#current === null) {
+        this.#stage.release(this.#zone);
+      } else if (this.#view !== shownView && shownView !== null) {
+        this.#view = shownView;
+        this.#stage.place(this.#zone, shownView);
       }
       throw err;
     } finally {
@@ -218,7 +179,14 @@ export class DomPresenter implements Presenter {
     this.#dropLeaving();
     this.#current?.dispose();
     this.#current = null;
-    this.#canvasEl.hidden = true;
+    this.#stage.release(this.#zone);
+  }
+
+  /** Clears the zone and takes its box off the stage (zones 1 and up). */
+  remove(): void {
+    this.clear();
+    this.#stage.remove(this.#zone);
+    this.#removed = true;
   }
 
   #dropLeaving(): void {
@@ -252,7 +220,10 @@ export class DomPresenter implements Presenter {
       reveal: (fade) => {
         holder.classList.remove('pending');
         if (fade) holder.classList.add('fade-in');
-        holder.setAttribute('data-testid', 'active-layer');
+        holder.setAttribute(
+          'data-testid',
+          this.#zone === 0 ? 'active-layer' : `zone-${this.#zone}-active-layer`,
+        );
       },
       dispose: () => {
         if (disposed) return;

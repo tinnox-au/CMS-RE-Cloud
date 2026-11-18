@@ -45,6 +45,7 @@ function display(n: number, change: Partial<DisplayDto> = {}): DisplayDto {
     tagIds: [],
     assignedPlaylist: null,
     assignedSchedule: null,
+    assignedLayout: null,
     createdAt: T,
     updatedAt: T,
     ...change,
@@ -128,6 +129,28 @@ describe('ScreensList: "No playlist" for one screen', () => {
       .toBeVisible();
     expect(toasts.element().textContent).toContain('Lobby now has a schedule');
     expect(toasts.element().textContent).not.toContain('Playlist unassigned from Lobby');
+  });
+
+  it('says the screen now has a layout when one was assigned elsewhere meanwhile', async () => {
+    patchDisplay.mockResolvedValue({
+      ...LOBBY,
+      assignedPlaylist: null,
+      assignedLayout: {
+        id: ID(40),
+        name: 'Foyer band',
+        mainPlaylist: { id: ID(20), name: 'Loop' },
+      },
+    });
+    const { toasts } = await unassignFromLobby();
+
+    await expect
+      .element(
+        toasts.getByText(
+          'Its layout stays assigned. To remove it, use "Remove content" on the screen\'s page.',
+        ),
+      )
+      .toBeVisible();
+    expect(toasts.element().textContent).toContain('Lobby now has a layout');
   });
 
   it('shows the usual success toast when the screen still has no schedule', async () => {

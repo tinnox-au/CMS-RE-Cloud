@@ -8,6 +8,7 @@ import {
 } from './canvas.ts';
 import {
   DisplayIdSchema,
+  LayoutIdSchema,
   LocalTimeSchema,
   PlaylistIdSchema,
   RegistrationIdSchema,
@@ -65,6 +66,30 @@ export const AssignedScheduleSchema = z
   .strict();
 export type AssignedSchedule = z.infer<typeof AssignedScheduleSchema>;
 
+/**
+ * The layout assigned to a display. The main zone's playlist is carried so the screen page can
+ * preview it without a second round trip.
+ */
+export const AssignedLayoutSchema = z
+  .object({
+    id: LayoutIdSchema,
+    name: z.string().min(1).max(ABSOLUTE.maxNameLength),
+    mainPlaylist: PlaylistRefSchema,
+  })
+  .strict();
+export type AssignedLayout = z.infer<typeof AssignedLayoutSchema>;
+
+/**
+ * The patch keys that assign content, one per kind. A display has at most one of them set.
+ * This one list drives the patch refinement, the API PATCH and its audit, and the portal.
+ */
+export const ASSIGNMENT_KEYS = [
+  'assignedPlaylistId',
+  'assignedScheduleId',
+  'assignedLayoutId',
+] as const;
+export type AssignmentKey = (typeof ASSIGNMENT_KEYS)[number];
+
 export const DisplayDtoSchema = z
   .object({
     id: DisplayIdSchema,
@@ -93,10 +118,13 @@ export const DisplayDtoSchema = z
      */
     assignedPlaylist: PlaylistRefSchema.nullable(),
     /**
-     * The schedule assigned to the display, or null. A display has a playlist or a schedule
-     * assigned, never both: at most one of `assignedPlaylist` and `assignedSchedule` is set.
+     * The schedule assigned to the display, or null. A display has one of a playlist, a
+     * schedule or a layout assigned: at most one of `assignedPlaylist`, `assignedSchedule` and
+     * `assignedLayout` is set.
      */
     assignedSchedule: AssignedScheduleSchema.nullable(),
+    /** The layout assigned to the display, or null. See `assignedSchedule`. */
+    assignedLayout: AssignedLayoutSchema.nullable(),
     createdAt: UtcTimestampSchema,
     updatedAt: UtcTimestampSchema,
   })
@@ -131,10 +159,10 @@ export type DisplayCreateInput = z.input<typeof DisplayCreateSchema>;
  *   the media scope, answers 404.
  * - `assignedPlaylistId`: null removes the assignment. An unknown or deleted
  *   playlist answers 404. Nothing reaches the display until a push.
- * - `assignedScheduleId`: an unknown schedule answers 404. A display has a playlist
- *   or a schedule, never both: a non-null id on one side clears the other side, null
- *   clears its own side only, and `{ assignedPlaylistId: null, assignedScheduleId: null }`
- *   removes all content. Both ids non-null is refused.
+ * - `assignedScheduleId`: an unknown schedule answers 404.
+ * - `assignedLayoutId`: an unknown layout answers 404. A display has one of a playlist, a
+ *   schedule or a layout: a non-null id clears the other two, null clears its own kind only,
+ *   and all three keys null removes all content. Two non-null ids are refused.
  * - `workingHours`: null clears them (always on).
  */
 export const DisplayPatchSchema = z
@@ -149,17 +177,21 @@ export const DisplayPatchSchema = z
     tagIds: TagIdsInputSchema.optional(),
     assignedPlaylistId: PlaylistIdSchema.nullable().optional(),
     assignedScheduleId: ScheduleIdSchema.nullable().optional(),
+    assignedLayoutId: LayoutIdSchema.nullable().optional(),
   })
   .strict()
   .refine((p) => Object.keys(p).length > 0, { message: 'at least one field is required' })
-  // Each id is a string, null or absent: only two strings name both.
-  .refine(
-    (p) => typeof p.assignedPlaylistId !== 'string' || typeof p.assignedScheduleId !== 'string',
-    {
-      path: ['assignedScheduleId'],
-      message: 'assign a playlist or a schedule, not both',
-    },
-  );
+  // Each id is a string, null or absent: two strings name two kinds of content.
+  .superRefine((p, ctx) => {
+    const second = ASSIGNMENT_KEYS.filter((key) => typeof p[key] === 'string')[1];
+    if (second !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [second],
+        message: 'assign one of a playlist, a schedule or a layout',
+      });
+    }
+  });
 export type DisplayPatch = z.infer<typeof DisplayPatchSchema>;
 
 export const RevokePlayerResponseSchema = z

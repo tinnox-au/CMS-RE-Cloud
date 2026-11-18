@@ -17,6 +17,7 @@ import { registerAuditRoutes } from './routes/audit.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
 import { registerDisplayRoutes } from './routes/displays.ts';
 import { registerFolderRoutes } from './routes/folders.ts';
+import { registerLayoutRoutes } from './routes/layouts.ts';
 import { registerMediaRoutes } from './routes/media.ts';
 import { registerOpsRoutes } from './routes/ops.ts';
 import { registerOverviewRoutes } from './routes/overview.ts';
@@ -109,6 +110,7 @@ export async function buildApp(
     registerMediaRoutes(api, ctx);
     registerAppRoutes(api, ctx);
     registerScheduleRoutes(api, ctx);
+    registerLayoutRoutes(api, ctx);
     registerPlaylistRoutes(api, ctx);
     registerTagRoutes(api, ctx);
     registerFolderRoutes(api, ctx);

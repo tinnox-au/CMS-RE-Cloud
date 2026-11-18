@@ -103,6 +103,8 @@ export const ABSOLUTE = Object.freeze({
   maxPlaylistItems: 500,
   /** Weekly events in one schedule. Twin of the schedule_event position CHECK (0009). */
   maxScheduleEvents: 50,
+  /** Zones in one layout. Twin of the layout_zone position CHECK (0011). The ceiling of manifest v5, frozen with player 0.5.0. */
+  maxLayoutZones: 4,
   maxItemDurationMs: 24 * 60 * 60 * 1000,
   maxAssetBytes: 2 * 1024 * 1024 * 1024,
   maxNameLength: 120,

@@ -9,6 +9,8 @@ import {
   FolderDtoSchema,
   FolderListResponseSchema,
   HEADERS,
+  LayoutDtoSchema,
+  LayoutListResponseSchema,
   LogoutResponseSchema,
   MediaDtoSchema,
   MediaListResponseSchema,
@@ -40,6 +42,8 @@ import {
   type DisplayDto,
   type DisplayPatch,
   type FolderDto,
+  type LayoutDto,
+  type LayoutInput,
   type LogoutResponse,
   type MediaDto,
   type MediaListResponse,
@@ -89,9 +93,9 @@ export interface Endpoints {
   getDisplay(id: string, signal?: AbortSignal): Promise<DisplayDto>;
   createDisplay(input: DisplayCreateInput): Promise<DisplayDto>;
   /**
-   * Also sets the description, the tags (the complete new set) and the assigned playlist or
-   * schedule: a display has one or the other, so assigning one clears the other. Assigning
-   * changes nothing on the display until a push.
+   * Also sets the description, the tags (the complete new set) and the assigned playlist,
+   * schedule or layout: a display has at most one, so assigning one clears the others.
+   * Assigning changes nothing on the display until a push.
    */
   patchDisplay(id: string, patch: DisplayPatch): Promise<DisplayDto>;
   claimPairing(displayId: string, code: string): Promise<PairingClaimResponse>;
@@ -134,7 +138,10 @@ export interface Endpoints {
   /** Leaving `description` out keeps the stored one; null clears it. */
   replacePlaylist(id: string, body: PlaylistReplace): Promise<PlaylistDto>;
   duplicatePlaylist(id: string): Promise<PlaylistDto>;
-  /** Refused with `playlist_in_use` while a display has the playlist assigned or a schedule uses it. */
+  /**
+   * Refused with `playlist_in_use` while a display has the playlist assigned or a schedule or
+   * a layout uses it.
+   */
   deletePlaylist(id: string): Promise<void>;
   /** Publishes to one display and assigns the playlist to it. */
   publish(playlistId: string, displayId: string, idempotencyKey: string): Promise<PublishResponse>;
@@ -146,6 +153,14 @@ export interface Endpoints {
   replaceSchedule(id: string, input: ScheduleInput): Promise<ScheduleDto>;
   /** 409 `schedule_in_use` while a display has the schedule assigned. */
   deleteSchedule(id: string): Promise<void>;
+
+  listLayouts(signal?: AbortSignal): Promise<LayoutDto[]>;
+  getLayout(id: string, signal?: AbortSignal): Promise<LayoutDto>;
+  createLayout(input: LayoutInput): Promise<LayoutDto>;
+  /** The whole layout. Leaving `description` out keeps the stored one; null clears it. */
+  replaceLayout(id: string, input: LayoutInput): Promise<LayoutDto>;
+  /** 409 `layout_in_use` while a display has the layout assigned. */
+  deleteLayout(id: string): Promise<void>;
 
   /** Where every display stands between its assigned content and what it was last given. */
   getPushPlan(signal?: AbortSignal): Promise<PushPlanResponse>;
@@ -343,6 +358,25 @@ export function createEndpoints(client: ApiClient): Endpoints {
     },
     deleteSchedule(id) {
       return client.requestNoContent({ method: 'DELETE', path: ROUTES.schedule(id) });
+    },
+
+    async listLayouts(signal) {
+      return (await client.request(get(ROUTES.layouts, signal), LayoutListResponseSchema)).items;
+    },
+    getLayout(id, signal) {
+      return client.request(get(ROUTES.layout(id), signal), LayoutDtoSchema);
+    },
+    createLayout(input) {
+      return client.request({ method: 'POST', path: ROUTES.layouts, body: input }, LayoutDtoSchema);
+    },
+    replaceLayout(id, input) {
+      return client.request(
+        { method: 'PUT', path: ROUTES.layout(id), body: input },
+        LayoutDtoSchema,
+      );
+    },
+    deleteLayout(id) {
+      return client.requestNoContent({ method: 'DELETE', path: ROUTES.layout(id) });
     },
 
     getPushPlan(signal) {

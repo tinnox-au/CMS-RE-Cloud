@@ -26,9 +26,10 @@ export interface BrowserRouteOptions {
 }
 
 /**
- * Browser route, capability profile version 1: JPEG, PNG and MP4 (H.264),
- * muted, one full-frame region, contain or cover, optional content rectangle.
- * Tested in desktop Chrome only; it says nothing about LED controllers.
+ * Browser route, capability profile version 2: JPEG, PNG and MP4 (H.264), muted, up to four
+ * regions (the zones of a layout; one without a layout), contain or cover, optional content
+ * rectangle. Version 1 had one full-frame region. Tested in desktop Chrome only; it says nothing
+ * about LED controllers.
  */
 export function createBrowserRoute(
   options: BrowserRouteOptions = {},
@@ -36,12 +37,12 @@ export function createBrowserRoute(
   const profile: CapabilityProfile = Object.freeze(
     CapabilityProfileSchema.parse({
       routeId: 'browser',
-      profileVersion: 1,
+      profileVersion: 2,
       label: 'The browser player',
       mediaTypes: ['image/jpeg', 'image/png', 'video/mp4'],
       videoCodecs: ['h264'],
       fitModes: ['contain', 'cover'],
-      maxRegions: 1,
+      maxRegions: ABSOLUTE.maxLayoutZones,
       audio: false,
       supportsContentRect: true,
       maxCanvas: { width: ABSOLUTE.maxCanvasSidePx, height: ABSOLUTE.maxCanvasSidePx },

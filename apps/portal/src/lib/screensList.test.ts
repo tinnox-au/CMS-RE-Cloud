@@ -14,7 +14,6 @@ import { pruneSelection, selectedRows } from './selection.ts';
 import { SCREEN_STATUS_KINDS } from './screenStatus.ts';
 import { CANVAS_PRESETS } from './screenWizard.ts';
 import {
-  anyHasSchedule,
   assignedDetail,
   assignedDoneText,
   assignedMessage,
@@ -25,14 +24,12 @@ import {
   countByStatusFilter,
   formatStatusFilter,
   frameShape,
-  hasContentAssigned,
   hasUnlistedScreen,
   matchesStatusFilter,
   MIN_FRAME_SHARE,
   parseListView,
   parseStatusFilter,
   pushMarkerFor,
-  SCHEDULE_REPLACED_NOTE,
   SCREEN_SORT_ACCESSORS,
   SCREEN_STATUS_FILTER_HINTS,
   SCREEN_STATUS_FILTER_LABELS,
@@ -68,6 +65,7 @@ function display(n: number, change: Partial<DisplayDto> = {}): DisplayDto {
     tagIds: [],
     assignedPlaylist: null,
     assignedSchedule: null,
+    assignedLayout: null,
     createdAt: T,
     updatedAt: T,
     ...change,
@@ -99,11 +97,13 @@ function planRow(
   state: PushState,
   playlistId: string | null,
   scheduleId: string | null = null,
+  layoutId: string | null = null,
 ): PushPlanRow {
   return {
     display: { id: displayId, name: 'x' },
     playlist: playlistId === null ? null : { id: playlistId, name: 'Loop' },
     schedule: scheduleId === null ? null : { id: scheduleId, name: 'Week' },
+    layout: layoutId === null ? null : { id: layoutId, name: 'Band' },
     state,
     issues: [],
     lastPushedAt: null,
@@ -114,6 +114,8 @@ const PLAYLIST = { id: ID(500), name: 'Reception loop' };
 const OTHER = { id: ID(501), name: 'Foyer loop' };
 /** A schedule whose default playlist is `PLAYLIST`. */
 const SCHEDULE = { id: ID(600), name: 'Opening hours', defaultPlaylist: PLAYLIST };
+/** A layout whose main zone plays `PLAYLIST`. */
+const LAYOUT = { id: ID(700), name: 'Foyer band', mainPlaylist: PLAYLIST };
 
 describe('buildScreenRows', () => {
   const displays = [
@@ -208,6 +210,20 @@ describe('canvasLabel and search', () => {
     // The default playlist is not what the Content column shows.
     expect(screenSearchTexts(row)).not.toContain('Reception loop');
     expect(SCREEN_SORT_ACCESSORS.content?.(row)).toBe('Opening hours');
+  });
+
+  it('searches and sorts a screen with a layout by the name of the layout', () => {
+    const [row] = buildScreenRows({
+      displays: [display(1, { assignedLayout: LAYOUT })],
+      sites: [MELBOURNE],
+      statuses: null,
+      plan: null,
+    });
+    if (row === undefined) throw new Error('no row');
+    expect(screenSearchTexts(row)).toContain('Foyer band');
+    // The main zone's playlist is not what the Content column shows.
+    expect(screenSearchTexts(row)).not.toContain('Reception loop');
+    expect(SCREEN_SORT_ACCESSORS.content?.(row)).toBe('Foyer band');
   });
 });
 
@@ -446,6 +462,36 @@ describe('the push marker', () => {
       }),
     ).toBeNull();
   });
+
+  it('marks the assigned layout when the plan is about it', () => {
+    const laidOut = display(1, { assignedLayout: LAYOUT });
+    expect(
+      pushMarkerFor({
+        display: laidOut,
+        push: planRow(ID(1), 'blocked', PLAYLIST.id, null, LAYOUT.id.toUpperCase()),
+      }),
+    ).toBe('blocked');
+    // The plan is still about another layout, or about the playlist that was assigned before.
+    expect(
+      pushMarkerFor({
+        display: laidOut,
+        push: planRow(ID(1), 'changes', PLAYLIST.id, null, ID(701)),
+      }),
+    ).toBeNull();
+    expect(
+      pushMarkerFor({ display: laidOut, push: planRow(ID(1), 'changes', PLAYLIST.id) }),
+    ).toBeNull();
+  });
+
+  it('does not take the plan row of a layout for the playlist of its main zone', () => {
+    const assigned = display(1, { assignedPlaylist: PLAYLIST });
+    expect(
+      pushMarkerFor({
+        display: assigned,
+        push: planRow(ID(1), 'changes', PLAYLIST.id, null, LAYOUT.id),
+      }),
+    ).toBeNull();
+  });
 });
 
 describe('frameShape', () => {
@@ -569,20 +615,11 @@ describe('assigning content', () => {
     expect(commonPlaylistId([scheduled])).toBeNull();
   });
 
-  it('says that a playlist takes the place of a schedule only when a screen has one', () => {
-    const scheduled = display(5, { assignedSchedule: SCHEDULE });
-    expect(anyHasSchedule([a, c])).toBe(false);
-    expect(anyHasSchedule([a, scheduled])).toBe(true);
-    expect(anyHasSchedule([])).toBe(false);
-    expect(SCHEDULE_REPLACED_NOTE).toBe(
-      'A screen that has a schedule gets this playlist instead of its schedule.',
-    );
-  });
-
-  it('knows a screen with a schedule has content to push', () => {
-    expect(hasContentAssigned(a)).toBe(true);
-    expect(hasContentAssigned(display(5, { assignedSchedule: SCHEDULE }))).toBe(true);
-    expect(hasContentAssigned(c)).toBe(false);
+  it('counts a screen with a layout for any playlist, its main zone playlist included', () => {
+    const laidOut = display(5, { assignedLayout: LAYOUT });
+    expect(screensToAssign([a, laidOut], PLAYLIST.id).map((x) => x.id)).toEqual([ID(5)]);
+    expect(screensToAssign([laidOut], null)).toEqual([]);
+    expect(commonPlaylistId([laidOut])).toBeNull();
   });
 
   it('starts on the playlist every screen shares', () => {

@@ -2,12 +2,12 @@ import { z } from 'zod';
 import { DisplayIdSchema, PublicationIdSchema, UtcTimestampSchema } from './ids.ts';
 import { ABSOLUTE } from './limits.ts';
 import { PublishRejectionCodeSchema } from './playlist.ts';
-import { DisplayRefSchema, PlaylistRefSchema, ScheduleRefSchema } from './refs.ts';
+import { DisplayRefSchema, LayoutRefSchema, PlaylistRefSchema, ScheduleRefSchema } from './refs.ts';
 
 /**
  * Where a display stands between what is assigned to it and what it was last given
  * (portal v2 decision P2-05: assign, then push).
- * - nothing_assigned: neither a playlist nor a schedule is assigned; there is nothing to push
+ * - nothing_assigned: no playlist, schedule or layout is assigned; there is nothing to push
  * - blocked: the assigned content cannot be published to this display; `issues` say why
  * - never_pushed: content is assigned and publishable, and the display has no publication yet
  * - changes: the publication that would be built now differs from the display's current one
@@ -42,7 +42,10 @@ const MAX_ISSUES = 100;
  * `path` is `playlist` or `items[n]` for a playlist, and `default.playlist`,
  * `default.items[n]`, `events[n].playlist`, `events[n].items[n]` or `schedule` for a schedule
  * (the event is the first one that uses the playlist; item numbers count inside that playlist;
- * `schedule` is a problem of all its playlists together).
+ * `schedule` is a problem of all its playlists together). For a layout it is
+ * `zones[n].playlist`, `zones[n].items[k]`, `zones[n]` (the zone is too small on this screen)
+ * or `layout` (n is the zone, from 0; item numbers count inside that zone's playlist; `layout`
+ * is a problem of all its playlists together).
  */
 export const PushIssueSchema = z
   .object({
@@ -59,11 +62,14 @@ export const PushPlanRowSchema = z
     display: DisplayRefSchema,
     /**
      * The assigned playlist, or for a display with a schedule the schedule's default
-     * playlist; null exactly when `state` is `nothing_assigned`.
+     * playlist, or for a display with a layout the main zone's playlist; null exactly when
+     * `state` is `nothing_assigned`.
      */
     playlist: PlaylistRefSchema.nullable(),
-    /** The assigned schedule; null for a display with a playlist or with nothing assigned. */
+    /** The assigned schedule; null for a display with a playlist, a layout or nothing assigned. */
     schedule: ScheduleRefSchema.nullable(),
+    /** The assigned layout; null otherwise. */
+    layout: LayoutRefSchema.nullable(),
     state: PushStateSchema,
     /** Empty unless `state` is `blocked`. */
     issues: z.array(PushIssueSchema).max(MAX_ISSUES),
@@ -84,6 +90,20 @@ export const PushPlanRowSchema = z
         code: 'custom',
         path: ['schedule'],
         message: 'a row with a schedule carries the default playlist of the schedule',
+      });
+    }
+    if (row.layout !== null && row.playlist === null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['layout'],
+        message: 'a row with a layout carries the playlist of its main zone',
+      });
+    }
+    if (row.layout !== null && row.schedule !== null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['layout'],
+        message: 'a row has a schedule or a layout, not both',
       });
     }
     if (row.issues.length > 0 !== (row.state === 'blocked')) {

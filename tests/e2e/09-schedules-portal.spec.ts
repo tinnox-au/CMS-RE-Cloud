@@ -53,6 +53,7 @@ async function storedSchedule(id: string): Promise<StoredSchedule> {
 async function assignedContent(): Promise<{
   assignedPlaylist: { id: string } | null;
   assignedSchedule: { id: string } | null;
+  assignedLayout: { id: string } | null;
 }> {
   const response = await operator.api.get(`/api/displays/${displayId}`);
   expect(response.status(), await response.text()).toBe(200);
@@ -253,6 +254,7 @@ test('the schedule is assigned on the screen page, and a push brings the screen 
   expect(await assignedContent()).toMatchObject({
     assignedPlaylist: null,
     assignedSchedule: { id: scheduleId },
+    assignedLayout: null,
   });
 
   // The screen page has its own push control; the header button is on the list pages.
@@ -310,7 +312,7 @@ test('assigning a playlist to the screen replaces its schedule, and the dialog s
   const picker = page.getByTestId('screen-detail-playlist-picker');
   await expect(picker).toBeVisible();
   await expect(picker).toContainText(
-    'A screen that has a schedule gets this playlist instead of its schedule.',
+    'A screen that has a schedule or a layout gets this playlist instead.',
   );
   await picker.getByTestId('screen-detail-playlist-picker-search').fill(lunchName);
   await picker.getByRole('radio', { name: lunchName }).check();
@@ -321,6 +323,7 @@ test('assigning a playlist to the screen replaces its schedule, and the dialog s
   expect(await assignedContent()).toMatchObject({
     assignedPlaylist: { id: lunchId },
     assignedSchedule: null,
+    assignedLayout: null,
   });
 
   // Free again, the schedule can be deleted from its editor.

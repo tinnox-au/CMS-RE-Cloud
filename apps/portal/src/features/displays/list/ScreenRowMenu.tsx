@@ -1,5 +1,6 @@
 import type { DisplayDto } from '@tinnox/contracts';
-import { hasContentAssigned, type ScreenRow } from '../../../lib/screensList.ts';
+import { assignedContent } from '../../../lib/assignedContent.ts';
+import type { ScreenRow } from '../../../lib/screensList.ts';
 import { Ellipsis, Eye, ListVideo, Send, Tags, Unlink } from '../../../ui/icons.ts';
 import { IconButton, Menu, MenuItem, MenuSeparator } from '../../../ui/index.ts';
 
@@ -18,7 +19,7 @@ export interface ScreenRowMenuProps {
  */
 export function ScreenRowMenu({ row, onAssign, onPush, onEditTags, onRevoke }: ScreenRowMenuProps) {
   const { display } = row;
-  const nothingAssigned = !hasContentAssigned(display);
+  const nothingAssigned = assignedContent(display) === null;
   return (
     <Menu
       placement="bottom-end"

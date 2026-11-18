@@ -40,9 +40,11 @@ describe('navigation data', () => {
     const planned = sidebarLinks()
       .filter((link) => link.planned === true)
       .map((link) => link.to);
-    expect(planned).toEqual(['/media/audio', '/media/documents', '/media/web-pages', '/layouts']);
+    expect(planned).toEqual(['/media/audio', '/media/documents', '/media/web-pages']);
     // Built in stage B, slice 3.
     expect(sidebarLinks().find((link) => link.to === '/schedules')?.planned).toBeUndefined();
+    // Built in stage B, slice 4.
+    expect(sidebarLinks().find((link) => link.to === '/layouts')?.planned).toBeUndefined();
   });
 
   it('lists the account menu as Settings, Users, Audit log', () => {
@@ -98,6 +100,7 @@ describe('activeNavId', () => {
     ['/playlists', 'playlists'],
     ['/playlists/0b6f1c1e-6c1e-4b7e-9a51-0d6f3c1f2a10', 'playlists'],
     ['/layouts', 'layouts'],
+    ['/layouts/0b6f1c1e-6c1e-4b7e-9a51-0d6f3c1f2a10', 'layouts'],
     ['/schedules', 'schedules'],
     ['/schedules/0b6f1c1e-6c1e-4b7e-9a51-0d6f3c1f2a10', 'schedules'],
     ['/screens', 'screens'],
@@ -131,9 +134,9 @@ describe('activeGroupId', () => {
 describe('navItemName', () => {
   it('says when an entry is planned', () => {
     const links = sidebarLinks();
-    const layouts = links.find((link) => link.id === 'layouts');
+    const audio = links.find((link) => link.id === 'media-audio');
     const playlists = links.find((link) => link.id === 'playlists');
-    expect(layouts === undefined ? '' : navItemName(layouts)).toBe('Layouts (planned)');
+    expect(audio === undefined ? '' : navItemName(audio)).toBe('Audio (planned)');
     expect(playlists === undefined ? '' : navItemName(playlists)).toBe('Playlists');
   });
 });

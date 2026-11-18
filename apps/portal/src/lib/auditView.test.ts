@@ -398,6 +398,63 @@ describe('audit actor and object', () => {
     expect(auditObjectText(updated, names)).toBe('Opening hours');
   });
 
+  it('labels layout events and points at the layout and its main playlist', () => {
+    const updated = event({
+      action: 'layout.update',
+      objectType: 'layout',
+      objectId: ID(10),
+      detail: { mainPlaylistId: ID(3), zoneCount: 2 },
+    });
+    expect(auditActionLabel(updated)).toBe('Layout updated');
+    expect(AUDIT_CATEGORY_LABELS.layout).toBe('Layouts');
+    expect(auditObjectTypeLabel('layout')).toBe('Layout');
+    expect(auditTargetLabel('layout')).toBe('Layout');
+    expect(auditTargetPath({ kind: 'layout', id: ID(10) })).toBe(`/layouts/${ID(10)}`);
+    // The main zone's playlist of the detail is a related playlist, with a name and a link.
+    expect(auditTargets(updated)).toEqual({
+      primary: { kind: 'layout', id: ID(10) },
+      related: [{ kind: 'playlist', id: ID(3) }],
+    });
+    expect(auditSubject(updated)).toEqual({ kind: 'layout', id: ID(10) });
+
+    // A screen given a layout, and the push that followed.
+    expect(
+      auditTargets(
+        event({
+          detail: {
+            fields: ['assignedLayoutId'],
+            assignedLayoutId: ID(10),
+            assignedPlaylistId: null,
+          },
+        }),
+      ).related,
+    ).toEqual([{ kind: 'layout', id: ID(10) }]);
+    expect(
+      auditTargets(
+        event({
+          action: 'publication.create',
+          objectType: 'publication',
+          objectId: ID(8),
+          detail: { displayId: ID(1), playlistId: ID(3), layoutId: ID(10) },
+        }),
+      ).related,
+    ).toEqual([
+      { kind: 'display', id: ID(1) },
+      { kind: 'playlist', id: ID(3) },
+      { kind: 'layout', id: ID(10) },
+    ]);
+
+    const names: AuditNames = { ...NO_AUDIT_NAMES, layout: new Map([[ID(10), 'Menu band']]) };
+    expect(NO_AUDIT_NAMES.layout).toBeNull();
+    expect(resolveAuditTarget({ kind: 'layout', id: ID(10) }, names)).toEqual({
+      state: 'found',
+      name: 'Menu band',
+      path: `/layouts/${ID(10)}`,
+    });
+    expect(resolveAuditTarget({ kind: 'layout', id: ID(9) }, names)).toEqual({ state: 'gone' });
+    expect(auditObjectText(updated, names)).toBe('Menu band');
+  });
+
   it('resolves an object against the lists that were read', () => {
     const names: AuditNames = {
       ...NO_AUDIT_NAMES,

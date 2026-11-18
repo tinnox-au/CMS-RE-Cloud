@@ -43,6 +43,14 @@ export function contentRectProblem(canvas: Canvas, rect: Rect): string | null {
   return null;
 }
 
+/** True when the interiors of two rectangles intersect; rectangles that only touch do not overlap. Any unit. */
+export function rectsOverlap(
+  a: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+  b: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
 /**
  * A canvas plus an optional content rectangle inside it. Content is rendered
  * only inside the content rectangle (the whole canvas when it is null); the

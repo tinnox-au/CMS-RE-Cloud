@@ -227,7 +227,6 @@ export function buildPublicationDraft(
       displayId: display.id,
       canvas: display.canvas,
       contentRect: display.contentRect,
-      regions: 1,
       audio: false,
       items: resolved,
       transition: playback.transition,
@@ -236,6 +235,7 @@ export function buildPublicationDraft(
       workingHours: display.workingHours,
       timeZone: display.timeZone,
       schedule: null,
+      zones: null,
     },
   };
 }

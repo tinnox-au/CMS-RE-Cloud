@@ -24,6 +24,7 @@ import {
   type PushPlanRow,
   type Transition,
 } from '@tinnox/contracts';
+import { planRowContent } from './assignedContent.ts';
 import { durationFieldText } from './duration.ts';
 import { countLabel, matchesSearch } from './listView.ts';
 import { formatClock, mediaDetailsLabel, mediaDisplayName, mediaKindLabel } from './mediaName.ts';
@@ -652,17 +653,18 @@ function sameId(a: string, b: string): boolean {
 
 /**
  * The screens that have this playlist assigned directly, in the order of the push plan. The
- * row of a screen with a schedule carries the schedule's default playlist as its playlist;
- * such a screen is not one of this playlist's, so it is left out.
+ * row of a screen with a schedule or a layout carries the default or main zone playlist as
+ * its playlist; such a screen is not one of this playlist's, so it is left out.
  */
 export function rowsForPlaylist(
   plan: PushPlanResponse | null,
   playlistId: string,
 ): readonly PushPlanRow[] {
   if (plan === null) return [];
-  return plan.items.filter(
-    (row) => row.schedule === null && row.playlist !== null && sameId(row.playlist.id, playlistId),
-  );
+  return plan.items.filter((row) => {
+    const content = planRowContent(row);
+    return content?.kind === 'playlist' && sameId(content.id, playlistId);
+  });
 }
 
 /** How many of the rows a push would act on (changes waiting, or never pushed). */
@@ -704,7 +706,7 @@ export function pushSummary(rows: readonly PushPlanRow[]): string {
 export function pushHoldReason(dirty: boolean, rows: readonly PushPlanRow[]): string | null {
   if (dirty) return 'Save the draft first. Only the saved playlist can be pushed.';
   if (rows.length === 0) {
-    return 'No screen has this playlist assigned directly. Screens that play it through a schedule are pushed with Push to screens.';
+    return 'No screen has this playlist assigned directly. Screens that play it through a schedule or a layout are pushed with Push to screens.';
   }
   return null;
 }

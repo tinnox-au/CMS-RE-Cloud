@@ -20,6 +20,9 @@ import {
   FolderNameSchema,
   FolderPatchSchema,
   IdParamSchema,
+  LayoutDtoSchema,
+  LayoutInputSchema,
+  LayoutListResponseSchema,
   MEDIA_KINDS,
   MediaDtoSchema,
   MediaPatchSchema,
@@ -27,6 +30,7 @@ import {
   NameSchema,
   OverviewResponseSchema,
   PLAYLIST_PREVIEW_COUNT,
+  PUBLISH_REJECTION_CODES,
   PUSH_OUTCOMES,
   PUSH_PENDING_STATES,
   PUSH_STATES,
@@ -111,6 +115,7 @@ const displayDto = (o: Record<string, unknown> = {}) => ({
   tagIds: [],
   assignedPlaylist: null,
   assignedSchedule: null,
+  assignedLayout: null,
   createdAt: NOW,
   updatedAt: NOW,
   ...o,
@@ -648,7 +653,13 @@ describe('displays', () => {
         }),
       ),
     ).toBe(true);
-    for (const field of ['description', 'tagIds', 'assignedPlaylist', 'assignedSchedule']) {
+    for (const field of [
+      'description',
+      'tagIds',
+      'assignedPlaylist',
+      'assignedSchedule',
+      'assignedLayout',
+    ]) {
       expect(ok(DisplayDtoSchema, without(displayDto(), field)), field).toBe(false);
     }
     const bad = [
@@ -734,13 +745,65 @@ describe('displays', () => {
     expect(both.success).toBe(false);
     if (!both.success) {
       expect(both.error.issues).toMatchObject([
-        { path: ['assignedScheduleId'], message: 'assign a playlist or a schedule, not both' },
+        {
+          path: ['assignedScheduleId'],
+          message: 'assign one of a playlist, a schedule or a layout',
+        },
       ]);
     }
     expect(ok(DisplayPatchSchema, { assignedScheduleId: 'none' })).toBe(false);
     expect(ok(DisplayPatchSchema, { assignedSchedule: { id: U(70), name: 'Cafe week' } })).toBe(
       false,
     );
+  });
+
+  it('carries an assigned layout with its main zone playlist', () => {
+    const assignedLayout = {
+      id: U(80),
+      name: 'Foyer with band',
+      mainPlaylist: { id: U(40), name: 'Reception loop' },
+    };
+    expect(ok(DisplayDtoSchema, displayDto({ assignedLayout }))).toBe(true);
+    const bad = [
+      displayDto({ assignedLayout: U(80) }),
+      displayDto({ assignedLayout: { id: U(80), name: 'Foyer with band' } }),
+      displayDto({ assignedLayout: { ...assignedLayout, name: '' } }),
+      displayDto({ assignedLayout: { ...assignedLayout, mainPlaylist: U(40) } }),
+      displayDto({ assignedLayout: { ...assignedLayout, zones: [] } }),
+      displayDto({ assignedLayoutId: U(80) }),
+    ];
+    bad.forEach((b, i) => expect(ok(DisplayDtoSchema, b), `case ${i}`).toBe(false));
+  });
+
+  it('patches the assigned layout, and never two kinds of content together', () => {
+    expect(DisplayPatchSchema.parse({ assignedLayoutId: U(80) })).toEqual({
+      assignedLayoutId: U(80),
+    });
+    expect(DisplayPatchSchema.parse({ assignedLayoutId: null })).toEqual({
+      assignedLayoutId: null,
+    });
+    const none = { assignedPlaylistId: null, assignedScheduleId: null, assignedLayoutId: null };
+    expect(ok(DisplayPatchSchema, none)).toBe(true);
+    for (const key of ['assignedPlaylistId', 'assignedScheduleId', 'assignedLayoutId']) {
+      expect(ok(DisplayPatchSchema, { ...none, [key]: U(90) }), key).toBe(true);
+    }
+    const message = 'assign one of a playlist, a schedule or a layout';
+    // The path is the second id in the order playlist, schedule, layout.
+    for (const [patch, path] of [
+      [{ assignedPlaylistId: U(40), assignedLayoutId: U(80) }, 'assignedLayoutId'],
+      [{ assignedScheduleId: U(70), assignedLayoutId: U(80) }, 'assignedLayoutId'],
+      [{ ...none, assignedPlaylistId: U(40), assignedScheduleId: U(70) }, 'assignedScheduleId'],
+      [
+        { assignedPlaylistId: U(40), assignedScheduleId: U(70), assignedLayoutId: U(80) },
+        'assignedScheduleId',
+      ],
+    ] as const) {
+      const parsed = DisplayPatchSchema.safeParse(patch);
+      expect(parsed.success, JSON.stringify(patch)).toBe(false);
+      if (!parsed.success) expect(parsed.error.issues).toMatchObject([{ path: [path], message }]);
+    }
+    expect(ok(DisplayPatchSchema, { assignedLayoutId: 'none' })).toBe(false);
+    expect(ok(DisplayPatchSchema, { assignedLayout: { id: U(80), name: 'Band' } })).toBe(false);
   });
 
   it('lists the status of every display', () => {
@@ -764,10 +827,12 @@ describe('push to displays', () => {
   const display = { id: U(3), name: 'Foyer wall' };
   const playlist = { id: U(40), name: 'Reception loop' };
   const schedule = { id: U(70), name: 'Cafe week' };
+  const layout = { id: U(80), name: 'Foyer with band' };
   const row = (o: Record<string, unknown> = {}) => ({
     display,
     playlist,
     schedule: null,
+    layout: null,
     state: 'changes',
     issues: [],
     lastPushedAt: NOW,
@@ -827,6 +892,42 @@ describe('push to displays', () => {
     );
     expect(bare.success).toBe(false);
     if (!bare.success) expect(bare.error.issues.map((i) => i.path)).toEqual([['schedule']]);
+  });
+
+  it('names the layout of a display with a layout beside its main zone playlist', () => {
+    const rows = [
+      row({ layout }),
+      row({ layout, state: 'never_pushed', lastPushedAt: null }),
+      row({
+        layout,
+        state: 'blocked',
+        issues: [
+          { ...issue, path: 'zones[1].playlist' },
+          { path: 'zones[0].items[2]', message: 'Item 3 failed.', code: 'media_failed' },
+          { path: 'zones[1]', message: 'The band is too thin.', code: 'zone_too_small' },
+          { path: 'layout', message: 'Too many items.', code: 'too_many_items' },
+        ],
+      }),
+    ];
+    rows.forEach((r, i) => expect(ok(PushPlanRowSchema, r), `case ${i}`).toBe(true));
+    expect(ok(PushPlanRowSchema, without(row(), 'layout'))).toBe(false);
+    expect(ok(PushPlanRowSchema, row({ layout: { ...layout, zones: [] } }))).toBe(false);
+    const bare = PushPlanRowSchema.safeParse(
+      row({ layout, playlist: null, state: 'nothing_assigned', lastPushedAt: null }),
+    );
+    expect(bare.success).toBe(false);
+    if (!bare.success) {
+      expect(bare.error.issues).toMatchObject([
+        { path: ['layout'], message: 'a row with a layout carries the playlist of its main zone' },
+      ]);
+    }
+    const both = PushPlanRowSchema.safeParse(row({ layout, schedule }));
+    expect(both.success).toBe(false);
+    if (!both.success) {
+      expect(both.error.issues).toMatchObject([
+        { path: ['layout'], message: 'a row has a schedule or a layout, not both' },
+      ]);
+    }
   });
 
   it('refuses a row that contradicts itself', () => {
@@ -1025,6 +1126,133 @@ describe('schedules', () => {
   });
 });
 
+describe('layouts', () => {
+  const playlist = { id: U(40), name: 'Reception loop' };
+  const band = { id: U(41), name: 'Ticker' };
+  // A main zone and a 15 % band along the bottom.
+  const box = (y: number, height: number) => ({ x: 0, y, width: 10_000, height });
+  const input = (o: Record<string, unknown> = {}) => ({
+    name: 'Foyer with band',
+    zones: [
+      { playlistId: U(40), ...box(0, 8500) },
+      { playlistId: U(41), ...box(8500, 1500) },
+    ],
+    ...o,
+  });
+  const zones = (...rest: Record<string, unknown>[]) => [
+    { playlistId: U(40), ...box(0, 8500) },
+    ...rest,
+  ];
+  const paths = (value: unknown) => {
+    const parsed = LayoutInputSchema.safeParse(value);
+    return parsed.success ? [] : parsed.error.issues.map((i) => i.path.join('.'));
+  };
+  const dto = (o: Record<string, unknown> = {}) => ({
+    id: U(80),
+    name: 'Foyer with band',
+    description: null,
+    zones: [
+      { playlist, ...box(0, 8500) },
+      { playlist: band, ...box(8500, 1500) },
+    ],
+    assignedDisplayCount: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...o,
+  });
+
+  it('takes one body for create and replace, with two to four zones', () => {
+    expect(ABSOLUTE.maxLayoutZones).toBe(4);
+    expect(LayoutInputSchema.parse(input({ name: '  Foyer with band  ' }))).toEqual(input());
+    expect(LayoutInputSchema.parse(input({ description: '  ' })).description).toBeNull();
+    expect(LayoutInputSchema.parse(input({ description: null })).description).toBeNull();
+    // The same playlist in two zones is allowed.
+    expect(
+      ok(LayoutInputSchema, input({ zones: zones({ playlistId: U(40), ...box(8500, 1500) }) })),
+    ).toBe(true);
+    const four = zones(
+      { playlistId: U(41), ...box(8500, 500) },
+      { playlistId: U(41), ...box(9000, 500) },
+      { playlistId: U(41), ...box(9500, 500) },
+    );
+    expect(ok(LayoutInputSchema, input({ zones: four }))).toBe(true);
+    const five = [...four, { playlistId: U(41), x: 0, y: 0, width: 1, height: 1 }];
+    for (const bad of [
+      input({ zones: zones() }),
+      input({ zones: five }),
+      input({ zones: [] }),
+      without(input(), 'zones'),
+      without(input(), 'name'),
+      input({ name: ' ' }),
+      input({ description: 'a\tb' }),
+      input({ zones: zones({ playlistId: U(41), ...box(8500, 1500), width: 0 }) }),
+      input({ zones: zones({ playlistId: U(41), ...box(8500, 1500), x: -1 }) }),
+      input({ zones: zones({ playlistId: U(41), ...box(8500, 1500), y: 8500.5 }) }),
+      input({ zones: zones({ ...box(8500, 1500) }) }),
+      input({ zones: zones({ playlistId: U(41), ...box(8500, 1500), name: 'Band' }) }),
+      input({ zones: zones({ playlist: band, ...box(8500, 1500) }) }),
+      input({ id: U(80) }),
+      input({ orgId: U(1) }),
+    ])
+      expect(ok(LayoutInputSchema, bad), JSON.stringify(bad).slice(0, 120)).toBe(false);
+  });
+
+  it('names a refused field by its path in the body, and says which zones overlap', () => {
+    const band = (o: Record<string, unknown>) => ({ playlistId: U(41), ...box(8500, 1500), ...o });
+    expect(paths(input({ zones: zones(band({ x: 1, width: 10_000 })) }))).toEqual([
+      'zones.1.width',
+    ]);
+    expect(paths(input({ zones: zones(band({ height: 1501 })) }))).toEqual(['zones.1.height']);
+    const tooTall = LayoutInputSchema.safeParse(input({ zones: zones(band({ height: 1501 })) }));
+    if (!tooTall.success) {
+      expect(tooTall.error.issues[0]?.message).toBe('y + height must not exceed 10000');
+    }
+    expect(paths(input({ zones: zones(band({ playlistId: 'none' })) }))).toEqual([
+      'zones.1.playlistId',
+    ]);
+    expect(paths(input({ zones: zones(band({ width: 0 })) }))).toEqual(['zones.1.width']);
+    expect(paths(input({ zones: zones(band({ x: -1 })) }))).toEqual(['zones.1.x']);
+    expect(paths(input({ zones: zones() }))).toEqual(['zones']);
+    expect(paths(input({ description: 'a\tb' }))).toEqual(['description']);
+    const overlap = LayoutInputSchema.safeParse(input({ zones: zones(band({ y: 8499 })) }));
+    expect(overlap.success).toBe(false);
+    if (!overlap.success) {
+      expect(overlap.error.issues).toMatchObject([
+        { path: ['zones', 1], message: 'zone 2 overlaps zone 1' },
+      ]);
+    }
+    // Zones that only touch do not overlap; the third overlaps the second, not the first.
+    expect(paths(input({ zones: zones(band({}), band({ y: 9000, height: 1000 })) }))).toEqual([
+      'zones.2',
+    ]);
+    const third = LayoutInputSchema.safeParse(
+      input({ zones: zones(band({}), band({ y: 9000, height: 1000 })) }),
+    );
+    if (!third.success) expect(third.error.issues[0]?.message).toBe('zone 3 overlaps zone 2');
+  });
+
+  it('describes a layout and the list strictly', () => {
+    expect(ok(LayoutDtoSchema, dto())).toBe(true);
+    expect(
+      ok(LayoutDtoSchema, dto({ description: 'With a ticker.', assignedDisplayCount: 3 })),
+    ).toBe(true);
+    expect(ok(LayoutListResponseSchema, { items: [dto(), dto({ id: U(81) })] })).toBe(true);
+    for (const field of Object.keys(dto())) {
+      expect(ok(LayoutDtoSchema, without(dto(), field)), field).toBe(false);
+    }
+    const bad = [
+      dto({ description: '' }),
+      dto({ zones: [dto().zones[0]] }),
+      dto({ zones: [{ playlistId: U(40), ...box(0, 8500) }, dto().zones[1]] }),
+      dto({ zones: [{ playlist: U(40), ...box(0, 8500) }, dto().zones[1]] }),
+      dto({ assignedDisplayCount: -1 }),
+      dto({ mainPlaylist: playlist }),
+    ];
+    bad.forEach((b, i) => expect(ok(LayoutDtoSchema, b), `case ${i}`).toBe(false));
+    expect(ok(LayoutListResponseSchema, { items: [], total: 0 })).toBe(false);
+  });
+});
+
 describe('overview', () => {
   const overview = (o: Record<string, unknown> = {}) => ({
     displays: {
@@ -1194,6 +1422,21 @@ describe('errors and routes', () => {
     expect(ROUTES.schedulePattern).toBe('/api/schedules/:id');
     expect(ROUTES.schedule(U(70))).toBe(`/api/schedules/${U(70)}`);
     expect(ROUTES.schedule('../x')).toBe('/api/schedules/..%2Fx');
+  });
+
+  it('has the code, audit actions, routes and push refusal of layouts', () => {
+    expect(API_ERROR_CODES).toContain('layout_in_use');
+    for (const action of ['layout.create', 'layout.update', 'layout.delete'] as const) {
+      expect(AUDIT_ACTIONS).toContain(action);
+      expect(auditCategoryOf(action)).toBe('layout');
+    }
+    expect(AUDIT_CATEGORIES).toContain('layout');
+    expect(ROUTES.layouts).toBe('/api/layouts');
+    expect(ROUTES.layoutPattern).toBe('/api/layouts/:id');
+    expect(ROUTES.layout(U(80))).toBe(`/api/layouts/${U(80)}`);
+    expect(ROUTES.layout('../x')).toBe('/api/layouts/..%2Fx');
+    expect(PUBLISH_REJECTION_CODES).toContain('zone_too_small');
+    expect(new Set(PUBLISH_REJECTION_CODES).size).toBe(PUBLISH_REJECTION_CODES.length);
   });
 
   it('builds every stage A path and percent-encodes its parameter', () => {

@@ -21,10 +21,12 @@ import {
   actAsWorker,
   assignPlaylist,
   createDisplay,
+  createLayout,
   createOrg,
   createPlaylist,
   createSchedule,
   imageItem,
+  layoutZones,
   pairPlayer,
   pngBytes,
   push,
@@ -360,6 +362,7 @@ describe('dashboard numbers, status of every display, audit filters', () => {
       const empty = await createPlaylist(operator, 'Empty');
       await assignPlaylist(operator, display.id, empty);
       await createSchedule(operator, 'Week', empty);
+      await createLayout(operator, 'Split', layoutZones(empty, empty));
       // A failure (blocked push) and a denial (wrong pairing code), next to the successes.
       await push(operator, [display.id]);
       await operator.fetch(`/api/displays/${display.id}/claim`, {
@@ -375,7 +378,16 @@ describe('dashboard numbers, status of every display, audit filters', () => {
 
     it('recorded events of several categories and results to filter', () => {
       expect(new Set(all.map((e) => auditCategoryOf(e.action)))).toEqual(
-        new Set(['display', 'playlist', 'schedule', 'publication', 'pairing', 'tag', 'folder']),
+        new Set([
+          'display',
+          'playlist',
+          'schedule',
+          'layout',
+          'publication',
+          'pairing',
+          'tag',
+          'folder',
+        ]),
       );
       expect(new Set(all.map((e) => e.result))).toEqual(new Set(['success', 'failure', 'denied']));
     });
@@ -385,6 +397,7 @@ describe('dashboard numbers, status of every display, audit filters', () => {
         'display',
         'playlist',
         'schedule',
+        'layout',
         'publication',
         'pairing',
         'tag',

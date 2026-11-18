@@ -22,6 +22,7 @@ import { SyncLoop } from './core/sync.ts';
 import { coveringSlices, localWallClock } from './core/time-rules.ts';
 import { sleep, systemClock } from './core/timing.ts';
 import type { PairingRecord, RegistrationRecord, StagingRecord } from './core/types.ts';
+import { ZoneSet } from './core/zones.ts';
 import { PlayerHttpApi } from './platform/api.ts';
 import {
   CacheAssetStore,
@@ -37,6 +38,7 @@ import { registerShellWorker, shellCacheStatus } from './platform/sw-register.ts
 import { Diagnostics, type DiagnosticsModel } from './ui/diagnostics.ts';
 import { DomPresenter, FADE_MS } from './ui/presenter.ts';
 import { Screens } from './ui/screens.ts';
+import { DomStage } from './ui/stage.ts';
 
 const PAIRING_BACKOFF: BackoffPolicy = { baseMs: 5_000, maxMs: 2 * 60_000, factor: 2, jitter: 0.5 };
 /** A stored pairing session is reused after a reload only if it has at least this long left. */
@@ -59,7 +61,10 @@ interface Session {
   readonly sync: SyncLoop;
   readonly heartbeat: HeartbeatLoop;
   readonly playback: PlaybackLoop;
+  readonly stage: DomStage;
+  /** The main zone's presenter; zones 1 and up live in `zones`. */
   readonly presenter: DomPresenter;
+  readonly zones: ZoneSet;
   /** Tells the server this player gives up its credential. Best effort. */
   readonly release: () => Promise<boolean>;
   staging: StagingRecord | null;
@@ -413,12 +418,31 @@ export class PlayerApp {
     const deviceApi = this.#api.forDevice(deviceToken);
     // shortcut: clock offset is not persisted; store it in idb if screens reboot offline with bad clocks.
     const clock = { now: () => Date.now() + this.#clockOffsetMs };
-    const presenter = new DomPresenter(this.#stage, (sha256) => assets.getBlob(sha256), clock.now);
+    const getBlob = (sha256: string): Promise<Blob | null> => assets.getBlob(sha256);
+    const stage = new DomStage(this.#stage);
+    const presenter = new DomPresenter(stage, 0, getBlob, clock.now);
+    // Zones 1 and up only play and report failures; zone 0 speaks for the screen.
+    const zones = new ZoneSet({
+      createPresenter: (zone) => new DomPresenter(stage, zone, getBlob, clock.now),
+      createLoop: (zone, zonePresenter, loadActive, zoneSignal) =>
+        new PlaybackLoop({
+          loadActive,
+          presenter: zonePresenter,
+          clock,
+          sleep,
+          random: Math.random,
+          signal: zoneSignal,
+          onEvent: (event) => {
+            if (event.type === 'item_failed') this.#report(event.error);
+          },
+        }),
+      signal,
+    });
     const displayName = registration.display.name;
     const onRevoked = (): void => void this.#handleRevoked();
 
     const playback = new PlaybackLoop({
-      loadActive: async () => (await store.getActive())?.manifest ?? null,
+      loadActive: async () => zones.adopt((await store.getActive())?.manifest ?? null),
       presenter,
       clock,
       sleep,
@@ -439,7 +463,7 @@ export class PlayerApp {
         api: deviceApi,
         digest: sha256Hex,
         probe: (asset, blob) => probeAsset(asset, blob),
-        inUse: () => presenter.inUse(),
+        inUse: () => new Set([...presenter.inUse(), ...zones.inUse()]),
         clock: systemClock,
         sleep,
         random: Math.random,
@@ -508,7 +532,9 @@ export class PlayerApp {
       sync,
       heartbeat,
       playback,
+      stage,
       presenter,
+      zones,
       release: () => deviceApi.releaseRegistration(RELEASE_TIMEOUT_MS),
       staging: null,
       rendering: null,
@@ -523,6 +549,7 @@ export class PlayerApp {
     const session = this.#session;
     if (session === null) return;
     switch (event.type) {
+      // shortcut: heartbeat v1 reports the main zone; a band can play while the screen reports idle. Heartbeat v2 with per-zone state if support needs it.
       case 'item_started': {
         const publicationChanged = session.rendering?.publicationId !== event.publicationId;
         session.rendering = { publicationId: event.publicationId, itemIndex: event.index };
@@ -600,6 +627,8 @@ export class PlayerApp {
     this.#session = null;
     session.abort.abort();
     session.presenter.clear();
+    session.zones.stopAll();
+    session.stage.dispose();
     this.#revokedDisplayName = session.registration.display.name;
     this.#screens.revoked(this.#revokedDisplayName, () => void this.reset());
     try {
@@ -624,6 +653,8 @@ export class PlayerApp {
     this.#session = null;
     session?.abort.abort();
     session?.presenter.clear();
+    session?.zones.stopAll();
+    session?.stage.dispose();
     this.#screens.starting('Removing registration and cached content…');
     // Ask the server to revoke the credential that is about to be deleted. If the server
     // cannot be reached the local reset still happens; the credential then stays valid on

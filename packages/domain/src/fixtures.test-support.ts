@@ -1,4 +1,5 @@
 import {
+  ABSOLUTE,
   DEFAULT_LIMITS,
   type AppContent,
   type CapabilityProfile,
@@ -6,8 +7,10 @@ import {
   type Limits,
 } from '@tinnox/contracts';
 import { checkCapabilities } from './capability.ts';
+import { planLayoutPublication, type LayoutPlanInput } from './layout.ts';
 import { planPublication, type PlanPublicationResult } from './manifest.ts';
 import { planSchedulePublication, type SchedulePlanInput } from './schedule.ts';
+import type { PlanPlaylist } from './sources.ts';
 import type {
   AppRecord,
   DisplayTarget,
@@ -40,6 +43,7 @@ export const ID = {
   listDefault: '66666666-6666-4666-8666-00000000000a',
   listLunch: '66666666-6666-4666-8666-00000000000b',
   listEvening: '66666666-6666-4666-8666-00000000000c',
+  listBand: '66666666-6666-4666-8666-00000000000d',
 } as const;
 
 export function display(overrides: Partial<DisplayTarget> = {}): DisplayTarget {
@@ -160,8 +164,11 @@ export function heartbeat(overrides: Partial<HeartbeatV1> = {}): HeartbeatV1 {
   };
 }
 
-/** A route with the browser player's profile and the given item total. */
-export function route(maxItems = 200): PublicationValidator {
+/**
+ * A route with the browser player's profile and the given item total and region count. One
+ * region by default, so a test double still refuses a layout (`multiple_regions_unsupported`).
+ */
+export function route(maxItems = 200, maxRegions = 1): PublicationValidator {
   const profile: CapabilityProfile = {
     routeId: 'browser',
     profileVersion: 1,
@@ -169,7 +176,7 @@ export function route(maxItems = 200): PublicationValidator {
     mediaTypes: ['image/jpeg', 'image/png', 'video/mp4'],
     videoCodecs: ['h264'],
     fitModes: ['contain', 'cover'],
-    maxRegions: 1,
+    maxRegions,
     audio: false,
     supportsContentRect: true,
     maxCanvas: { width: 16384, height: 16384 },
@@ -199,9 +206,35 @@ export interface PlanScheduleOptions {
 }
 
 /**
- * Plans a schedule over the given playlists (keyed by id) as the API does: each playlist goes
- * through `planPublication` for the display, and an id that is not in the map no longer exists.
+ * Plans each of the given playlists (keyed by id) as the API does: through `planPublication`
+ * for the display; an id that is not in the map no longer exists.
  */
+function planPlaylistOf(
+  playlists: Readonly<Record<string, FixturePlaylist>>,
+  options: PlanScheduleOptions,
+  target: PublicationValidator,
+): PlanPlaylist {
+  return (id) => {
+    const playlist = playlists[id];
+    if (playlist === undefined) return undefined;
+    return {
+      name: playlist.name,
+      itemCount: playlist.items.length,
+      plan: () =>
+        planPublication({
+          display: options.display ?? display(),
+          items: playlist.items,
+          mediaById: options.mediaById ?? library(),
+          appsById: options.appsById ?? apps(),
+          limits,
+          playback: playlist.playback ?? playback,
+          route: target,
+        }),
+    };
+  };
+}
+
+/** Plans a schedule over the given playlists (keyed by id) as the API does. */
 export function planSchedule(
   playlists: Readonly<Record<string, FixturePlaylist>>,
   schedule: Pick<SchedulePlanInput, 'defaultPlaylistId' | 'events'>,
@@ -210,24 +243,43 @@ export function planSchedule(
   const target = options.route ?? route();
   return planSchedulePublication({
     ...schedule,
-    planPlaylist: (id) => {
-      const playlist = playlists[id];
-      if (playlist === undefined) return undefined;
-      return {
-        name: playlist.name,
-        itemCount: playlist.items.length,
-        plan: () =>
-          planPublication({
-            display: options.display ?? display(),
-            items: playlist.items,
-            mediaById: options.mediaById ?? library(),
-            appsById: options.appsById ?? apps(),
-            limits,
-            playback: playlist.playback ?? playback,
-            route: target,
-          }),
-      };
-    },
+    planPlaylist: planPlaylistOf(playlists, options, target),
+    route: target,
+  });
+}
+
+/**
+ * A main zone and a band along the bottom, `percent` of the height, in basis points: what the
+ * portal's one preset writes (same arguments as its `bandZones`).
+ */
+export function bandZones(
+  percent: number,
+  mainPlaylistId: string,
+  bandPlaylistId: string,
+): LayoutPlanInput['zones'] {
+  const band = percent * 100;
+  return [
+    { playlistId: mainPlaylistId, x: 0, y: 0, width: 10_000, height: 10_000 - band },
+    { playlistId: bandPlaylistId, x: 0, y: 10_000 - band, width: 10_000, height: band },
+  ];
+}
+
+/**
+ * Plans a layout over the given playlists (keyed by id) on the display (`options.display`) as
+ * the API does. The route takes ABSOLUTE.maxLayoutZones regions unless `options.route` is given.
+ */
+export function planLayout(
+  playlists: Readonly<Record<string, FixturePlaylist>>,
+  zones: LayoutPlanInput['zones'],
+  options: PlanScheduleOptions = {},
+): PlanPublicationResult {
+  const target = options.route ?? route(200, ABSOLUTE.maxLayoutZones);
+  const { canvas, contentRect } = options.display ?? display();
+  return planLayoutPublication({
+    canvas,
+    contentRect,
+    zones,
+    planPlaylist: planPlaylistOf(playlists, options, target),
     route: target,
   });
 }

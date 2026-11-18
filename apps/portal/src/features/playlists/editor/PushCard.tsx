@@ -2,6 +2,7 @@ import type { DisplayDto, PlaylistDto } from '@tinnox/contracts';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../../api/index.ts';
+import { anyHasOtherContent, CONTENT_REPLACED_NOTE } from '../../../lib/assignedContent.ts';
 import { bulkFailureTitle, runInSequence, type BulkFailure } from '../../../lib/bulkOutcome.ts';
 import { formatTimestamp } from '../../../lib/format.ts';
 import {
@@ -11,7 +12,6 @@ import {
   pushSummary,
   rowsForPlaylist,
 } from '../../../lib/playlistEditor.ts';
-import { anyHasSchedule, SCHEDULE_REPLACED_NOTE } from '../../../lib/screensList.ts';
 import { Plus, Send } from '../../../ui/icons.ts';
 import {
   Button,
@@ -35,7 +35,7 @@ export interface PushCardProps {
 }
 
 /**
- * The screens that have this playlist assigned directly (not through a schedule), with where each stands between what is
+ * The screens that have this playlist assigned directly (not through a schedule or a layout), with where each stands between what is
  * assigned and what it was last given (`GET /api/push`, read through `usePush`). "Assign to
  * screens" assigns it to more screens, several at once, as the list's row menu does; "Push now" opens the push dialog on this playlist's
  * screens. Push is held while the draft has unsaved changes: only the saved playlist can be
@@ -220,7 +220,7 @@ export function PushCard({ playlist, dirty }: PushCardProps) {
           <>
             <strong className="tx-break">{playlist.name}</strong>, as last saved, replaces the
             playlist each chosen screen has now. Nothing changes on a screen until you push.
-            {anyHasSchedule(chosen) && ` ${SCHEDULE_REPLACED_NOTE}`}
+            {anyHasOtherContent(chosen) && ` ${CONTENT_REPLACED_NOTE}`}
           </>
         )}
         confirmLabel={assignConfirmLabel}

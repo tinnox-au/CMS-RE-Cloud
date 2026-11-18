@@ -5,9 +5,11 @@ import {
   ID,
   WEEKDAYS,
   apps,
+  bandZones,
   display,
   library,
   limits,
+  planLayout,
   planSchedule,
   playback,
   tickerContent,
@@ -656,6 +658,117 @@ describe('draftMatchesManifest with a schedule', () => {
         currentManifest: stored(),
       }),
     ).toBe('changes');
+  });
+});
+
+describe('draftMatchesManifest with a layout', () => {
+  const MAIN: FixturePlaylist = {
+    name: 'Reception loop',
+    items: [image(ID.jpeg), video(ID.video)],
+  };
+  const BAND: FixturePlaylist = {
+    name: 'Ticker',
+    items: [{ appId: ID.ticker, durationMs: 10_000 }, image(ID.png, 8000)],
+    playback: { transition: 'fade', shuffle: false },
+  };
+  const PLAYLISTS: Record<string, FixturePlaylist> = {
+    [ID.listDefault]: MAIN,
+    [ID.listBand]: BAND,
+  };
+  const laidOut = (
+    percent = 15,
+    playlists = PLAYLISTS,
+    target: DisplayTarget = display(),
+  ): PublicationDraft => {
+    const plan = planLayout(playlists, bandZones(percent, ID.listDefault, ID.listBand), {
+      display: target,
+    });
+    if (!plan.ok) throw new Error(`fixture layout is not publishable: ${plan.issues[0]?.code}`);
+    return plan.draft;
+  };
+  const stored = (): Manifest => published(laidOut());
+  const ZONES = { kind: 'playback', field: 'zones' };
+  const VERSION = { kind: 'playback', field: 'schemaVersion' };
+
+  it('matches the v5 manifest built from the same layout', () => {
+    expect(stored().schemaVersion).toBe(5);
+    expect(firstDraftManifestDifference(laidOut(), stored())).toBeNull();
+    expect(
+      decidePushState({ plan: { ok: true, draft: laidOut() }, currentManifest: stored() }),
+    ).toBe('up_to_date');
+  });
+
+  it('matches zones stored as jsonb, with keys in another order', () => {
+    const reversed = (value: object) => Object.fromEntries(Object.entries(value).reverse());
+    const manifest = JSON.parse(JSON.stringify(stored())) as Manifest;
+    if (manifest.schemaVersion !== 5) throw new Error('fixture should publish v5');
+    (manifest as { zones: unknown }).zones = manifest.zones.map((zone) => ({
+      ...reversed(zone),
+      rect: reversed(zone.rect),
+    }));
+    expect(Object.keys(manifest.zones[0] ?? {})[0]).toBe('shuffle');
+    expect(Object.keys(manifest.zones[0]?.rect ?? {})[0]).toBe('height');
+    expect(firstDraftManifestDifference(laidOut(), manifest)).toBeNull();
+  });
+
+  it('sees a changed band height, and a changed transition or shuffle of a zone', () => {
+    expect(firstDraftManifestDifference(laidOut(20), stored())).toEqual(ZONES);
+    expect(
+      decidePushState({ plan: { ok: true, draft: laidOut(20) }, currentManifest: stored() }),
+    ).toBe('changes');
+    for (const options of [
+      { transition: 'cut' as const, shuffle: false },
+      { transition: 'fade' as const, shuffle: true },
+    ]) {
+      const draft = laidOut(15, { ...PLAYLISTS, [ID.listBand]: { ...BAND, playback: options } });
+      expect(firstDraftManifestDifference(draft, stored()), JSON.stringify(options)).toEqual(ZONES);
+    }
+    // The main zone's options are the top-level ones, so they are seen there first.
+    const main = { ...MAIN, playback: { transition: 'fade', shuffle: false } } as const;
+    expect(
+      firstDraftManifestDifference(laidOut(15, { ...PLAYLISTS, [ID.listDefault]: main }), stored()),
+    ).toEqual({
+      kind: 'playback',
+      field: 'transition',
+    });
+  });
+
+  it('sees a changed item inside the band at its place in the one list', () => {
+    const band = {
+      ...BAND,
+      items: [{ appId: ID.ticker, durationMs: 10_000 }, image(ID.png, 8001)],
+    };
+    // Two items of the main zone come first.
+    expect(
+      firstDraftManifestDifference(laidOut(15, { ...PLAYLISTS, [ID.listBand]: band }), stored()),
+    ).toEqual({
+      kind: 'item',
+      index: 3,
+      field: 'durationMs',
+    });
+  });
+
+  it('sees a changed canvas before the zones it moves', () => {
+    const portrait = display({ canvas: { width: 1080, height: 1920 } });
+    expect(firstDraftManifestDifference(laidOut(15, PLAYLISTS, portrait), stored())).toEqual({
+      kind: 'canvas',
+    });
+  });
+
+  it('offers a push back when a playlist replaces the layout, and the other way round', () => {
+    expect(firstDraftManifestDifference(draftOf(), stored())).toEqual(VERSION);
+    expect(firstDraftManifestDifference(laidOut(), publishedManifest())).toEqual(VERSION);
+  });
+
+  it('refuses to build a manifest from a draft with both a schedule and zones', () => {
+    const draft: PublicationDraft = {
+      ...laidOut(),
+      schedule: {
+        playlists: [{ count: 4, transition: 'cut', shuffle: false }],
+        events: [{ playlist: 0, days: EVERY_DAY, start: '09:00', end: '17:00' }],
+      },
+    };
+    expect(() => published(draft)).toThrow('a draft has a schedule or zones, not both');
   });
 });
 
