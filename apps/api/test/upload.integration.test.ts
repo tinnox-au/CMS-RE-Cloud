@@ -565,8 +565,122 @@ describe('upload limits and validation results', () => {
     }
   });
 
+  it('keeps the bytes of a real upload whose row is committed and queued while the sweep runs', async () => {
+    // The same race through the upload route, with a media row. The pool holds the upload
+    // at the statement that writes its row, and runs `afterPendingRead` once the sweep has
+    // read the pending jobs.
+    const bound = <T extends object>(target: T, key: string | symbol): unknown => {
+      const value: unknown = Reflect.get(target, key);
+      return typeof value === 'function'
+        ? (value as (...args: unknown[]) => unknown).bind(target)
+        : value;
+    };
+    let reachedInsert: () => void = () => undefined;
+    const atInsert = new Promise<void>((resolve) => {
+      reachedInsert = resolve;
+    });
+    let releaseInsert: () => void = () => undefined;
+    const insertReleased = new Promise<void>((resolve) => {
+      releaseInsert = resolve;
+    });
+    let held = false;
+    let afterPendingRead: (() => Promise<void>) | null = null;
+    const racing = await startTestApp(
+      {
+        LIMIT_MAX_UPLOAD_BYTES: String(UPLOAD_LIMIT),
+        LIMIT_MAX_ORG_STORAGE_BYTES: String(QUOTA),
+      },
+      1000,
+      {
+        wrapPool: (real) =>
+          new Proxy(real, {
+            get(target, key) {
+              if (key === 'query') {
+                return async (text: string, values?: unknown[]) => {
+                  const result = await target.query(text, values);
+                  if (text.includes('sec.media_processing_jobs') && afterPendingRead !== null) {
+                    const hook = afterPendingRead;
+                    afterPendingRead = null;
+                    await hook();
+                  }
+                  return result;
+                };
+              }
+              if (key !== 'connect') return bound(target, key);
+              return async () => {
+                const client = await target.connect();
+                return new Proxy(client, {
+                  get(realClient, name) {
+                    if (name !== 'query') return bound(realClient, name);
+                    return async (text: string, values?: unknown[]) => {
+                      if (!held && text.includes('INSERT INTO media AS m')) {
+                        held = true;
+                        reachedInsert();
+                        await insertReleased;
+                      }
+                      return realClient.query(text, values);
+                    };
+                  },
+                });
+              };
+            },
+          }),
+      },
+    );
+    try {
+      const owner = await signIn(racing, org);
+      const inbox = join(racing.jobsDir, 'inbox');
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      const age = async (): Promise<void> => {
+        for (const name of await listDir(inbox)) {
+          await utimes(join(inbox, name), fiveMinutesAgo, fiveMinutesAgo);
+        }
+      };
+
+      // The bytes have arrived; the row is not written yet, and has not been for five minutes.
+      const upload = uploadBytes(owner, await pngBytes());
+      await atInsert;
+      expect((await listDir(inbox)).filter((name) => name.endsWith('.part'))).toHaveLength(1);
+      await age();
+
+      let mediaId = 'the upload did not finish';
+      afterPendingRead = async () => {
+        releaseInsert();
+        const response = await upload;
+        expect(response.status).toBe(201);
+        mediaId = ((await response.json()) as { media: Media }).media.id;
+        // Old enough that the grace period alone would not save the queued files.
+        await age();
+      };
+      await racing.ctx.media.sweep();
+
+      expect(afterPendingRead).toBeNull();
+      expect(await listDir(inbox)).toEqual(expect.arrayContaining([mediaId, `${mediaId}.json`]));
+      // The upload goes on to be validated, like any other.
+      await actAsWorker(racing, accepted(mediaId));
+      await racing.ctx.media.tick();
+      const status = await withOrg(t.pool, org.orgId, async (tx) => {
+        const { rows } = await tx.query<{ status: string }>(
+          'SELECT status FROM media WHERE id = $1',
+          [mediaId],
+        );
+        return rows[0]?.status;
+      });
+      expect(status).toBe('ready');
+      expect((await owner.fetch(`/api/media/${mediaId}/preview`)).status).toBe(200);
+    } finally {
+      releaseInsert();
+      await racing.close();
+    }
+  });
+
   it('keeps validated media whose commit went through when the answer to COMMIT was lost (round 3, SCX-03)', async () => {
     const { media } = await uploadPng();
+    // With a thumbnail: the ready row names two stored objects, and both must be kept.
+    const jpeg = await sharp(await pngBytes(8, 4))
+      .jpeg()
+      .toBuffer();
+    await writeFile(join(t.jobsDir, 'outbox', `${media.id}.thumb.jpg`), jpeg);
     await actAsWorker(t, accepted(media.id));
     const silent = { info: () => undefined, warn: () => undefined, error: () => undefined };
     const pipeline = new MediaPipeline({
@@ -581,17 +695,22 @@ describe('upload limits and validation results', () => {
 
     // Read through a connection that did not lose anything: the row is ready...
     const row = await withOrg(t.pool, org.orgId, async (tx) => {
-      const { rows } = await tx.query<{ status: string; storage_key: string | null }>(
-        'SELECT status, storage_key FROM media WHERE id = $1',
-        [media.id],
-      );
+      const { rows } = await tx.query<{
+        status: string;
+        storage_key: string | null;
+        thumb_storage_key: string | null;
+      }>('SELECT status, storage_key, thumb_storage_key FROM media WHERE id = $1', [media.id]);
       return rows[0];
     });
     expect(row?.status).toBe('ready');
-    // ...and the object it names was kept, so the media can still be shown.
+    // ...and the objects it names were kept, so the media and its thumbnail can still be shown.
     const storage = await LocalObjectStorage.create({ root: t.mediaRoot });
     expect(await storage.stat(row?.storage_key ?? 'missing')).not.toBeNull();
+    expect(await storage.stat(row?.thumb_storage_key ?? 'missing')).not.toBeNull();
     expect((await operator.fetch(`/api/media/${media.id}/preview`)).status).toBe(200);
+    const thumb = await operator.fetch(`/api/media/${media.id}/thumbnail`);
+    expect(thumb.status).toBe(200);
+    expect(Buffer.from(await thumb.arrayBuffer())).toEqual(jpeg);
 
     // The job's files stay behind (the row is ready, so no scan cleans them up); the sweep
     // removes them once they are old enough.

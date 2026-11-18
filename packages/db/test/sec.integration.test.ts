@@ -771,6 +771,35 @@ describe('pairing', () => {
     );
   });
 
+  it("takes the screen's lock only for the organisation that owns the screen (migration 0011)", async () => {
+    const org = await createOrg(migrator, 'Cancel lock');
+    const cancel = 'SELECT sec.pairing_cancel_claims($1) AS ids';
+    // The second transaction would fail on its lock timeout if it had to wait for the first.
+    await twoTransactions(org.orgId, async (stranger, owner) => {
+      await stranger.query("SELECT set_config('app.org_id', $1, true)", [b.orgId]);
+      expect((await stranger.query(cancel, [org.displayId])).rows).toEqual([{ ids: [] }]);
+      expect((await owner.query(cancel, [org.displayId])).rows).toEqual([{ ids: [] }]);
+    });
+    await twoTransactions(org.orgId, async (owner, stranger) => {
+      await stranger.query("SELECT set_config('app.org_id', $1, true)", [b.orgId]);
+      expect((await owner.query(cancel, [org.displayId])).rows).toEqual([{ ids: [] }]);
+      expect((await stranger.query(cancel, [org.displayId])).rows).toEqual([{ ids: [] }]);
+      // Two operators of the owning organisation still take turns.
+      const colleague = await pool.connect();
+      try {
+        await colleague.query('BEGIN');
+        await colleague.query("SELECT set_config('app.org_id', $1, true)", [org.orgId]);
+        const late = colleague.query(cancel, [org.displayId]);
+        expect(await stillWaiting(late)).toBe(true);
+        await owner.query('COMMIT');
+        expect((await late).rows).toEqual([{ ids: [] }]);
+      } finally {
+        await colleague.query('ROLLBACK').catch(() => undefined);
+        colleague.release();
+      }
+    });
+  });
+
   it('completing a pairing never replaces an active registration (round 3, SCX-01)', async () => {
     const org = await createOrg(migrator, 'No displacement');
     const first = await newPairing();

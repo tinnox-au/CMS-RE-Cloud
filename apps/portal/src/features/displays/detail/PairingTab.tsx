@@ -49,9 +49,14 @@ export function PairingTab({
   const paired = display.player !== null;
   const endPairing = endPairingWords(paired);
 
+  // A revocation that went through also cancelled the code accepted here, so the banner
+  // that says its player is about to collect a credential no longer holds.
+  if (claimed !== null && revoke !== null && revoke.result !== null) setClaimed(null);
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (busy) return;
+    // One request about the player at a time: not while a revocation is on its way either.
+    if (busy || revoke?.busy === true) return;
     setClaimed(null);
     setError(null);
     onDismissRevoke();
@@ -176,6 +181,8 @@ export function PairingTab({
             variant={paired ? 'danger' : 'secondary'}
             icon={Unlink}
             busy={revoke?.busy === true}
+            // Not while a code is being sent: the two answers could arrive in either order.
+            aria-disabled={busy || undefined}
             aria-describedby="screen-detail-revoke-note"
             onClick={onRevoke}
             data-testid="screen-detail-revoke"

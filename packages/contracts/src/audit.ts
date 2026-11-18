@@ -12,6 +12,7 @@ export const AUDIT_ACTIONS = [
   'pairing.claim',
   'pairing.complete',
   'pairing.lock',
+  'pairing.cancel',
   'player.revoke',
   'player.auth_rejected',
   'media.upload',

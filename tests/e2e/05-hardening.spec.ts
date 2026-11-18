@@ -112,12 +112,17 @@ test('an accepted pairing code can be cancelled from the screen page before a pl
   await expect(cancel).toBeEnabled();
   await cancel.click();
   const dialog = page.getByRole('dialog', { name: 'Cancel the pending pairing?' });
+  // It says that every uncollected code of the screen is cancelled, not only the last one.
+  await expect(dialog).toContainText('This applies to the whole screen');
   await dialog.getByRole('button', { name: 'Cancel pairing' }).click();
   await expect(
     page.getByText(
       'A pairing code accepted for this screen but not yet collected by a player was cancelled.',
     ),
   ).toBeVisible();
+  // The earlier banner said a player was about to collect its credential; that is over.
+  // (Exact: the sentence above also contains the words "code accepted".)
+  await expect(page.getByText('Code accepted', { exact: true })).toBeHidden();
 
   // The player that held the code is told to start again; it gets no credential.
   expect(await poll()).toEqual({ status: 'expired' });
