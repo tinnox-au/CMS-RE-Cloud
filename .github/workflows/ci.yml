@@ -42,7 +42,8 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:component
       - run: npm run build
-      # Fails on high or critical advisories. Lower-severity findings are tracked in the docs.
+      # Fails on high or critical advisories, apart from the dated development-only exceptions in
+      # scripts/audit-exceptions.json. Lower-severity findings are tracked in the docs.
       - run: npm run audit
 
   integration:

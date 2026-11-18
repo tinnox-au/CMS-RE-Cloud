@@ -33,7 +33,7 @@
     "test:component": "vitest run --project component",
     "test:integration": "vitest run --project integration",
     "test:e2e": "npm run e2e -w @tinnox/tests",
-    "audit": "npm audit --audit-level=high",
+    "audit": "tsx scripts/audit.ts",
     "scan:secrets": "node scripts/scan-secrets.mjs",
     "reset": "node scripts/reset-dev.mjs",
     "backup:verify": "bash scripts/backup-restore-check.sh",
