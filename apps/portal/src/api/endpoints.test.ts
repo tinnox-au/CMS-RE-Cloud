@@ -5,6 +5,8 @@ import {
   type DeliveryStatusView,
   type DisplayDto,
   type FolderDto,
+  type LayoutDto,
+  type LayoutInput,
   type MediaDto,
   type OverviewResponse,
   type PlaylistDto,
@@ -31,6 +33,7 @@ const FOLDER = '66666666-6666-4666-8666-666666666666';
 const PUBLICATION = '77777777-7777-4777-8777-777777777777';
 const SITE = '88888888-8888-4888-8888-888888888888';
 const SCHEDULE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const LAYOUT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const AT = '2026-11-15T03:00:00.000Z';
 const CSRF = 'csrf-token-aaaaaaaaaaaaaaaaaaaa';
 const ATTEMPT_ID = 'push-attempt-0001';
@@ -76,6 +79,7 @@ const display: DisplayDto = {
   tagIds: [],
   assignedPlaylist: { id: PLAYLIST, name: 'Reception loop' },
   assignedSchedule: null,
+  assignedLayout: null,
   createdAt: AT,
   updatedAt: AT,
 };
@@ -160,6 +164,27 @@ const scheduleInput: ScheduleInput = {
   events: [{ playlistId: PLAYLIST, days: WEEKDAYS, start: '09:00', end: '24:00' }],
 };
 
+const layoutInput: LayoutInput = {
+  name: 'Menu with band',
+  zones: [
+    { playlistId: PLAYLIST, x: 0, y: 0, width: 10_000, height: 8500 },
+    { playlistId: PLAYLIST, x: 0, y: 8500, width: 10_000, height: 1500 },
+  ],
+};
+
+const layout: LayoutDto = {
+  id: LAYOUT,
+  name: 'Menu with band',
+  description: null,
+  zones: layoutInput.zones.map(({ playlistId, ...box }) => ({
+    playlist: { id: playlistId, name: 'Reception loop' },
+    ...box,
+  })),
+  assignedDisplayCount: 1,
+  createdAt: AT,
+  updatedAt: AT,
+};
+
 const tag: TagDto = { id: TAG, scope: 'media', name: 'Campaign', colour: 'teal', usageCount: 1 };
 const folder: FolderDto = { id: FOLDER, name: 'Posters', itemCount: 1 };
 const clock = app(7);
@@ -172,6 +197,7 @@ const pushPlan: PushPlanResponse = {
       display: { id: DISPLAY, name: 'Reception' },
       playlist: { id: PLAYLIST, name: 'Reception loop' },
       schedule: { id: SCHEDULE, name: 'Opening hours' },
+      layout: null,
       state: 'changes',
       issues: [],
       lastPushedAt: AT,
@@ -180,9 +206,15 @@ const pushPlan: PushPlanResponse = {
       display: { id: OTHER_DISPLAY, name: 'Foyer' },
       playlist: { id: PLAYLIST, name: 'Reception loop' },
       schedule: null,
+      layout: { id: LAYOUT, name: 'Menu with band' },
       state: 'blocked',
       issues: [
-        { path: 'items[0]', message: 'Item 1 is still being checked.', code: 'media_not_ready' },
+        {
+          path: 'zones[1]',
+          message:
+            'On this screen zone 2 of the layout is 192 × 10 px; a zone needs at least 16 px each way. Make it larger in the layout, or assign other content.',
+          code: 'zone_too_small',
+        },
       ],
       lastPushedAt: null,
     },
@@ -333,6 +365,8 @@ describe('endpoints: reads', () => {
         [scheduleSummary],
       ],
       [ROUTES.schedule(SCHEDULE), schedule, (api) => api.getSchedule(SCHEDULE, signal), schedule],
+      [ROUTES.layouts, { items: [layout] }, (api) => api.listLayouts(signal), [layout]],
+      [ROUTES.layout(LAYOUT), layout, (api) => api.getLayout(LAYOUT, signal), layout],
       [ROUTES.push, pushPlan, (api) => api.getPushPlan(signal), pushPlan],
       [ROUTES.overview, overview, (api) => api.getOverview(signal), overview],
     ];
@@ -416,6 +450,22 @@ describe('endpoints: changes', () => {
           ...display,
           assignedPlaylist: null,
           assignedSchedule: { id: SCHEDULE, name: 'Opening hours', defaultPlaylist: summaryRef },
+        },
+      ],
+      [
+        'PATCH',
+        ROUTES.display(DISPLAY),
+        { assignedLayoutId: LAYOUT },
+        {
+          ...display,
+          assignedPlaylist: null,
+          assignedLayout: { id: LAYOUT, name: 'Menu with band', mainPlaylist: summaryRef },
+        },
+        (api) => api.patchDisplay(DISPLAY, { assignedLayoutId: LAYOUT }),
+        {
+          ...display,
+          assignedPlaylist: null,
+          assignedLayout: { id: LAYOUT, name: 'Menu with band', mainPlaylist: summaryRef },
         },
       ],
       [
@@ -514,6 +564,15 @@ describe('endpoints: changes', () => {
         (api) => api.replaceSchedule(SCHEDULE, scheduleInput),
         schedule,
       ],
+      ['POST', ROUTES.layouts, layoutInput, layout, (api) => api.createLayout(layoutInput), layout],
+      [
+        'PUT',
+        ROUTES.layout(LAYOUT),
+        { ...layoutInput, description: null },
+        layout,
+        (api) => api.replaceLayout(LAYOUT, { ...layoutInput, description: null }),
+        layout,
+      ],
       [
         'POST',
         ROUTES.playlists,
@@ -543,6 +602,7 @@ describe('endpoints: changes', () => {
       [ROUTES.app(clock.id), (api) => api.deleteApp(clock.id)],
       [ROUTES.playlist(PLAYLIST), (api) => api.deletePlaylist(PLAYLIST)],
       [ROUTES.schedule(SCHEDULE), (api) => api.deleteSchedule(SCHEDULE)],
+      [ROUTES.layout(LAYOUT), (api) => api.deleteLayout(LAYOUT)],
     ];
     for (const [path, call] of cases) {
       const { api, calls } = await harness(null, 204);
@@ -654,6 +714,30 @@ describe('endpoints: answers the portal must not trust', () => {
         (api) => api.getDisplay(DISPLAY),
       ],
       [
+        'a display without assignedLayout',
+        { ...display, assignedLayout: undefined },
+        (api) => api.getDisplay(DISPLAY),
+      ],
+      [
+        'a display whose layout has no main playlist',
+        {
+          ...display,
+          assignedPlaylist: null,
+          assignedLayout: { id: LAYOUT, name: 'Menu with band' },
+        },
+        (api) => api.getDisplay(DISPLAY),
+      ],
+      [
+        'a layout with one zone',
+        { ...layout, zones: layout.zones.slice(0, 1) },
+        (api) => api.getLayout(LAYOUT),
+      ],
+      [
+        'a layout list row without its screen count',
+        { items: [{ ...layout, assignedDisplayCount: undefined }] },
+        (api) => api.listLayouts(),
+      ],
+      [
         'a schedule whose event ends at 00:00',
         {
           ...schedule,
@@ -670,6 +754,22 @@ describe('endpoints: answers the portal must not trust', () => {
         'a push plan row without schedule',
         {
           items: [{ ...pushPlan.items[0], schedule: undefined }],
+          pendingCount: 1,
+        },
+        (api) => api.getPushPlan(),
+      ],
+      [
+        'a push plan row without layout',
+        {
+          items: [{ ...pushPlan.items[0], layout: undefined }],
+          pendingCount: 1,
+        },
+        (api) => api.getPushPlan(),
+      ],
+      [
+        'a push plan row with both a schedule and a layout',
+        {
+          items: [{ ...pushPlan.items[0], layout: { id: LAYOUT, name: 'Menu with band' } }],
           pendingCount: 1,
         },
         (api) => api.getPushPlan(),

@@ -2,13 +2,15 @@
  * Automated accessibility checks (axe, WCAG 2.2 A and AA) on every main page of the portal and
  * its key dialogs, in light and dark. Fails on serious or critical problems only. This guards
  * what the pages already do; it does not replace a pass with a real screen reader.
- * Data is set up through the API: one image, one app, one playlist, one schedule, one screen.
+ * Data is set up through the API: one image, one app, one playlist, one schedule, one layout,
+ * one screen.
  */
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { encodePng } from '../support/png.ts';
 import { expectAccessible } from './support/a11y.ts';
 import { operatorSession, type OperatorSession } from './support/contexts.ts';
+import { bandLayout } from './support/operator.ts';
 import { pageHeading } from './support/portal.ts';
 import { PORTAL_URL } from './support/stack.ts';
 
@@ -20,6 +22,7 @@ let mediaId = '';
 let appId = '';
 let playlistId = '';
 let scheduleId = '';
+let layoutId = '';
 let displayId = '';
 
 test.beforeAll(async ({ browser }) => {
@@ -59,6 +62,9 @@ test.beforeAll(async ({ browser }) => {
       ],
     })
   ).id;
+  layoutId = (
+    await operator.api.createLayout(bandLayout(`ZZ a11y layout ${runId}`, playlistId, playlistId))
+  ).id;
   displayId = (
     await operator.api.createDisplay({
       name: `ZZ a11y screen ${runId}`,
@@ -90,6 +96,8 @@ const PAGES: readonly (readonly [string, () => string, string | RegExp])[] = [
   ['playlist editor', () => `/playlists/${playlistId}`, `ZZ a11y playlist ${runId}`],
   ['schedules', () => '/schedules', 'Schedules'],
   ['schedule editor', () => `/schedules/${scheduleId}`, `ZZ a11y schedule ${runId}`],
+  ['layouts', () => '/layouts', 'Layouts'],
+  ['layout editor', () => `/layouts/${layoutId}`, `ZZ a11y layout ${runId}`],
   ['screens', () => '/screens', 'Screens'],
   ['screen page', () => `/screens/${displayId}`, `ZZ a11y screen ${runId}`],
   ['add screen', () => '/screens/new', /screen/i],

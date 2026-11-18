@@ -24,6 +24,7 @@ const MEDIA = ID(3);
 const TAG = ID(4);
 const FOLDER = ID(5);
 const SCHEDULE = ID(6);
+const LAYOUT = ID(8);
 
 function event(change: Partial<AuditEventDto> = {}): AuditEventDto {
   return {
@@ -47,6 +48,7 @@ const NAMES: ActivityNames = {
   tag: new Map([[TAG, 'Promotions']]),
   folder: new Map([[FOLDER, 'Spring']]),
   schedule: new Map([[SCHEDULE, 'Opening hours']]),
+  layout: new Map([[LAYOUT, 'Menu band']]),
 };
 
 describe('describeActivity', () => {
@@ -76,6 +78,8 @@ describe('describeActivity', () => {
       { fields: ['assignedPlaylistId'], assignedPlaylistId: null },
       { fields: ['assignedScheduleId'], assignedScheduleId: SCHEDULE, assignedPlaylistId: null },
       { fields: ['assignedScheduleId'], assignedScheduleId: null },
+      { fields: ['assignedLayoutId'], assignedLayoutId: LAYOUT, assignedPlaylistId: null },
+      { fields: ['assignedLayoutId'], assignedLayoutId: null },
       {
         fields: ['assignedPlaylistId', 'assignedScheduleId'],
         assignedPlaylistId: null,
@@ -257,6 +261,135 @@ describe('describeActivity', () => {
     ).toBe('Schedule assignment refused');
   });
 
+  it('words every kind of assignment and removal with three assignment keys', () => {
+    const base = { action: 'display.update', objectType: 'display', objectId: SCREEN };
+    const words = (detail: AuditEventDto['detail'], result: AuditEventDto['result'] = 'success') =>
+      describeActivity(event({ ...base, result, detail }));
+    const all = { assignedPlaylistId: null, assignedScheduleId: null, assignedLayoutId: null };
+    const keys = ['assignedPlaylistId', 'assignedScheduleId', 'assignedLayoutId'];
+
+    // Each kind assigned: the other two are recorded as cleared.
+    for (const [key, kind, id, label] of [
+      ['assignedPlaylistId', 'playlist', PLAYLIST, 'Playlist'],
+      ['assignedScheduleId', 'schedule', SCHEDULE, 'Schedule'],
+      ['assignedLayoutId', 'layout', LAYOUT, 'Layout'],
+    ] as const) {
+      const assigned = words({ fields: [key], ...all, [key]: id });
+      expect(assigned.text, key).toBe(`${label} assigned to screen`);
+      expect(assigned.related, key).toEqual({ kind, id });
+      expect(assigned.relatedLabel, key).toBe(label);
+      // Each kind removed.
+      const removed = words({ fields: [key], [key]: null });
+      expect(removed.text, key).toBe(`${label} removed from screen`);
+      expect(removed.related, key).toBeNull();
+      expect(words({ fields: [key], [key]: null }, 'failure').text, key).toBe(
+        `Removing the ${kind} from a screen failed`,
+      );
+      // A failed attempt without the value on record reads as an assignment.
+      expect(words({ fields: [key] }, 'denied').text, key).toBe(`${label} assignment refused`);
+    }
+
+    // All three removed.
+    const cleared = words({ fields: keys, ...all });
+    expect(cleared.text).toBe('Content removed from screen');
+    expect(cleared.related).toBeNull();
+    expect(words({ fields: keys, ...all }, 'failure').text).toBe(
+      'Removing the content from a screen failed',
+    );
+
+    // A playlist assigned over a layout: the API records the layout it cleared as null.
+    const replaced = words({
+      fields: ['assignedPlaylistId'],
+      assignedPlaylistId: PLAYLIST,
+      assignedLayoutId: null,
+    });
+    expect(replaced.text).toBe('Playlist assigned to screen');
+    expect(replaced.related).toEqual({ kind: 'playlist', id: PLAYLIST });
+    expect(
+      words({
+        fields: ['assignedLayoutId', 'assignedScheduleId'],
+        assignedLayoutId: LAYOUT,
+        assignedScheduleId: null,
+      }).text,
+    ).toBe('Layout assigned to screen');
+    // Another field in the same patch: an ordinary update.
+    expect(words({ fields: ['assignedLayoutId', 'name'], assignedLayoutId: LAYOUT }).text).toBe(
+      'Screen updated',
+    );
+
+    const item = presentActivity(
+      event({ ...base, detail: { fields: ['assignedLayoutId'], assignedLayoutId: LAYOUT } }),
+      NAMES,
+    );
+    expect(item.related).toEqual({
+      kind: 'layout',
+      id: LAYOUT,
+      name: 'Menu band',
+      href: `/layouts/${LAYOUT}`,
+    });
+  });
+
+  it('has words for layouts and names the layout of a push', () => {
+    const layout = { objectType: 'layout', objectId: LAYOUT };
+    const created = describeActivity(
+      event({
+        ...layout,
+        action: 'layout.create',
+        detail: { mainPlaylistId: PLAYLIST, zoneCount: 2 },
+      }),
+    );
+    expect(created).toMatchObject({
+      text: 'Layout created',
+      subject: { kind: 'layout', id: LAYOUT },
+      icon: 'other',
+      removesSubject: false,
+    });
+    expect(describeActivity(event({ ...layout, action: 'layout.update' })).text).toBe(
+      'Layout updated',
+    );
+    expect(
+      describeActivity(event({ ...layout, action: 'layout.update', result: 'failure' })).text,
+    ).toBe('Layout update failed');
+    expect(
+      describeActivity(event({ ...layout, action: 'layout.create', result: 'denied' })).text,
+    ).toBe('Layout creation refused');
+    const deleted = describeActivity(event({ ...layout, action: 'layout.delete' }));
+    expect(deleted.text).toBe('Layout deleted');
+    expect(deleted.removesSubject).toBe(true);
+    expect(
+      describeActivity(event({ ...layout, action: 'layout.delete', result: 'denied' })).text,
+    ).toBe('Layout deletion refused');
+
+    // A layout push: `playlistId` is only the main zone's playlist.
+    const pushed = describeActivity(
+      event({
+        action: 'publication.create',
+        objectType: 'publication',
+        objectId: ID(7),
+        detail: { displayId: SCREEN, playlistId: PLAYLIST, layoutId: LAYOUT, via: 'push' },
+      }),
+    );
+    expect(pushed.subject).toEqual({ kind: 'display', id: SCREEN });
+    expect(pushed.related).toEqual({ kind: 'layout', id: LAYOUT });
+    expect(pushed.relatedLabel).toBe('Layout');
+    // A rejected one is recorded against the layout.
+    const rejected = describeActivity(
+      event({
+        ...layout,
+        action: 'publication.create',
+        result: 'failure',
+        detail: { displayId: SCREEN, reasons: ['zone_too_small'], via: 'push' },
+      }),
+    );
+    expect(rejected.text).toBe('Push to screen failed');
+    expect(rejected.related).toEqual({ kind: 'layout', id: LAYOUT });
+    expect(rejected.reasonCodes).toEqual(['zone_too_small']);
+
+    const item = presentActivity(event({ ...layout, action: 'layout.update' }), NAMES);
+    expect(activitySentence(item)).toBe('Layout updated: Menu band');
+    expect(item.subject?.href).toBe(`/layouts/${LAYOUT}`);
+  });
+
   it('has words for schedules and names the schedule of a push', () => {
     const schedule = { objectType: 'schedule', objectId: SCHEDULE };
     const created = describeActivity(
@@ -383,6 +516,7 @@ describe('describeActivity', () => {
       'folder.delete',
       'playlist.delete',
       'schedule.delete',
+      'layout.delete',
     ]) {
       expect(describeActivity(event({ action })).removesSubject, action).toBe(true);
       expect(describeActivity(event({ action, result: 'failure' })).removesSubject).toBe(false);
@@ -539,6 +673,7 @@ describe('activityHref', () => {
     expect(activityHref({ kind: 'display', id: SCREEN })).toBe(`/screens/${SCREEN}`);
     expect(activityHref({ kind: 'playlist', id: PLAYLIST })).toBe(`/playlists/${PLAYLIST}`);
     expect(activityHref({ kind: 'schedule', id: SCHEDULE })).toBe(`/schedules/${SCHEDULE}`);
+    expect(activityHref({ kind: 'layout', id: LAYOUT })).toBe(`/layouts/${LAYOUT}`);
     expect(activityHref({ kind: 'media', id: MEDIA })).toBe(`/media/${MEDIA}`);
     expect(activityHref({ kind: 'tag', id: TAG })).toBe('/settings/tags');
     expect(activityHref({ kind: 'folder', id: FOLDER })).toBeNull();

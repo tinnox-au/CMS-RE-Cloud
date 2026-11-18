@@ -20,7 +20,8 @@ const PRESENTATIONS: { readonly [K in PushState]: Omit<PushStatePresentation, 's
   nothing_assigned: {
     tone: 'neutral',
     label: 'Nothing assigned',
-    detail: 'No playlist or schedule is assigned to this screen, so there is nothing to push.',
+    detail:
+      'No playlist, schedule or layout is assigned to this screen, so there is nothing to push.',
   },
   never_pushed: {
     tone: 'warn',

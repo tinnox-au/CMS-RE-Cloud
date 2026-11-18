@@ -24,6 +24,7 @@ import {
   ManifestV1Schema,
   ManifestV2Schema,
   ManifestV4Schema,
+  ManifestV5Schema,
   MediaJobResultSchema,
   MediaPatchSchema,
   MediaUrlQuerySchema,
@@ -41,9 +42,11 @@ import {
   manifestEtag,
   manifestPlaylists,
   manifestV2Facts,
+  manifestZones,
   normalisePairingCode,
   parseManifest,
   publicationIdFromEtag,
+  rectsOverlap,
 } from './index.ts';
 
 const ok = (schema: { safeParse(v: unknown): { success: boolean } }, value: unknown) =>
@@ -170,16 +173,41 @@ describe('canvas and content rectangle', () => {
   });
 });
 
+describe('rectsOverlap', () => {
+  const rect = (x: number, y: number, width: number, height: number) => ({ x, y, width, height });
+
+  it('overlaps only when the interiors intersect, in pixels and in basis points', () => {
+    for (const unit of [1, 10]) {
+      const r = (x: number, y: number, w: number, h: number) =>
+        rect(x * unit, y * unit, w * unit, h * unit);
+      const a = r(0, 0, 100, 100);
+      const cases: [string, ReturnType<typeof r>, boolean][] = [
+        ['overlapping', r(50, 50, 100, 100), true],
+        ['one inside the other', r(10, 10, 20, 20), true],
+        ['the same rectangle', r(0, 0, 100, 100), true],
+        ['touching on the bottom edge', r(0, 100, 100, 50), false],
+        ['touching on the right edge', r(100, 0, 50, 100), false],
+        ['touching at a corner', r(100, 100, 10, 10), false],
+        ['disjoint', r(200, 200, 10, 10), false],
+      ];
+      for (const [what, b, expected] of cases) {
+        expect(rectsOverlap(a, b), `${what} x${unit}`).toBe(expected);
+        expect(rectsOverlap(b, a), `${what} x${unit}, reversed`).toBe(expected);
+      }
+    }
+  });
+});
+
 describe('manifest v1', () => {
   it('accepts a well-formed manifest', () => {
     expect(ManifestV1Schema.safeParse(manifest()).success).toBe(true);
     expect(parseManifest(manifest())).toMatchObject({ ok: true });
   });
   it('distinguishes an unsupported version from a malformed document', () => {
-    expect(parseManifest(manifest({ schemaVersion: 5 }))).toMatchObject({
+    expect(parseManifest(manifest({ schemaVersion: 6 }))).toMatchObject({
       ok: false,
       reason: 'unsupported_version',
-      message: 'manifest schemaVersion 5 is not supported (expected 1, 2, 3 or 4)',
+      message: 'manifest schemaVersion 6 is not supported (expected 1, 2, 3, 4 or 5)',
     });
     expect(parseManifest({ hello: 'world' })).toMatchObject({ ok: false, reason: 'malformed' });
     expect(parseManifest('<html>')).toMatchObject({ ok: false, reason: 'malformed' });
@@ -730,6 +758,202 @@ describe('schedules', () => {
     });
     expect(manifestPlaylists(ManifestSchema.parse(three)).map((slice) => slice.from)).toEqual([
       0, 1, 3,
+    ]);
+  });
+});
+
+describe('manifest v5 (layouts)', () => {
+  const HOURS = [{ start: '09:00', end: '17:00' }, null, null, null, null, null, null];
+  const item = (n: number) => asset({ assetId: U(n), availableFrom: null, availableUntil: null });
+  // 640 x 1344 with a 15 % band at the bottom: the zones touch at y 1142.
+  const MAIN = { rect: { x: 0, y: 0, width: 640, height: 1142 }, count: 2 };
+  const BAND = { rect: { x: 0, y: 1142, width: 640, height: 202 }, count: 1 };
+  const ZONES = [
+    { ...MAIN, transition: 'fade', shuffle: false },
+    { ...BAND, transition: 'cut', shuffle: true },
+  ];
+  const v5 = (o: Record<string, unknown> = {}): Record<string, unknown> =>
+    manifest({
+      schemaVersion: 5,
+      timeZone: 'Australia/Melbourne',
+      transition: 'fade',
+      shuffle: false,
+      rotation: 90,
+      workingHours: HOURS,
+      assets: [item(11), item(12), item(13)],
+      zones: ZONES,
+      ...o,
+    });
+  const zone = (n: number, o: Record<string, unknown>) =>
+    ZONES.map((z, i) => (i === n ? { ...z, ...o } : z));
+  /** A schedule block that fits the three assets of `v5()`. */
+  const SCHEDULE = {
+    playlists: [{ count: 3, transition: 'fade', shuffle: false }],
+    events: [
+      {
+        playlist: 0,
+        days: [true, true, true, true, true, false, false],
+        start: '09:00',
+        end: '17:00',
+      },
+    ],
+  };
+  const issuesOf = (value: unknown) => {
+    const parsed = ManifestV5Schema.safeParse(value);
+    return parsed.success ? [] : parsed.error.issues.map((i) => i.path.join('.'));
+  };
+
+  it('accepts a v5 manifest through every entry point', () => {
+    expect(ok(ManifestV5Schema, v5())).toBe(true);
+    expect(ok(ManifestSchema, v5())).toBe(true);
+    expect(parseManifest(v5())).toMatchObject({ ok: true, manifest: { schemaVersion: 5 } });
+    // Up to four zones, and inside a content rectangle.
+    const four = v5({
+      assets: [item(11), item(12), item(13), item(14)],
+      contentRect: { x: 0, y: 100, width: 640, height: 1200 },
+      zones: [0, 1, 2, 3].map((n) => ({
+        rect: { x: 0, y: 100 + n * 300, width: 640, height: 300 },
+        count: 1,
+        transition: 'fade',
+        shuffle: false,
+      })),
+    });
+    expect(issuesOf(four)).toEqual([]);
+  });
+
+  it('refuses zones that do not fit the assets or the top-level options', () => {
+    expect(issuesOf(v5({ assets: [item(11), item(12)] }))).toEqual(['zones']);
+    expect(issuesOf(v5({ zones: zone(1, { count: 2 }) }))).toEqual(['zones']);
+    expect(issuesOf(v5({ transition: 'cut' }))).toEqual(['zones.0']);
+    expect(issuesOf(v5({ shuffle: true }))).toEqual(['zones.0']);
+  });
+
+  it('refuses a zone outside the content rectangle, or outside the canvas without one', () => {
+    const contentRect = { x: 0, y: 0, width: 640, height: 1200 };
+    expect(issuesOf(v5({ contentRect }))).toEqual(['zones.1.rect']);
+    expect(issuesOf(v5({ contentRect: { ...contentRect, y: 1 } }))).toEqual([
+      'zones.0.rect',
+      'zones.1.rect',
+    ]);
+    const tall = { ...BAND.rect, height: 203 };
+    expect(issuesOf(v5({ zones: zone(1, { rect: tall }) }))).toEqual(['zones.1.rect']);
+    const wide = { ...BAND.rect, x: 1, width: 640 };
+    expect(issuesOf(v5({ zones: zone(1, { rect: wide }) }))).toEqual(['zones.1.rect']);
+  });
+
+  it('refuses zones that overlap, and accepts zones that touch', () => {
+    const up = { ...BAND.rect, y: 1141, height: 203 };
+    expect(issuesOf(v5({ zones: zone(1, { rect: up }) }))).toEqual(['zones.1.rect']);
+    // The default fixture touches at y 1142; side by side touches too.
+    expect(issuesOf(v5())).toEqual([]);
+    const sideBySide = [
+      { ...ZONES[0], rect: { x: 0, y: 0, width: 320, height: 1344 } },
+      { ...ZONES[1], rect: { x: 320, y: 0, width: 320, height: 1344 } },
+    ];
+    expect(issuesOf(v5({ zones: sideBySide }))).toEqual([]);
+  });
+
+  it('refuses a malformed v5 document, and zones in any other version', () => {
+    const { zones: _removed, ...noZones } = v5();
+    const five = Array.from({ length: 5 }, (_, n) => ({
+      rect: { x: 0, y: n * 200, width: 640, height: 200 },
+      count: 1,
+      transition: 'fade',
+      shuffle: false,
+    }));
+    const bad = [
+      noZones,
+      v5({ zones: [ZONES[0]] }),
+      v5({ zones: five, assets: [item(1), item(2), item(3), item(4), item(5)] }),
+      v5({ zones: [] }),
+      v5({ extra: true }),
+      v5({ layoutId: U(80) }),
+      v5({ zones: zone(1, { name: 'Band' }) }),
+      v5({ zones: zone(1, { count: 0 }) }),
+      v5({ zones: zone(1, { rect: { ...BAND.rect, height: 15 } }) }),
+      v5({ zones: zone(1, { transition: 'wipe' }) }),
+      // A layout never travels with a schedule.
+      v5({ schedule: SCHEDULE }),
+    ];
+    bad.forEach((m, i) => expect(ok(ManifestV5Schema, m), `case ${i}`).toBe(false));
+    expect(parseManifest(noZones)).toMatchObject({ ok: false, reason: 'malformed' });
+    // v4 is frozen: a released 0.4.0 player must refuse zones rather than ignore them.
+    expect(ok(ManifestV4Schema, { ...v5(), schemaVersion: 4 })).toBe(false);
+    expect(ok(ManifestV3Schema, { ...v5(), schemaVersion: 3 })).toBe(false);
+  });
+
+  it('gives the zones of a manifest as v3 views a player can play on its own', () => {
+    const v1 = ManifestSchema.parse(manifest());
+    expect(manifestZones(v1)).toHaveLength(1);
+    expect(manifestZones(v1)[0]).toBe(v1);
+    const { zones: _removed, ...v3Body } = v5({ schemaVersion: 3 });
+    for (const older of [
+      { ...v3Body, schemaVersion: 2 },
+      v3Body,
+      { ...v3Body, schemaVersion: 4, schedule: SCHEDULE },
+    ]) {
+      const m = ManifestSchema.parse(older);
+      expect(manifestZones(m)).toHaveLength(1);
+      expect(manifestZones(m)[0], `v${m.schemaVersion}`).toBe(m);
+    }
+    const m = ManifestSchema.parse(v5());
+    const views = manifestZones(m);
+    expect(views).toHaveLength(2);
+    views.forEach((view) => expect(ManifestV3Schema.parse(view)).toEqual(view));
+    const shared = {
+      schemaVersion: 3,
+      publicationId: U(2),
+      displayId: U(3),
+      createdAt: '2026-11-14T00:00:00.000Z',
+      canvas: { width: 640, height: 1344 },
+      muted: true,
+      timeZone: 'Australia/Melbourne',
+      rotation: 90,
+      workingHours: HOURS,
+    };
+    expect(views).toEqual([
+      {
+        ...shared,
+        contentRect: MAIN.rect,
+        transition: 'fade',
+        shuffle: false,
+        assets: [item(11), item(12)],
+      },
+      { ...shared, contentRect: BAND.rect, transition: 'cut', shuffle: true, assets: [item(13)] },
+    ]);
+  });
+
+  it('gives one playlist slice per zone, with running offsets', () => {
+    const three = v5({
+      assets: [item(11), item(12), item(13), item(14), item(15), item(16)],
+      zones: [
+        {
+          rect: { x: 0, y: 0, width: 640, height: 1000 },
+          count: 1,
+          transition: 'fade',
+          shuffle: false,
+        },
+        {
+          rect: { x: 0, y: 1000, width: 640, height: 200 },
+          count: 2,
+          transition: 'cut',
+          shuffle: true,
+        },
+        {
+          rect: { x: 0, y: 1200, width: 640, height: 144 },
+          count: 3,
+          transition: 'cut',
+          shuffle: false,
+        },
+      ],
+    });
+    expect(manifestPlaylists(ManifestSchema.parse(three))).toEqual([
+      { from: 0, count: 1, transition: 'fade', shuffle: false },
+      { from: 1, count: 2, transition: 'cut', shuffle: true },
+      { from: 3, count: 3, transition: 'cut', shuffle: false },
+    ]);
+    expect(manifestZones(ManifestSchema.parse(three)).map((view) => view.assets.length)).toEqual([
+      1, 2, 3,
     ]);
   });
 });

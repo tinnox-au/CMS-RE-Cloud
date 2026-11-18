@@ -303,6 +303,66 @@ export async function assignScheduleOnScreenPage(
   await expect(notifications(page).getByText(`${scheduleName} assigned`)).toBeVisible();
 }
 
+// ---------------------------------------------------------------------------
+// Layouts
+
+/**
+ * Creates a layout through the Layouts page's "Create layout" dialog and lands in its editor;
+ * returns its id. The two playlists are chosen by their names.
+ */
+export async function createLayoutInPortal(
+  page: Page,
+  name: string,
+  mainName: string,
+  bandName: string,
+): Promise<string> {
+  await page.goto(`${PORTAL_URL}/layouts`);
+  await page.getByTestId('layouts-create').first().click();
+  const dialog = page.getByTestId('layout-create-dialog');
+  await dialog.getByLabel('Name', { exact: true }).fill(name);
+  await dialog.getByLabel('Main zone playlist').selectOption({ label: mainName });
+  await dialog.getByLabel('Band playlist').selectOption({ label: bandName });
+  await dialog.getByRole('button', { name: 'Create layout' }).click();
+  await page.waitForURL(/\/layouts\/[0-9a-f-]{36}$/);
+  await expect(page.getByTestId('layout-editor')).toBeVisible();
+  return page.url().split('/').pop() ?? '';
+}
+
+/** In the layout editor: saves and waits for "Saved". */
+export async function saveLayout(page: Page): Promise<void> {
+  await page.getByTestId('layout-save').click();
+  await expect(page.getByTestId('layout-save-state')).toHaveText('Saved');
+}
+
+/**
+ * On a screen's page: assigns a layout through the layout picker. A screen that has content
+ * offers it in the "Change" menu; one with nothing assigned has an "Assign layout" button.
+ * Waits for the portal's confirmation; nothing is pushed.
+ */
+export async function assignLayoutOnScreenPage(
+  page: Page,
+  screenId: string,
+  layoutName: string,
+): Promise<void> {
+  await openScreenPage(page, screenId);
+  const change = page.getByTestId('screen-detail-change-content');
+  const assign = page.getByTestId('screen-detail-choose-layout');
+  await expect(change.or(assign)).toBeVisible();
+  if ((await change.count()) > 0) {
+    await change.click();
+    await page.getByRole('menuitem', { name: 'Choose a layout…' }).click();
+  } else {
+    await assign.click();
+  }
+  const picker = page.getByTestId('screen-detail-layout-picker');
+  await expect(picker).toBeVisible();
+  await picker.getByTestId('screen-detail-layout-picker-search').fill(layoutName);
+  await picker.getByRole('radio', { name: layoutName }).check();
+  await picker.getByTestId('screen-detail-layout-picker-confirm').click();
+  await expect(picker).toBeHidden();
+  await expect(notifications(page).getByText(`${layoutName} assigned`)).toBeVisible();
+}
+
 /**
  * The toast stack. A toast's words are also copied, 150 ms later, into a visually hidden live
  * region, so an unscoped `getByText` would match twice.

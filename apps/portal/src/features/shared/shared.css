@@ -376,6 +376,21 @@
   min-inline-size: 0;
 }
 
+/* ---------- PlaylistSelect ---------- */
+
+/* A playlist select with the link to the chosen playlist beside it; the link wraps under. */
+.tx-playlist-select {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+}
+
+.tx-playlist-select > .tx-select {
+  flex: 1 1 220px;
+  min-inline-size: 0;
+}
+
 /* ---------- Failure list of a bulk change ---------- */
 
 .tx-shared-failures {

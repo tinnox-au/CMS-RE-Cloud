@@ -4,6 +4,7 @@ export * from './text.ts';
 export * from './refs.ts';
 export * from './schedule.ts';
 export * from './canvas.ts';
+export * from './layout.ts';
 export * from './errors.ts';
 export * from './tag.ts';
 export * from './folder.ts';

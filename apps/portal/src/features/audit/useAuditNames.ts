@@ -45,6 +45,10 @@ async function loadKind(kind: AuditTargetKind, signal: AbortSignal): Promise<Loa
       const list = await api.listSchedules(signal);
       return { names: new Map(list.map((item) => [item.id.toLowerCase(), item.name])) };
     }
+    case 'layout': {
+      const list = await api.listLayouts(signal);
+      return { names: new Map(list.map((item) => [item.id.toLowerCase(), item.name])) };
+    }
   }
 }
 
@@ -112,6 +116,7 @@ export function useAuditNames(kinds: readonly AuditTargetKind[], generation: num
       folder: names('folder'),
       app: names('app'),
       schedule: names('schedule'),
+      layout: names('layout'),
       tagScopes: byKind.get('tag')?.tagScopes ?? null,
     };
   }, [loaded]);

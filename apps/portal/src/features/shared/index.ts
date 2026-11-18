@@ -1,8 +1,10 @@
 /**
- * Feature parts shared by the media, playlist, screen, dashboard and settings pages.
+ * Feature parts shared by the media, playlist, schedule, layout, screen, dashboard and settings
+ * pages.
  * The reference is README.md in this folder.
  */
 export { FolderSelect, type FolderSelectProps } from './FolderSelect.tsx';
+export { LayoutPickerDialog, type LayoutPickerDialogProps } from './LayoutPickerDialog.tsx';
 export { MediaThumb, type MediaThumbProps } from './MediaThumb.tsx';
 export {
   MoveToFolderDialog,
@@ -11,6 +13,7 @@ export {
 } from './MoveToFolderDialog.tsx';
 export { PlaylistMosaic, type PlaylistMosaicProps } from './PlaylistMosaic.tsx';
 export { PlaylistPickerDialog, type PlaylistPickerDialogProps } from './PlaylistPickerDialog.tsx';
+export { PlaylistSelect, type PlaylistSelectProps } from './PlaylistSelect.tsx';
 export { PushStatePill, type PushStatePillProps } from './PushStatePill.tsx';
 export { SchedulePickerDialog, type SchedulePickerDialogProps } from './SchedulePickerDialog.tsx';
 export { ScreenPickerDialog, type ScreenPickerDialogProps } from './ScreenPickerDialog.tsx';

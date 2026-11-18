@@ -427,10 +427,10 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
    * Deletes a playlist. Refused while a display has it assigned: the operator
    * assigns something else first, so no display is left pointing at nothing by
    * accident. Refused while a schedule uses it, as its default or in an event,
-   * for the same reason. Otherwise the row is kept but hidden (`deleted_at`),
-   * because its publications refer to it for good, and its items are removed,
-   * so the media it used is free to be deleted. What displays are playing is
-   * not affected: a publication is a snapshot.
+   * or a layout uses it in a zone, for the same reason. Otherwise the row is kept
+   * but hidden (`deleted_at`), because its publications refer to it for good, and
+   * its items are removed, so the media it used is free to be deleted. What
+   * displays are playing is not affected: a publication is a snapshot.
    */
   app.delete(ROUTES.playlistPattern, async (request, reply) => {
     const session = operatorOf(request);
@@ -473,6 +473,20 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
             scheduled.rows.map((r) => ({ path: 'schedule', message: r.name })),
           );
         }
+        const zoned = await tx.query<{ name: string }>(
+          `SELECT l.name FROM layout l
+           WHERE l.org_id = app_org_id()
+             AND EXISTS (SELECT 1 FROM layout_zone z
+                         WHERE z.layout_id = l.id AND z.org_id = l.org_id AND z.playlist_id = $1)
+           ORDER BY lower(l.name), l.id LIMIT 5`,
+          [id],
+        );
+        if (zoned.rows.length > 0) {
+          throw inUse(
+            'This playlist is used by a layout. Choose another playlist in the layout first.',
+            zoned.rows.map((r) => ({ path: 'layout', message: r.name })),
+          );
+        }
         const removed = await tx.query(
           'DELETE FROM playlist_item WHERE playlist_id = $1 AND org_id = app_org_id()',
           [id],
@@ -492,14 +506,14 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
         });
       });
     } catch (error) {
-      // A display was given this playlist, or a schedule took it, between the checks
-      // above and the delete; the database guard refuses.
+      // A display was given this playlist, or a schedule or a layout took it, between
+      // the checks above and the delete; the database guard refuses.
       if (
         pgErrorCode(error) === '23001' &&
         violatedConstraint(error) === STAGE_A_CONSTRAINTS.playlistStillAssigned
       ) {
         throw inUse(
-          'This playlist has just been assigned to a screen or added to a schedule. Try again.',
+          'This playlist has just been assigned to a screen or added to a schedule or a layout. Try again.',
         );
       }
       throw error;
@@ -514,8 +528,8 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
    *
    * Publishing a playlist to a display also assigns it to that display, in the
    * same transaction (decision P2-05), so "assigned" never lags behind what an
-   * operator last published there. A schedule the display had assigned is taken
-   * off it: a display has a playlist or a schedule, never both.
+   * operator last published there. A schedule or a layout the display had assigned
+   * is taken off it: a display has one of a playlist, a schedule or a layout.
    */
   app.post(
     ROUTES.playlistPublishPattern,
@@ -537,13 +551,14 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
             await lockPublishKey(tx, displayId, key);
             const previous = await findPublicationByKey(tx, displayId, key);
             if (previous !== null) {
-              // A push of a schedule records its default playlist; one that can play other
-              // playlists (a `schedule` block) is not what publishing this playlist made.
-              const scheduled =
+              // A push of a schedule or a layout records its default or main-zone playlist;
+              // one that can play other playlists (a `schedule` block, or `zones`) is not
+              // what publishing this playlist made.
+              const container =
                 typeof previous.manifest === 'object' &&
                 previous.manifest !== null &&
-                'schedule' in previous.manifest;
-              if (previous.playlist_id !== playlistId || scheduled) {
+                ('schedule' in previous.manifest || 'zones' in previous.manifest);
+              if (previous.playlist_id !== playlistId || container) {
                 return refuse(
                   new HttpError(
                     409,
@@ -569,6 +584,7 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
                 membershipId: session.membershipId,
                 playlistId,
                 scheduleId: null,
+                layoutId: null,
                 displayId,
                 issues: plan.issues,
                 via: 'publish',
@@ -580,14 +596,17 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
               display,
               playlistId,
               scheduleId: null,
+              layoutId: null,
               draft: plan.draft,
               idempotencyKey: key,
               membershipId: session.membershipId,
               via: 'publish',
             });
-            // With a schedule assigned the playlist column is null, so the row matches.
+            // With a schedule or a layout assigned the playlist column is null, so the row matches.
             await tx.query(
-              `UPDATE display SET assigned_playlist_id = $2::uuid, assigned_schedule_id = NULL
+              `UPDATE display
+               SET assigned_playlist_id = $2::uuid, assigned_schedule_id = NULL,
+                   assigned_layout_id = NULL
                WHERE id = $1 AND org_id = app_org_id()
                  AND assigned_playlist_id IS DISTINCT FROM $2::uuid`,
               [displayId, playlistId],

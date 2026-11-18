@@ -541,13 +541,14 @@ describe('migration 0005 on a database that already holds publications', () => {
 
   // The same populated database then goes through every later migration, so this is an
   // upgrade of existing rows, not the fresh schema the stage B suites start from.
-  it('carries the existing rows through 0006 to 0009', async () => {
+  it('carries the existing rows through 0006 to 0011', async () => {
     expect(upgrade.applied).toEqual(
       expect.arrayContaining([
         '0006_stage_b_slice1.sql',
         '0007_stage_b_apps.sql',
         '0008_null_safe_checks.sql',
         '0009_stage_b_schedules.sql',
+        '0011_stage_b_layouts.sql',
       ]),
     );
     for (const org of [a, b]) {
@@ -569,8 +570,8 @@ describe('migration 0005 on a database that already holds publications', () => {
       expect(await count('publication')).toBeGreaterThan(0);
       expect(await count("publication WHERE manifest ->> 'schemaVersion' <> '1'")).toBe(0);
     }
-    // 0008: the NULL-safe definitions are the ones in force after the upgrade (0009 keeps
-    // the manifest check NULL-safe when it adds version 4).
+    // 0008: the NULL-safe definitions are the ones in force after the upgrade (0009 and 0011
+    // keep the manifest check NULL-safe when they add versions 4 and 5).
     const checks = await migrator.query<{ conname: string; def: string }>(
       `SELECT conname, pg_get_constraintdef(oid) AS def FROM pg_constraint
        WHERE conname IN ('publication_manifest_shape', 'media_ready_is_complete') ORDER BY conname`,
@@ -582,6 +583,7 @@ describe('migration 0005 on a database that already holds publications', () => {
     expect(checks.rows[0]?.def).toContain('bytes IS NOT NULL');
     expect(checks.rows[1]?.def).toContain('IS TRUE');
     expect(checks.rows[1]?.def).toContain("'4'");
+    expect(checks.rows[1]?.def).toContain("'5'");
   });
 });
 
@@ -618,6 +620,9 @@ describe('forced row-level security after migration 0005', () => {
         // 0009, applied with the rest.
         'schedule',
         'schedule_event',
+        // 0011, applied with the rest.
+        'layout',
+        'layout_zone',
         'session',
         'site',
         'tag',

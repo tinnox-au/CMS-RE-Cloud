@@ -18,9 +18,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   AppDtoSchema,
+  LAYOUT_UNITS,
+  LayoutDtoSchema,
   ScheduleDtoSchema,
   type AppContent,
   type AppDto,
+  type LayoutDto,
+  type LayoutZoneInput,
   type MediaJobResult,
   type PlaylistItemInput,
   type ScheduleDto,
@@ -572,6 +576,51 @@ export async function assignSchedule(
   const response = await operator.fetch(`/api/displays/${displayId}`, {
     method: 'PATCH',
     json: { assignedScheduleId: scheduleId },
+  });
+  if (response.status !== 200)
+    throw new Error(`assignment failed: ${response.status} ${await response.text()}`);
+}
+
+/**
+ * The portal's one preset: a main zone over the whole width and a band of `bandPercent` %
+ * of the height along the bottom, in basis points.
+ */
+export function layoutZones(
+  mainPlaylistId: string,
+  bandPlaylistId: string,
+  bandPercent = 15,
+): LayoutZoneInput[] {
+  const band = bandPercent * 100;
+  return [
+    { playlistId: mainPlaylistId, x: 0, y: 0, width: LAYOUT_UNITS, height: LAYOUT_UNITS - band },
+    { playlistId: bandPlaylistId, x: 0, y: LAYOUT_UNITS - band, width: LAYOUT_UNITS, height: band },
+  ];
+}
+
+/** Creates a layout through the API and returns it. `zones[0]` is the main zone. */
+export async function createLayout(
+  operator: Operator,
+  name: string,
+  zones: readonly LayoutZoneInput[],
+): Promise<LayoutDto> {
+  const response = await operator.fetch('/api/layouts', { method: 'POST', json: { name, zones } });
+  if (response.status !== 201)
+    throw new Error(`layout create failed: ${response.status} ${await response.text()}`);
+  return LayoutDtoSchema.parse(await response.json());
+}
+
+/**
+ * Assigns a layout to a display, which takes a playlist or a schedule off it (null
+ * removes the layout). Nothing is pushed.
+ */
+export async function assignLayout(
+  operator: Operator,
+  displayId: string,
+  layoutId: string | null,
+): Promise<void> {
+  const response = await operator.fetch(`/api/displays/${displayId}`, {
+    method: 'PATCH',
+    json: { assignedLayoutId: layoutId },
   });
   if (response.status !== 200)
     throw new Error(`assignment failed: ${response.status} ${await response.text()}`);

@@ -666,6 +666,47 @@ describe('checkCapabilities', () => {
       'The playlists of this schedule hold 3 items in total; The browser player supports up to 2.',
     ]);
     expect(checkCapabilities(scheduled, profile)).toEqual([]);
+    const zoned = {
+      ...three,
+      zones: [
+        {
+          rect: { x: 0, y: 0, width: 1920, height: 918 },
+          count: 2,
+          transition: 'cut' as const,
+          shuffle: false,
+        },
+        {
+          rect: { x: 0, y: 918, width: 1920, height: 162 },
+          count: 1,
+          transition: 'cut' as const,
+          shuffle: false,
+        },
+      ],
+    };
+    expect(checkCapabilities(zoned, { ...tight, maxRegions: 4 }).map((i) => i.message)).toEqual([
+      'The playlists of this layout hold 3 items in total; The browser player supports up to 2.',
+    ]);
+  });
+
+  it('counts a region per zone of a layout, and one without a layout', () => {
+    const three = draftOf([image(ID.jpeg), image(ID.png), video(ID.video)]);
+    const run = { count: 1, transition: 'cut' as const, shuffle: false };
+    const zoned = {
+      ...three,
+      zones: [
+        { ...run, count: 2, rect: { x: 0, y: 0, width: 1920, height: 918 } },
+        { ...run, rect: { x: 0, y: 918, width: 1920, height: 162 } },
+      ],
+    };
+    expect(checkCapabilities(zoned, profile)).toEqual([
+      {
+        index: null,
+        code: 'multiple_regions_unsupported',
+        message: 'The browser player can show 1 content region(s); this publication needs 2.',
+      },
+    ]);
+    expect(checkCapabilities(zoned, { ...profile, maxRegions: 2 })).toEqual([]);
+    expect(checkCapabilities(three, profile)).toEqual([]);
   });
 
   it('skips app items', () => {

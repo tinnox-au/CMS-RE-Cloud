@@ -210,6 +210,21 @@ after a reload without network the device clock is used until the first heartbea
 
 ### Schedules (manifest v4)
 
+Since `player-web/0.5.0` the player accepts manifest v1 to v5 and refuses 6 (`docs/player-protocol-v1.md`
+§5, "Manifest v5"). A v5 manifest is a layout: the items of two to four zones in the one flat
+`assets` list, plus `zones` (each zone's rectangle in canvas pixels, item count, transition and
+shuffle; zone 0 is the main zone). `ui/stage.ts` (`DomStage`, one per session) owns the canvas,
+its rotation and scale, the one resize listener and one box per zone (test ids `content`, then
+`zone-1` …; layers `active-layer`, then `zone-1-active-layer` …). Each zone has its own
+`DomPresenter` and `PlaybackLoop`; `core/zones.ts` (`ZoneSet`) starts, keeps and stops zones 1
+and up when the main loop adopts a new publication, and hands every zone a version 3 view of its
+own run (`manifestZones`), so the playback and time-rule code has no zone branches. The main zone
+speaks for the screen (phase, slates, heartbeat `activeItemIndex`, garbage collection on a change
+of publication); a band whose items all fail goes black and is tried again after 30 s. Known
+limits (`// shortcut:`): zones adopt a new publication at their own next item, so for up to one
+video old and new geometry can share the screen, and removing a zone cuts its video; heartbeat
+v1 reports the main zone only.
+
 Since `player-web/0.4.0` the player accepts manifest v1 to v4 (`docs/player-protocol-v1.md`
 §5, "Manifest v4"). A v4 manifest holds the items of several playlists in the one flat
 `assets` list, plus a `schedule` block: the playlists as consecutive slices (slice 0 is
@@ -418,7 +433,7 @@ After a release that adds a manifest version, reload the player page on each scr
 **while the screen can reach the player host**: a reload that gets no answer within the
 4 s limit shows the old build from the cache, and nothing on the screen says so. If the
 error on the screen's Overview tab in the portal stays, reload again. The diagnostics
-overlay shows the build ("Build", for example `player-web/0.4.0`).
+overlay shows the build ("Build", for example `player-web/0.5.0`).
 
 ### One tab at a time
 
@@ -496,7 +511,7 @@ fakes for the state store, the asset store, the API and the presenter, plus
 - time rules (`core/time-rules.test.ts`, fixed instants in Australia/Melbourne): a
   daylight-saving day, `24:00`, a closed day, a window edge, fail-open on a clock behind
   the publication and on an unknown zone;
-- manifest v2, v3 and v4 accepted and version 5 refused in sync; a refused manifest's
+- manifest v2 to v5 accepted and version 6 refused in sync; a refused manifest's
   publication is remembered, so a heartbeat hint for it does not wake the loop; a stored
   v1 record and a stored v4 record load from IndexedDB. Test data: `makeManifest` in
   `core/fakes.test-support.ts` builds v1, `makeManifestV2` builds v2, `makeManifestV3`

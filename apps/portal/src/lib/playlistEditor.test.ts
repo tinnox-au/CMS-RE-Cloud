@@ -819,6 +819,7 @@ function row(n: number, state: PushState, playlistId: string | null = ID(9)): Pu
         ? null
         : { id: playlistId, name: 'Lobby loop' },
     schedule: null,
+    layout: null,
     state,
     issues:
       state === 'blocked'
@@ -863,6 +864,15 @@ describe('push card', () => {
     expect(rowsForPlaylist(plan([scheduled]), ID(9))).toEqual([]);
   });
 
+  it('leaves out a screen that plays the playlist in the main zone of its layout', () => {
+    const laidOut: PushPlanRow = {
+      ...row(2, 'changes'),
+      layout: { id: ID(70), name: 'Foyer band' },
+    };
+    const thePlan = plan([row(1, 'up_to_date'), laidOut]);
+    expect(rowsForPlaylist(thePlan, ID(9)).map((item) => item.display.name)).toEqual(['Screen 1']);
+  });
+
   it('counts the screens a push would act on', () => {
     expect(waitingCount([row(1, 'changes'), row(2, 'never_pushed'), row(3, 'up_to_date')])).toBe(2);
     expect(waitingCount([row(1, 'blocked'), row(2, 'up_to_date')])).toBe(0);
@@ -900,7 +910,7 @@ describe('push card', () => {
     );
     expect(pushHoldReason(true, [])).toContain('Save the draft first');
     expect(pushHoldReason(false, [])).toBe(
-      'No screen has this playlist assigned directly. Screens that play it through a schedule are pushed with Push to screens.',
+      'No screen has this playlist assigned directly. Screens that play it through a schedule or a layout are pushed with Push to screens.',
     );
     expect(pushHoldReason(false, [row(1, 'up_to_date')])).toBeNull();
     // A blocked screen can still be opened in the push dialog, which shows the refusal in full.

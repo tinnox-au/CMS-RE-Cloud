@@ -1,5 +1,6 @@
 import type { DeliveryStatusView, DisplayDto, Rotation, SiteDto } from '@tinnox/contracts';
 import type { LoadState } from '../../../hooks/useLoad.ts';
+import { assignedContent } from '../../../lib/assignedContent.ts';
 import type { DisplayFormValues } from '../../../lib/displayForm.ts';
 import {
   plannedTabReason,
@@ -99,7 +100,7 @@ function TabContent(props: ScreenTabsProps) {
         <OverviewTab
           status={props.status}
           onReload={props.onReloadStatus}
-          scheduled={props.display.assignedSchedule !== null}
+          contentKind={assignedContent(props.display)?.kind ?? null}
         />
       );
     case 'canvas':

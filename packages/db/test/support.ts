@@ -57,6 +57,8 @@ export interface TestOrg {
   appId: string;
   /** A schedule on the playlist, with one event for the same playlist; no display has it assigned. */
   scheduleId: string;
+  /** A layout with the playlist in both zones (a main zone and a 15 % band); no display has it assigned. */
+  layoutId: string;
 }
 
 export const hash = (): Buffer => randomBytes(32);
@@ -69,9 +71,9 @@ export function pairingCode(): string {
 /**
  * Creates a complete organisation as the migrator: site, member, display, ready media in a
  * folder, playlist (assigned to the display), publication, audit row, one tag of each
- * scope put on the media item and on the display, one app, and one schedule with one event.
- * Every tenant table that the runtime role writes directly gets exactly one row, except
- * `tag`, which gets two.
+ * scope put on the media item and on the display, one app, one schedule with one event, and
+ * one layout with two zones. Every tenant table that the runtime role writes directly gets
+ * exactly one row, except `tag` and `layout_zone`, which get two.
  */
 export async function createOrg(migrator: pg.Client, name: string): Promise<TestOrg> {
   const o: TestOrg = {
@@ -88,6 +90,7 @@ export async function createOrg(migrator: pg.Client, name: string): Promise<Test
     displayTagId: randomUUID(),
     appId: randomUUID(),
     scheduleId: randomUUID(),
+    layoutId: randomUUID(),
   };
   const manifest = {
     schemaVersion: 1,
@@ -188,6 +191,16 @@ export async function createOrg(migrator: pg.Client, name: string): Promise<Test
       `INSERT INTO schedule_event (schedule_id, position, org_id, playlist_id, days, start_time, end_time)
        VALUES ($1, 0, $2, $3, $4, '09:00', '17:00')`,
       [o.scheduleId, o.orgId, o.playlistId, [true, true, true, true, true, false, false]],
+    );
+    await migrator.query('INSERT INTO layout (id, org_id, name) VALUES ($1, $2, $3)', [
+      o.layoutId,
+      o.orgId,
+      `${name} layout`,
+    ]);
+    await migrator.query(
+      `INSERT INTO layout_zone (layout_id, position, org_id, playlist_id, x_bp, y_bp, width_bp, height_bp)
+       VALUES ($1, 0, $2, $3, 0, 0, 10000, 8500), ($1, 1, $2, $3, 0, 8500, 10000, 1500)`,
+      [o.layoutId, o.orgId, o.playlistId],
     );
     await migrator.query(
       'INSERT INTO publication (id, org_id, display_id, playlist_id, manifest, idempotency_key, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)',

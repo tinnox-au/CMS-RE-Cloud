@@ -1,13 +1,21 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ManifestSchema, PushResponseSchema, manifestPlaylists } from '@tinnox/contracts';
 import {
+  ManifestSchema,
+  PushResponseSchema,
+  manifestPlaylists,
+  manifestZones,
+} from '@tinnox/contracts';
+import {
+  assignLayout,
   assignSchedule,
   createDisplay,
+  createLayout,
   createOrg,
   createPlaylist,
   createSchedule,
   imageItem,
+  layoutZones,
   pairPlayer,
   PLAYER_ORIGIN,
   publishImages,
@@ -294,6 +302,57 @@ describe('player protocol', () => {
     expect(file.status).toBe(200);
     const bytes = Buffer.from(await file.arrayBuffer());
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(special.sha256);
+  });
+
+  it('serves a version 5 manifest and the media of every zone of the layout', async () => {
+    const display = await createDisplay(operator, org, 'split');
+    const main = await readyImage(t, operator, { width: 30, height: 10 });
+    // In the band only: not in the main zone, nor anywhere else.
+    const band = await readyImage(t, operator, { width: 10, height: 30 });
+    const layout = await createLayout(
+      operator,
+      'Split',
+      layoutZones(
+        await createPlaylist(operator, 'Main', [imageItem(main.id)]),
+        await createPlaylist(operator, 'Band', [imageItem(band.id)]),
+      ),
+    );
+    await assignLayout(operator, display.id, layout.id);
+    const player = await pairPlayer(t, operator, display.id);
+    const [result] = PushResponseSchema.parse(
+      await (await push(operator, [display.id])).json(),
+    ).results;
+    const publicationId = result?.publicationId ?? '';
+    expect(result?.outcome).toBe('published');
+
+    const response = await fetch(`${t.url}/player/manifest`, { headers: player.headers });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('etag')).toBe(`"${publicationId}"`);
+    const manifest = ManifestSchema.parse(
+      ((await response.json()) as { manifest: unknown }).manifest,
+    );
+    expect(manifest).toMatchObject({ schemaVersion: 5, publicationId, displayId: display.id });
+    // Each zone is a version 3 view of its own run of the flat list.
+    expect(
+      manifestZones(manifest).map((view) => [
+        view.schemaVersion,
+        view.contentRect,
+        view.assets.map((asset) => ('assetId' in asset ? asset.assetId : null)),
+      ]),
+    ).toEqual([
+      [3, { x: 0, y: 0, width: 640, height: 306 }, [main.id]],
+      [3, { x: 0, y: 306, width: 640, height: 54 }, [band.id]],
+    ]);
+
+    // The player stages every zone before it activates, so the band's file has a URL too.
+    const issued = await mediaUrls(player, publicationId, [band.id]);
+    expect(issued.status).toBe(200);
+    const { urls } = (await issued.json()) as { urls: { assetId: string; url: string }[] };
+    expect(urls.map((entry) => entry.assetId)).toEqual([band.id]);
+    const file = await fetch(local(urls[0]?.url ?? ''));
+    expect(file.status).toBe(200);
+    const bytes = Buffer.from(await file.arrayBuffer());
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(band.sha256);
   });
 
   it('binds signed media URLs to registration, publication, asset and expiry', async () => {

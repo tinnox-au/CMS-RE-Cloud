@@ -357,6 +357,7 @@ describe('assigned content', () => {
       ...states.map((s) => previewCaption(s, 'Loop', 'a.png')),
       ...states.map((s) => previewCaption(s, null, null)),
       ...states.map((s) => previewCaption(s, 'Loop', 'a.png', 'Week')),
+      ...states.map((s) => previewCaption(s, 'Loop', 'a.png', null, 'Band')),
       PREVIEW_DISCLAIMER,
       APP_PREVIEW_DISCLAIMER,
       STATUS_DISCLAIMER,
@@ -375,7 +376,7 @@ describe('assigned content', () => {
 
   it('says that nothing is assigned without assuming a playlist', () => {
     expect(previewCaption('nothing_assigned', null, null)).toBe(
-      'No playlist or schedule is assigned to this screen, so there is nothing to preview.',
+      'No playlist, schedule or layout is assigned to this screen, so there is nothing to preview.',
     );
   });
 
@@ -392,6 +393,15 @@ describe('assigned content', () => {
     );
     expect(previewCaption('nothing_assigned', null, null, 'Opening hours')).not.toMatch(
       /default playlist/,
+    );
+  });
+
+  it('says that the preview of a layout shows its main zone', () => {
+    expect(previewCaption('ready', 'Loop', 'a.png', null, 'Foyer band')).toBe(
+      '“a.png”, the first item of “Loop”. This is the main zone of the layout “Foyer band”.',
+    );
+    expect(previewCaption('nothing_assigned', null, null, null, 'Foyer band')).not.toMatch(
+      /main zone/,
     );
   });
 });
@@ -482,6 +492,7 @@ describe('push row', () => {
           display: { id: 'abcdef00-0000-4000-8000-000000000001', name: 'A' },
           playlist: null,
           schedule: null,
+          layout: null,
           state: 'nothing_assigned',
           issues: [],
           lastPushedAt: null,

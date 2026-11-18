@@ -4,6 +4,7 @@ import {
   MANIFEST_SCHEMA_VERSION_V2,
   MANIFEST_SCHEMA_VERSION_V3,
   MANIFEST_SCHEMA_VERSION_V4,
+  MANIFEST_SCHEMA_VERSION_V5,
   ManifestSchema,
   type Limits,
   type Manifest,
@@ -42,10 +43,11 @@ export function needsV2(draft: PublicationDraft): boolean {
 }
 
 /**
- * The oldest manifest version that carries the draft: 4 with a schedule, 3 with an app, 2 with
- * a v2 option, else 1.
+ * The oldest manifest version that carries the draft: 5 with a layout, 4 with a schedule, 3 with
+ * an app, 2 with a v2 option, else 1.
  */
-export function manifestVersionFor(draft: PublicationDraft): 1 | 2 | 3 | 4 {
+export function manifestVersionFor(draft: PublicationDraft): 1 | 2 | 3 | 4 | 5 {
+  if (draft.zones !== null) return MANIFEST_SCHEMA_VERSION_V5;
   if (draft.schedule !== null) return MANIFEST_SCHEMA_VERSION_V4;
   if (draft.items.some((item) => item.kind === 'app')) return MANIFEST_SCHEMA_VERSION_V3;
   return needsV2(draft) ? MANIFEST_SCHEMA_VERSION_V2 : MANIFEST_SCHEMA_VERSION;
@@ -72,6 +74,9 @@ function v1Asset(item: ResolvedMediaItem) {
  * here is a programming error.
  */
 export function buildManifest(draft: PublicationDraft, identity: ManifestIdentity): Manifest {
+  if (draft.zones !== null && draft.schedule !== null) {
+    throw new Error('a draft has a schedule or zones, not both');
+  }
   const version = manifestVersionFor(draft);
   const header = {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
@@ -128,6 +133,22 @@ export function buildManifest(draft: PublicationDraft, identity: ManifestIdentit
                 end: event.end,
               })),
             },
+          }),
+      // Version 5 is version 3 plus the zones, copied field by field.
+      ...(draft.zones === null
+        ? {}
+        : {
+            zones: draft.zones.map((zone) => ({
+              rect: {
+                x: zone.rect.x,
+                y: zone.rect.y,
+                width: zone.rect.width,
+                height: zone.rect.height,
+              },
+              count: zone.count,
+              transition: zone.transition,
+              shuffle: zone.shuffle,
+            })),
           }),
     };
   }

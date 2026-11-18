@@ -14,7 +14,7 @@ import {
   mergeDeleteRetry,
 } from '../../../lib/playlistsListActions.ts';
 import { Banner, Button, ButtonLink, Dialog, useToast } from '../../../ui/index.ts';
-import { CalendarDays, Monitor } from '../../../ui/icons.ts';
+import { CalendarDays, LayoutTemplate, Monitor } from '../../../ui/icons.ts';
 import { useRowFocusReturn, type RowFocusSource } from '../../shared/index.ts';
 import './playlistsList.css';
 
@@ -39,9 +39,9 @@ interface Progress {
 /**
  * Confirms deleting one playlist or several, names them, and reports honestly: one request
  * per playlist, one after another, and every refusal listed with the server's reason and
- * error code. A playlist that a screen has assigned, or that a schedule uses, is refused by
- * the server (`playlist_in_use`); the dialog then says which screens or schedules and what to
- * do. "Try again" repeats only the ones that failed for another reason, and is not offered
+ * error code. A playlist that a screen has assigned, or that a schedule or a layout uses, is
+ * refused by the server (`playlist_in_use`); the dialog then says which screens, schedules or
+ * layouts and what to do. "Try again" repeats only the ones that failed for another reason, and is not offered
  * when every failure is such a refusal: it could only be refused again.
  */
 export function DeletePlaylistsDialog({
@@ -116,8 +116,9 @@ export function DeletePlaylistsDialog({
   const refusals = failed.map((failure) =>
     deleteFailureText(failure.error, failure.item.assignedDisplayCount),
   );
-  const anyByScreen = refusals.some((text) => text.inUse && !text.bySchedule);
-  const anyBySchedule = refusals.some((text) => text.bySchedule);
+  const anyByScreen = refusals.some((text) => text.refusedBy === 'display');
+  const anyBySchedule = refusals.some((text) => text.refusedBy === 'schedule');
+  const anyByLayout = refusals.some((text) => text.refusedBy === 'layout');
 
   return (
     <Dialog
@@ -207,7 +208,7 @@ export function DeletePlaylistsDialog({
             tone="danger"
             live="assertive"
             actions={
-              anyByScreen || anyBySchedule ? (
+              anyByScreen || anyBySchedule || anyByLayout ? (
                 <>
                   {anyByScreen && (
                     <ButtonLink size="sm" to="/screens" icon={Monitor}>
@@ -217,6 +218,11 @@ export function DeletePlaylistsDialog({
                   {anyBySchedule && (
                     <ButtonLink size="sm" to="/schedules" icon={CalendarDays}>
                       Go to Schedules
+                    </ButtonLink>
+                  )}
+                  {anyByLayout && (
+                    <ButtonLink size="sm" to="/layouts" icon={LayoutTemplate}>
+                      Go to Layouts
                     </ButtonLink>
                   )}
                 </>

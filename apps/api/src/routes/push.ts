@@ -1,9 +1,9 @@
 /**
  * Push to displays (portal v2 decision P2-05: assign, then push).
  *
- * Editing a playlist or a schedule, or assigning one, changes nothing on a display. A push
- * builds one immutable publication per chosen display, through the same code
- * as `POST /api/playlists/:id/publish` (../publishing.ts), and only where the
+ * Editing a playlist, a schedule or a layout, or assigning one, changes nothing on a
+ * display. A push builds one immutable publication per chosen display, through the
+ * same code as `POST /api/playlists/:id/publish` (../publishing.ts), and only where the
  * publication that would be built differs from the one the display already has.
  */
 import {
@@ -41,6 +41,7 @@ function toPlanRow(assessment: DisplayAssessment): PushPlanRow {
     display: { id: assessment.display.id, name: assessment.display.name },
     playlist: assessment.playlist,
     schedule: assessment.schedule,
+    layout: assessment.layout,
     state: assessment.state,
     issues: issueDetails(assessment.issues),
     lastPushedAt: assessment.current === null ? null : iso(assessment.current.createdAt),
@@ -104,7 +105,8 @@ export function registerPushRoutes(app: FastifyInstance, ctx: AppContext): void 
       });
       if (assessment === undefined) throw new Error('a display was not assessed');
 
-      // Still "nothing is assigned": a scheduled display carries its default playlist here.
+      // Still "nothing is assigned": a display with a schedule or a layout carries its
+      // default or main-zone playlist here.
       if (assessment.playlist === null) {
         return { displayId, outcome: 'skipped', publicationId: null, issues: [] };
       }
@@ -115,6 +117,7 @@ export function registerPushRoutes(app: FastifyInstance, ctx: AppContext): void 
           membershipId: session.membershipId,
           playlistId: assessment.playlist.id,
           scheduleId: assessment.schedule?.id ?? null,
+          layoutId: assessment.layout?.id ?? null,
           displayId,
           issues: assessment.issues,
           via: 'push',
@@ -140,6 +143,7 @@ export function registerPushRoutes(app: FastifyInstance, ctx: AppContext): void 
         display,
         playlistId: assessment.playlist.id,
         scheduleId: assessment.schedule?.id ?? null,
+        layoutId: assessment.layout?.id ?? null,
         draft: assessment.draft,
         idempotencyKey: key,
         membershipId: session.membershipId,

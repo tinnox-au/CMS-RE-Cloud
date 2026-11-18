@@ -340,7 +340,7 @@ export type PushOverviewState =
   | 'up_to_date'
   /** Nothing can be pushed, and at least one screen is blocked. */
   | 'blocked_only'
-  /** There are screens, and none has a playlist or a schedule assigned. */
+  /** There are screens, and none has a playlist, a schedule or a layout assigned. */
   | 'nothing_assigned'
   | 'no_screens';
 
@@ -383,12 +383,12 @@ export function pushOverview(plan: PushPlanResponse, limit = 3): PushOverview {
     state = 'no_screens';
     headline = 'Nothing to push yet';
     text =
-      'Add a screen and assign a playlist or a schedule to it. Its changes then wait here until you push.';
+      'Add a screen and assign a playlist, a schedule or a layout to it. Its changes then wait here until you push.';
   } else if (assigned === 0) {
     state = 'nothing_assigned';
     headline = 'Nothing to push yet';
     text =
-      'Assign a playlist or a schedule to a screen. Its changes then wait here until you push.';
+      'Assign a playlist, a schedule or a layout to a screen. Its changes then wait here until you push.';
   } else {
     state = 'up_to_date';
     headline = 'Everything is up to date';

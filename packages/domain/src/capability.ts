@@ -5,9 +5,20 @@ function megabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Why a schedule's playlists are refused together: their item total is over the route's limit. */
-export function scheduleTotalMessage(total: number, route: string, max: number): string {
-  return `The playlists of this schedule hold ${total} items in total; ${route} supports up to ${max}.`;
+/** Why the playlists of a schedule or a layout are refused together: their item total is over the route's limit. */
+export function contentTotalMessage(
+  owner: 'schedule' | 'layout',
+  total: number,
+  route: string,
+  max: number,
+): string {
+  return `The playlists of this ${owner} hold ${total} items in total; ${route} supports up to ${max}.`;
+}
+
+// shortcut: a layout may put video in every zone (up to 8 <video> elements while items swap); add CapabilityProfile.maxVideoRegions if Pi-class players lag (AV4:56).
+/** How many content regions a draft needs: one per zone of a layout, else one. */
+export function regionCount(draft: PublicationDraft): number {
+  return draft.zones?.length ?? 1;
 }
 
 /**
@@ -22,11 +33,11 @@ export function checkCapabilities(
   const issues: PublishIssue[] = [];
   const route = profile.label;
 
-  if (draft.regions > profile.maxRegions) {
+  if (regionCount(draft) > profile.maxRegions) {
     issues.push({
       index: null,
       code: 'multiple_regions_unsupported',
-      message: `${route} can show ${profile.maxRegions} content region(s); this publication needs ${draft.regions}.`,
+      message: `${route} can show ${profile.maxRegions} content region(s); this publication needs ${regionCount(draft)}.`,
     });
   }
   if (draft.audio && !profile.audio) {
@@ -59,9 +70,11 @@ export function checkCapabilities(
       index: null,
       code: 'too_many_items',
       message:
-        draft.schedule !== null
-          ? scheduleTotalMessage(draft.items.length, route, profile.maxItems)
-          : `The playlist has ${draft.items.length} items; ${route} supports up to ${profile.maxItems}.`,
+        draft.zones !== null
+          ? contentTotalMessage('layout', draft.items.length, route, profile.maxItems)
+          : draft.schedule !== null
+            ? contentTotalMessage('schedule', draft.items.length, route, profile.maxItems)
+            : `The playlist has ${draft.items.length} items; ${route} supports up to ${profile.maxItems}.`,
     });
   }
 

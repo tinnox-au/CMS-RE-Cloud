@@ -1,6 +1,6 @@
 # Portal v2, stage B: build spec
 
-Date: 2026-11-16 (slice 3 added 2026-11-17). Stage B is built in slices. Slice 1 (playback options, time rules, rotation, image thumbnails), slice 2 (built-in apps) and slice 3 (schedules) are specified below, each with its as-built table; layouts come later and get their own section when they start (see "After this slice: layouts" at the end). Read `README.md` in this folder first. The build follows the "ponytail" rule: the least new code that fully solves the task; every known limit is marked in code with a `shortcut:` comment.
+Date: 2026-11-16 (slice 3 added 2026-11-17, slice 4 on 2026-11-18). Stage B is built in slices. Slice 1 (playback options, time rules, rotation, image thumbnails), slice 2 (built-in apps), slice 3 (schedules) and slice 4 (layouts) are specified below, each with its as-built table. Read `README.md` in this folder first. The build follows the "ponytail" rule: the least new code that fully solves the task; every known limit is marked in code with a `shortcut:` comment.
 
 ## Stage B, slice 1: playback options, time rules, rotation, image thumbnails
 
@@ -1690,7 +1690,7 @@ Open client questions (the build uses the default shown). Questions 6 to 9 are b
 Layouts were not built beside this slice: both builds would have claimed the same migration number, manifest version and player version, and both change how a screen records its content. They are the next slice of stage B. Guidance for it, from what this slice shipped:
 
 - **Before it starts:** run the two end-to-end files of this slice (09 and 10) and get them green, apply 0009 to the development database, and have this slice committed. A layouts build on top of an unverified schedules build cannot tell its own faults from this slice's.
-- **Numbers:** migration `0010`, manifest v5, `player-web/0.5.0`. 0001 to 0009 are never edited. v4 is frozen the moment `player-web/0.4.0` is released, so any new field or item shape is v5, through the single `manifestVersionFor`. The migration must replace the `publication_manifest_shape` CHECK once more (to accept `'5'`), which re-reads every publication under an ACCESS EXCLUSIVE lock: a quiet window again.
+- **Numbers:** migration `0010` (now 0011: 0010 went to pairing hardening; see slice 4), manifest v5, `player-web/0.5.0`. 0001 to 0009 are never edited. v4 is frozen the moment `player-web/0.4.0` is released, so any new field or item shape is v5, through the single `manifestVersionFor`. The migration must replace the `publication_manifest_shape` CHECK once more (to accept `'5'`), which re-reads every publication under an ACCESS EXCLUSIVE lock: a quiet window again.
 - **One version cut for everything that needs one.** Dated events (section 11) also cost v5. If the client wants them (question 3), put them into the same v5 as layouts, so one version is cut and every screen is reloaded once.
 - **Model:** design on the shipped v4 shape. `assets` is one flat list and `schedule.playlists` names consecutive slices of it; regions of a layout can point at slices of the same flat list, which keeps the 0004 `publication_asset` guard, staging, verification, garbage collection, heartbeat v1 and `activeItemIndex` untouched, as they were here. `manifestPlaylists` is the version-free view the player already uses.
 - **What a screen has assigned:** `display` now has `assigned_playlist_id` and `assigned_schedule_id` under the `display_one_assignment` CHECK (`num_nonnulls(...) <= 1`), column by column grants, and a PATCH rule in which a non-null id on one side clears the other in one UPDATE. A third kind of content must extend all three, and every place that reads "what is assigned" (`DisplayDto`, `PushPlanRow`, `assessDisplays`, the screen page's Content card, the push dialog, the screens list). `publication.playlist_id` is `NOT NULL` and holds the default playlist of a scheduled publication; decide what it holds for a layout.
@@ -1698,3 +1698,1224 @@ Layouts were not built beside this slice: both builds would have claimed the sam
 - **Rollout of v5:** nothing reloads a running player, so the reload rule of the release note applies again. A 0.4.0 player that is sent v5 keeps its content and retries on its backoff (it remembers the refused publication), so the 2-second poll of 0.3.0 does not repeat. The portal still cannot warn before a push: the server stores no player version.
 - **Files this slice changed that a layouts slice will change again:** packages/contracts/src/{manifest, display, push, audit, errors, routes, index}.ts; packages/domain/src/{types, manifest, push, capability}.ts; apps/api/src/{app, publishing}.ts and routes/{displays, push, playlists}.ts; apps/player-web/src/{config, app}.ts, core/{playback, time-rules, sync}.ts, ui/presenter.ts; apps/portal/src/{App.tsx, shell/nav.ts, api/endpoints.ts}, features/planned/PlannedPage.tsx, features/displays/detail/ContentCard.tsx, the push dialog, lib/{playlistEditor, pushDialog, dashboard, screensList}.ts; the RLS test lists; docs/player-protocol-v1.md and this file. Do not run another build session on these files beside it.
 - **Planned marker:** `/layouts` is still a `PlannedPage`, and the style guide's sample planned section is now "Layouts are planned"; both go when layouts are built.
+
+## Stage B, slice 4: layouts (build spec)
+
+Date: 2026-11-18. Read `README.md` and slices 1 to 3 of `stage-b.md` first, including "After this slice: layouts" at the end of slice 3. Ponytail rule as before: every known limit gets `// shortcut: <limit>, <when to upgrade>`; section 11 lists every one this slice adds. Paths are relative to the repository root. Every claim about existing code below was checked against the files on feat/stage-b-layouts (2068357); nothing was run.
+
+**What it delivers:** a customer splits a screen into a main zone and a band along the bottom, each with its own playlist, and sets the band height from 5 to 50 %. A Ticker or Text app in the band's playlist is the MVP's text band (docs/tinnox-mvp-spec.md:60, :127; PL-04 at docs/acceptance-tests.md:77).
+
+**Model in four sentences.** A layout is a named library object: two to four rectangles (zones), each with one playlist, stored in basis points of a screen's content area; zone 0 is the main zone. A screen has at most one of a playlist, a schedule or a layout assigned. A push resolves the zones to whole canvas pixels for that screen and copies every zone's playlist into one immutable publication (manifest v5). The player plays each zone as its own loop in its own box, and the main zone speaks for the screen (status, heartbeat, fault slate).
+
+**Shape in one sentence.** Everything stays flat: a v5 publication is zone 0's items followed by each other zone's items in the one `assets[]`, plus a `zones` list that gives each zone its pixel rectangle, its item count, its transition and its shuffle, so the 0004 `publication_asset` guard, `createPublication`, media-URL authorisation, staging, verification, GC, heartbeat v1 and `activeItemIndex` are untouched, and the player hands each zone a version 3 view of its own run, so its playback code is untouched too.
+
+**The rule behind the design.** The parts that freeze on release are general (the database, the API input, manifest v5 and player 0.5.0 all take two to four free rectangles); the part that is cheap to change later is small (the editor offers one preset). A free canvas editor (README row B, docs/portal-v2/README.md:26) is then portal-only work: no migration, no v6, no reload of every screen.
+
+### 1. Version rule
+
+- `manifestVersionFor(draft): 1 | 2 | 3 | 4 | 5` (domain manifest.ts:48-52): `5` exactly when `draft.zones !== null`, tested first; else the slice 3 rule. `zones` and `schedule` are never both set (`buildManifest` throws if they are).
+- **A layout always gives v5.** A layout has two to four zones (contract minimum, section 3), so there is no collapse rule. A screen without a layout has `draft.zones === null`, and `manifestVersionFor` and `buildManifest` behave exactly as today, so those screens keep v1 to v4 byte for byte.
+- **v5 = v3 plus `zones`.** It carries every v3 field (`manifestV2Object`, contracts manifest.ts:139-151). The top-level `transition` and `shuffle` are the main zone's. There is no `schedule` key (strict parsing refuses one) and no layout id or name, so no layout text reaches a player (as for schedules, docs/security/threat-model.md:154).
+- **What a 0.4.0 player does with v5:** `parseManifest` gives `unsupported_version`; sync.ts reports `manifest_unsupported_version` and keeps its active version (or its waiting slate). It remembers the refused publication (apps/player-web/src/core/sync.ts:107-113) and retries on its update backoff, so the 2-second poll of 0.3.0 does not repeat. The server stores no player version, so the portal cannot warn before a push; the layout editor and the layout picker carry a fixed sentence (section 7), and the Overview hint under `manifest_unsupported_version` (apps/portal/src/features/displays/detail/OverviewTab.tsx:215-216) applies unchanged.
+- Removing the layout from a screen (assigning a playlist or a schedule) makes the next draft v1 to v4; the push check reports `schemaVersion` and offers a push back.
+- No header, no Vary, no negotiation; the ETag stays the publicationId.
+- **Freeze:** v4 is frozen with `player-web/0.4.0`. v5 is frozen the moment `player-web/0.5.0` is released; the next addition (dated events, layouts in schedules) is v6. Client questions 4 and 5 (section 13) must be answered before 0.5.0 ships.
+- **Deploy order inside the release:** the API must run the v5 `ManifestSchema` before any v5 row is stored, because `GET /player/manifest` throws on a stored manifest that fails `ManifestSchema` (apps/api/src/routes/player.ts:431-432). One build ships contracts, API and migration together, so this holds.
+
+### 2. Migration `db/migrations/0011_stage_b_layouts.sql`
+
+0010 is `0010_pairing_hardening.sql` (security review round 3), so layouts take 0011. 0001 to 0010 are never edited.
+
+```sql
+-- 0011: portal v2, stage B slice 4: layouts (docs/portal-v2/stage-b.md, slice 4). 0001 to 0010 are unchanged.
+--
+--   1. layout: a named split of a screen into zones.
+--   2. layout_zone: the two to four zones of a layout, each a rectangle with a playlist; 0 is the main zone.
+--   3. Deleted playlists: a layout cannot use one, and a playlist that a layout uses cannot be deleted.
+--   4. display: a screen has one of a playlist, a schedule or a layout assigned.
+--   5. Row-level security and runtime grants.
+--   6. publication: the manifest may be schema version 1, 2, 3, 4 or 5.
+--
+-- Every bound has its twin in packages/contracts (LAYOUT_UNITS, LayoutInputSchema, ABSOLUTE.maxLayoutZones).
+-- Takes ACCESS EXCLUSIVE locks on display and publication until commit, reads every display row and
+-- re-reads every publication row to validate the new CHECKs; run it while the API is stopped or idle.
+
+-- ----------------------------------------------------------------------- 1. layout
+
+CREATE TABLE public.layout (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id      uuid NOT NULL REFERENCES public.organization (id),
+  name        text NOT NULL,
+  description text,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (id, org_id),
+  CONSTRAINT layout_name_length CHECK (char_length(name) BETWEEN 1 AND 120),
+  CONSTRAINT layout_name_trimmed CHECK (name = btrim(name)),
+  CONSTRAINT layout_description_length CHECK (char_length(description) BETWEEN 1 AND 500)
+);
+CREATE INDEX layout_org_idx ON public.layout (org_id, created_at);
+CREATE TRIGGER layout_set_updated_at BEFORE UPDATE ON public.layout
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- ------------------------------------------------------------------ 2. layout_zone
+
+-- Rows are replaced as a set (delete, then insert), never updated; position is the identity.
+CREATE TABLE public.layout_zone (
+  layout_id   uuid NOT NULL,
+  -- 0 is the main zone: it speaks for the screen. Twin of ABSOLUTE.maxLayoutZones (4).
+  position    integer NOT NULL,
+  org_id      uuid NOT NULL REFERENCES public.organization (id),
+  playlist_id uuid NOT NULL,
+  -- Basis points (1/10 000) of each screen's content rectangle, origin top-left (LAYOUT_UNITS).
+  x_bp        integer NOT NULL,
+  y_bp        integer NOT NULL,
+  width_bp    integer NOT NULL,
+  height_bp   integer NOT NULL,
+  PRIMARY KEY (layout_id, position),
+  CONSTRAINT layout_zone_position_range CHECK (position BETWEEN 0 AND 3),
+  CONSTRAINT layout_zone_in_bounds CHECK (
+    x_bp >= 0 AND y_bp >= 0 AND width_bp >= 1 AND height_bp >= 1
+    AND x_bp + width_bp <= 10000 AND y_bp + height_bp <= 10000
+  ),
+  CONSTRAINT layout_zone_layout_fk FOREIGN KEY (layout_id, org_id)
+    REFERENCES public.layout (id, org_id) ON DELETE CASCADE,
+  CONSTRAINT layout_zone_playlist_fk FOREIGN KEY (playlist_id, org_id)
+    REFERENCES public.playlist (id, org_id)
+);
+-- Layouts that use a given playlist (the fourth EXISTS of playlist_delete_guard).
+CREATE INDEX layout_zone_playlist_idx ON public.layout_zone (playlist_id);
+
+-- ------------------------------------------------------------ 3. deleted playlists
+
+-- Same rule and same locking as schedule_playlist_guard (0009): using a playlist takes a share
+-- lock on its row, which the UPDATE that deletes the playlist must hold exclusively, so one of
+-- the two waits for the other and then sees its result. The error carries the trigger's name.
+CREATE FUNCTION public.layout_zone_playlist_guard() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = pg_catalog, pg_temp
+  AS $$
+DECLARE
+  is_deleted boolean;
+BEGIN
+  -- A playlist that does not exist in this organisation is left to the foreign key.
+  SELECT p.deleted_at IS NOT NULL INTO is_deleted
+  FROM public.playlist p
+  WHERE p.id = NEW.playlist_id AND p.org_id = NEW.org_id
+  FOR SHARE;
+  IF FOUND AND is_deleted THEN
+    RAISE EXCEPTION 'a deleted playlist cannot be used in a layout'
+      USING ERRCODE = 'restrict_violation', CONSTRAINT = TG_NAME;
+  END IF;
+  RETURN NEW;
+END $$;
+
+CREATE TRIGGER layout_zone_playlist_guard
+  BEFORE INSERT OR UPDATE OF playlist_id ON public.layout_zone
+  FOR EACH ROW EXECUTE FUNCTION public.layout_zone_playlist_guard();
+REVOKE ALL ON FUNCTION public.layout_zone_playlist_guard() FROM PUBLIC;
+
+-- The 0009 function, replaced in place: it now also refuses while a layout uses the playlist.
+-- Same trigger, same constraint name, same privileges (CREATE OR REPLACE keeps the 0005 REVOKE).
+CREATE OR REPLACE FUNCTION public.playlist_delete_guard() RETURNS trigger
+  LANGUAGE plpgsql
+  SET search_path = pg_catalog, pg_temp
+  AS $$
+BEGIN
+  IF NEW.deleted_at IS NOT NULL AND OLD.deleted_at IS NULL AND (
+    EXISTS (SELECT 1 FROM public.display d
+            WHERE d.assigned_playlist_id = OLD.id AND d.org_id = OLD.org_id)
+    OR EXISTS (SELECT 1 FROM public.schedule s
+               WHERE s.default_playlist_id = OLD.id AND s.org_id = OLD.org_id)
+    OR EXISTS (SELECT 1 FROM public.schedule_event e
+               WHERE e.playlist_id = OLD.id AND e.org_id = OLD.org_id)
+    OR EXISTS (SELECT 1 FROM public.layout_zone z
+               WHERE z.playlist_id = OLD.id AND z.org_id = OLD.org_id)
+  ) THEN
+    RAISE EXCEPTION 'a playlist that is assigned to a display or used by a schedule or a layout cannot be deleted'
+      USING ERRCODE = 'restrict_violation', CONSTRAINT = 'playlist_delete_guard';
+  END IF;
+  RETURN NEW;
+END $$;
+
+-- ---------------------------------------------------------------------- 4. display
+
+ALTER TABLE public.display
+  -- The layout a push would publish to this display. Assigning changes nothing on the display.
+  ADD COLUMN assigned_layout_id uuid,
+  ADD CONSTRAINT display_assigned_layout_fk FOREIGN KEY (assigned_layout_id, org_id)
+    REFERENCES public.layout (id, org_id),
+  -- Same name as in 0009 (pinned by packages/db/test/stage-b-schedules.integration.test.ts).
+  DROP CONSTRAINT display_one_assignment,
+  ADD CONSTRAINT display_one_assignment
+    CHECK (num_nonnulls(assigned_playlist_id, assigned_schedule_id, assigned_layout_id) <= 1);
+-- Displays that have a given layout assigned (count per layout, refusal of a delete).
+CREATE INDEX display_assigned_layout_idx ON public.display (assigned_layout_id)
+  WHERE assigned_layout_id IS NOT NULL;
+
+-- -------------------------------------------------------------- 5. RLS and grants
+
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['layout', 'layout_zone'] LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', t);
+    EXECUTE format(
+      'CREATE POLICY tenant_isolation ON public.%I USING (org_id = public.app_org_id()) WITH CHECK (org_id = public.app_org_id())', t);
+  END LOOP;
+END $$;
+
+-- Least privilege. A layout's identity is never updatable; zone rows are only added and removed.
+GRANT SELECT, INSERT, DELETE ON public.layout TO tinnox_app;
+GRANT UPDATE (name, description) ON public.layout TO tinnox_app;
+GRANT SELECT, INSERT, DELETE ON public.layout_zone TO tinnox_app;
+-- display is granted column by column. Required: the display PATCH writes every column.
+GRANT UPDATE (assigned_layout_id) ON public.display TO tinnox_app;
+
+-- ------------------------------------------------------------------ 6. publication
+
+-- Last in the file, so the ACCESS EXCLUSIVE lock on publication is held for the shortest time.
+-- The NULL-safe form of 0008 and 0009 (IS TRUE: a missing field fails instead of passing), with 5 added.
+ALTER TABLE public.publication DROP CONSTRAINT publication_manifest_shape,
+  ADD CONSTRAINT publication_manifest_shape CHECK (
+    (
+      jsonb_typeof(manifest) = 'object'
+      AND manifest ->> 'schemaVersion' IN ('1', '2', '3', '4', '5')
+      AND manifest ->> 'publicationId' = id::text
+      AND manifest ->> 'displayId' = display_id::text
+      AND jsonb_typeof(manifest -> 'assets') = 'array'
+      AND jsonb_array_length(manifest -> 'assets') BETWEEN 1 AND 500
+      AND pg_column_size(manifest) <= 1048576
+    ) IS TRUE
+  );
+```
+
+End the file with the two final-check DO blocks of 0009 (db/migrations/0009_stage_b_schedules.sql:185-225), unchanged except `unnest(ARRAY['layout', 'layout_zone'])` in the tenant-policy check. No `sec.*` function changes, so the file needs no `SET LOCAL ROLE`. No data is backfilled.
+
+The CHECK is replaced exactly as 0009 replaced it (0009:150-162): a plain `DROP` and `ADD`, so PostgreSQL re-reads every publication under the ACCESS EXCLUSIVE lock. The new list is a strict superset of the old one, so every existing row passes. There is no `NOT VALID`.
+
+Facts that follow from the SQL:
+- `publication.playlist_id` (NOT NULL, db/migrations/0001_schema.sql:270) holds the **main zone's playlist** of a layout's publication. No `layout_id` column: a layout is hard-deleted and a publication lives for ever, as for schedules; the audit detail carries the id.
+- Deleting a layout that a screen has assigned fails on `display_assigned_layout_fk` (23503). Deleting a layout removes its zones (cascade).
+- Hard-deleting a playlist that a zone uses fails on `layout_zone_playlist_fk`; the API only soft-deletes, which the replaced guard refuses (23001, `playlist_delete_guard`). Putting a deleted playlist in a zone fails with 23001, constraint `layout_zone_playlist_guard`.
+- **Not database rules**, because they span rows: no overlap, at least two zones, and positions without gaps. The contract refuses the first two (section 3), and the API only writes positions 0 to n-1. A row set that breaks them can only come from direct SQL; `buildManifest`'s self-check (packages/domain/src/manifest.ts:134-142) is then the last line and the push answers 500.
+- `x_bp + width_bp` overflows only for values near 2^31; such a row is refused with 22003 instead of 23514. The contract caps every value at 10 000.
+- **NULL safety:** every column in a new CHECK is NOT NULL, except `description`, where NULL means "no description" and is meant to pass (as `schedule_description_length`, 0009:28). `num_nonnulls` never returns NULL.
+- **Locks, all held until 0011 commits**, because the runner applies each file in one transaction with its `schema_migrations` row (packages/db/src/migrate.ts:97-104):
+  - ACCESS EXCLUSIVE on `display` (ADD COLUMN without a default, so no rewrite; the CHECK and the foreign key scan the table);
+  - ACCESS EXCLUSIVE on `publication`, taken by the last statement, which re-reads every row;
+  - SHARE ROW EXCLUSIVE on `organization`, `playlist` and `layout` for the new foreign keys.
+  - The migrator's `lock_timeout` is 30 s (infra/postgres/init/01-roles.sh:44). The header says to run it while the API is stopped or idle (a quiet window), as 0009:11-12 does.
+- `packages/db/src/constraints.ts` (`STAGE_B_CONSTRAINTS`, :42-48) gains:
+  ```ts
+  /**
+   * 23503: on a display, the layout does not exist in this organisation; on a layout, a
+   * delete was attempted while a display has it assigned.
+   */
+  displayAssignedLayout: 'display_assigned_layout_fk',
+  ```
+  and its doc comment (:37-41) becomes "The names of db/migrations/0009_stage_b_schedules.sql and 0011_stage_b_layouts.sql that a caller has to tell apart. Deleted playlists keep their stage A names: `playlist_delete_guard` now also refuses while a schedule or a layout uses the playlist." It is the only new name a caller has to tell apart.
+
+### 3. Contracts (packages/contracts, all objects `.strict()`)
+
+**ids.ts:** `LayoutIdSchema = UuidSchema`, `type LayoutId = Uuid` (after `ScheduleIdSchema`, :18, :33).
+
+**refs.ts:** `LayoutRefSchema = z.object({ id: LayoutIdSchema, name: refName }).strict()`, `type LayoutRef` (after `ScheduleRefSchema`, :16-17).
+
+**limits.ts:** `ABSOLUTE.maxLayoutZones: 4`, after `maxScheduleEvents` (:104-105), with the doc comment "Zones in one layout. Twin of the layout_zone position CHECK (0011). The ceiling of manifest v5, frozen with player 0.5.0." Why 4: it is the wire ceiling that 0.5.0's strict parser freezes, so a later free editor with three or four zones (for example main, band, clock or date; stage-b.md:809) needs no v6; it bounds the worst case at 8 `<video>` elements (2 per zone while items swap, apps/player-web/src/ui/presenter.ts:184-200); Pi-class hardware already lags with more than one moving zone (docs/research/round2/AV4-layouts-scheduling.md:56); the preset uses 2.
+
+**canvas.ts:** one new function, used by layout.ts and manifest.ts:
+```ts
+/** True when the interiors of two rectangles intersect; rectangles that only touch do not overlap. Any unit. */
+export function rectsOverlap(
+  a: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+  b: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+```
+
+**layout.ts (new; `export * from './layout.ts'` in index.ts after `./canvas.ts`).** Imports only ids, limits, refs, text and canvas. It must never import playlist.ts, which imports manifest.ts (packages/contracts/src/playlist.ts:14).
+```ts
+/** Zone geometry is in basis points of each screen's content rectangle: 10 000 is its whole width or height. Twin of layout_zone_in_bounds (0011). */
+export const LAYOUT_UNITS = 10_000;
+
+const offset = z.number().int().min(0).max(LAYOUT_UNITS);
+const extent = z.number().int().min(1).max(LAYOUT_UNITS);
+/** A zone's rectangle, origin top-left, in basis points (a plain shape: zod refuses `.extend()` on a refined object). */
+export const layoutBoxShape = { x: offset, y: offset, width: extent, height: extent };
+export interface LayoutBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * The cross-zone checks of a layout: every zone ends inside the area, and no two zones overlap
+ * (touching is allowed). Paths use the dotted form the API gives (`zones.1.width`).
+ */
+export function checkLayoutZones(zones: readonly LayoutBox[], ctx: z.RefinementCtx): void {
+  zones.forEach((zone, n) => {
+    if (zone.x + zone.width > LAYOUT_UNITS) {
+      ctx.addIssue({ code: 'custom', path: ['zones', n, 'width'], message: 'x + width must not exceed 10000' });
+    }
+    if (zone.y + zone.height > LAYOUT_UNITS) {
+      ctx.addIssue({ code: 'custom', path: ['zones', n, 'height'], message: 'y + height must not exceed 10000' });
+    }
+    const earlier = zones.slice(0, n).findIndex((other) => rectsOverlap(other, zone));
+    if (earlier !== -1) {
+      // Both zones counted from 1, as zone_too_small names its zone; the path counts from 0.
+      ctx.addIssue({ code: 'custom', path: ['zones', n], message: `zone ${n + 1} overlaps zone ${earlier + 1}` });
+    }
+  });
+}
+
+export const LayoutZoneInputSchema = z.object({ playlistId: PlaylistIdSchema, ...layoutBoxShape }).strict();
+export type LayoutZoneInput = z.infer<typeof LayoutZoneInputSchema>;
+
+export const LayoutInputSchema = z
+  .object({
+    name: NameSchema,
+    description: DescriptionInputSchema.optional(),
+    /** Position order: [0] is the main zone. */
+    zones: z.array(LayoutZoneInputSchema).min(2).max(ABSOLUTE.maxLayoutZones),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    checkLayoutZones(input.zones, ctx);
+  });
+export type LayoutInput = z.infer<typeof LayoutInputSchema>;
+
+export const LayoutZoneDtoSchema = z.object({ playlist: PlaylistRefSchema, ...layoutBoxShape }).strict();
+export type LayoutZoneDto = z.infer<typeof LayoutZoneDtoSchema>;
+
+export const LayoutDtoSchema = z
+  .object({
+    id: LayoutIdSchema,
+    name: z.string(),
+    description: DescriptionSchema.nullable(),
+    /** Position order: [0] is the main zone. */
+    zones: z.array(LayoutZoneDtoSchema).min(2).max(ABSOLUTE.maxLayoutZones),
+    /** How many displays have this layout assigned. */
+    assignedDisplayCount: z.number().int().nonnegative(),
+    createdAt: UtcTimestampSchema,
+    updatedAt: UtcTimestampSchema,
+  })
+  .strict();
+export type LayoutDto = z.infer<typeof LayoutDtoSchema>;
+
+export const LayoutListResponseSchema = z
+  .object({ items: z.array(LayoutDtoSchema).max(ABSOLUTE.maxListItems) })
+  .strict();
+export type LayoutListResponse = z.infer<typeof LayoutListResponseSchema>;
+```
+- Doc comment on `LayoutInputSchema` (as on `ScheduleInputSchema`, packages/contracts/src/schedule.ts:80-93): `POST /api/layouts` and `PUT /api/layouts/:id`, the whole layout. On PUT an absent `description` is left as it is; null or a blank string clears it. An unknown or deleted playlist answers 400. **A refusal of this body names its fields with dots**, as `parseInput` joins zod paths (apps/api/src/errors.ts:46): `name`, `description`, `zones`, `zones.1`, `zones.1.playlistId`, `zones.1.x`, `zones.1.width` (the zone index counts from 0). The bracket form (`zones[1].playlist`) belongs to push issues only.
+- One DTO serves the list and the detail: a layout has at most four child rows.
+
+**display.ts**
+- `export const ASSIGNMENT_KEYS = ['assignedPlaylistId', 'assignedScheduleId', 'assignedLayoutId'] as const; export type AssignmentKey = (typeof ASSIGNMENT_KEYS)[number];` This one list drives the patch refinement below, the API PATCH and its audit (section 5) and the portal's `ASSIGNMENT_FIELDS` (apps/portal/src/lib/activity.ts:272).
+- `AssignedLayoutSchema = z.object({ id: LayoutIdSchema, name: z.string().min(1).max(ABSOLUTE.maxNameLength), mainPlaylist: PlaylistRefSchema }).strict()`, `type AssignedLayout`, modelled on `AssignedScheduleSchema` (:55-66). The main zone's playlist is carried so the screen page can preview it without a second round trip.
+- `DisplayDtoSchema += assignedLayout: AssignedLayoutSchema.nullable()` (required), after `assignedSchedule` (:95-99). Its doc comment: at most one of `assignedPlaylist`, `assignedSchedule` and `assignedLayout` is set.
+- `DisplayPatchSchema += assignedLayoutId: LayoutIdSchema.nullable().optional()`. The refinement at :155-162 is replaced by a `.superRefine` that needs a path chosen at run time:
+  ```ts
+  // Each id is a string, null or absent: two strings name two kinds of content.
+  .superRefine((p, ctx) => {
+    const second = ASSIGNMENT_KEYS.filter((key) => typeof p[key] === 'string')[1];
+    if (second !== undefined) {
+      ctx.addIssue({ code: 'custom', path: [second], message: 'assign one of a playlist, a schedule or a layout' });
+    }
+  })
+  ```
+  The path is the second string key in `ASSIGNMENT_KEYS` order, so a playlist and a schedule keep the path `assignedScheduleId`. The message changes: the two pins that move are packages/contracts/src/portal-v2.test.ts:737 and apps/api/test/schedules.integration.test.ts:577.
+- The patch doc comment (:126-139): "`assignedLayoutId`: an unknown layout answers 404. A display has one of a playlist, a schedule or a layout: a non-null id clears the other two, null clears its own kind only, and all three keys null removes all content. Two non-null ids are refused."
+
+**push.ts**
+- `PushPlanRowSchema += layout: LayoutRefSchema.nullable()` (required), after `schedule` (:65-66). For a display with a layout, `playlist` is **the main zone's playlist**, so the refinement at :75-81 stays as it is. Two refinements are added in the `superRefine`:
+  - `row.layout !== null && row.playlist === null`: path `['layout']`, message `'a row with a layout carries the playlist of its main zone'`;
+  - `row.layout !== null && row.schedule !== null`: path `['layout']`, message `'a row has a schedule or a layout, not both'`.
+- The `playlist` doc comment (:60-63) adds "or for a display with a layout the main zone's playlist"; the `schedule` one says "null for a display with a playlist, a layout or nothing assigned"; the `layout` one says "The assigned layout; null otherwise".
+- The `PushIssueSchema` path doc (:39-46) adds: "`zones[n].playlist`, `zones[n].items[k]`, `zones[n]` (the zone is too small on this screen) or `layout` for a layout (n is the zone, from 0; item numbers count inside that zone's playlist; `layout` is a problem of all its playlists together)". `PUSH_STATES` doc (:10): "nothing_assigned: no playlist, schedule or layout is assigned".
+
+**manifest.ts**
+```ts
+export const MANIFEST_SCHEMA_VERSION_V5 = 5;
+
+/**
+ * One zone of a layout's manifest: a rectangle in canvas pixels, inside the content rectangle
+ * (the whole canvas when there is none), and the next `count` entries of `assets`, played with
+ * this zone's transition and shuffle. `zones[0]` is the main zone.
+ */
+export const ManifestZoneSchema = z
+  .object({
+    rect: RectSchema,
+    count: z.number().int().positive().max(ABSOLUTE.maxPlaylistItems),
+    transition: TransitionSchema,
+    shuffle: z.boolean(),
+  })
+  .strict();
+export type ManifestZone = z.infer<typeof ManifestZoneSchema>;
+
+/** Checks of version 5: those of version 2 over the flat list, plus the zones. */
+function checkManifestV5Body(
+  m: Pick<ManifestV3, 'canvas' | 'contentRect' | 'assets' | 'transition' | 'shuffle'> & {
+    zones: ManifestZone[];
+  },
+  ctx: z.RefinementCtx,
+): void {
+  checkManifestV2Body(m, ctx);
+  if (m.zones.reduce((sum, zone) => sum + zone.count, 0) !== m.assets.length) {
+    ctx.addIssue({ code: 'custom', path: ['zones'], message: 'zone counts must add up to the number of assets' });
+  }
+  const first = m.zones[0];
+  if (first !== undefined && (first.transition !== m.transition || first.shuffle !== m.shuffle)) {
+    ctx.addIssue({ code: 'custom', path: ['zones', 0], message: 'the first zone must carry the top-level transition and shuffle' });
+  }
+  const area = m.contentRect ?? { x: 0, y: 0, width: m.canvas.width, height: m.canvas.height };
+  m.zones.forEach((zone, i) => {
+    const r = zone.rect;
+    if (r.x < area.x || r.y < area.y || r.x + r.width > area.x + area.width || r.y + r.height > area.y + area.height) {
+      ctx.addIssue({ code: 'custom', path: ['zones', i, 'rect'], message: 'the zone must lie inside the content rectangle' });
+    }
+    if (m.zones.slice(0, i).some((other) => rectsOverlap(other.rect, r))) {
+      ctx.addIssue({ code: 'custom', path: ['zones', i, 'rect'], message: 'zones must not overlap' });
+    }
+  });
+}
+
+/**
+ * Manifest version 5: version 3 plus `zones`. Written exactly when the screen has a layout
+ * assigned. `assets` is every zone's items in one flat list, zone 0 (the main zone) first; the
+ * top-level `transition` and `shuffle` are the main zone's. No layout id or name: a player reads
+ * neither. Frozen once player 0.5.0 is released; the next addition is version 6.
+ */
+export const ManifestV5Schema = manifestV2Object
+  .extend({
+    schemaVersion: z.literal(MANIFEST_SCHEMA_VERSION_V5),
+    assets: z.array(ManifestItemV3Schema).min(1).max(ABSOLUTE.maxPlaylistItems),
+    zones: z.array(ManifestZoneSchema).min(2).max(ABSOLUTE.maxLayoutZones),
+  })
+  .strict()
+  .superRefine(checkManifestV5Body);
+export type ManifestV5 = z.infer<typeof ManifestV5Schema>;
+```
+- Built from `manifestV2Object`, because V4 is refined and cannot be extended (:139-151, :272-279). `rectsOverlap` is imported from canvas.ts.
+- **Flat list.** Zone *i* plays `assets[from_i, from_i + count_i)`, zone 0 first.
+- **The same playlist in two zones** is sent twice and counts twice against `maxItems`. The schedule's de-duplication (packages/domain/src/schedule.ts:45-49) is not copied: it would merge two zones into one run.
+- `ManifestSchema` (:289-294) gains `ManifestV5Schema`. `manifestV2Facts` needs no change (its body tests `=== 1`).
+- **`manifestZones`**, new, next to `manifestPlaylists`:
+  ```ts
+  /**
+   * The zones of any manifest, each as a manifest a player can play on its own, so player code
+   * has no version branches. Versions 1 to 4 give `[m]`, the same object. Version 5 gives one
+   * version 3 view per zone: the zone's run of `assets`, the zone's transition and shuffle, and
+   * the zone's rectangle as the content rectangle; every other field is copied from `m`.
+   * Built on the player; never stored or sent.
+   */
+  export function manifestZones(m: Manifest): Exclude<Manifest, ManifestV5>[] {
+    if (m.schemaVersion !== MANIFEST_SCHEMA_VERSION_V5) return [m];
+    let from = 0;
+    return m.zones.map((zone): ManifestV3 => {
+      const view: ManifestV3 = {
+        schemaVersion: MANIFEST_SCHEMA_VERSION_V3,
+        publicationId: m.publicationId,
+        displayId: m.displayId,
+        createdAt: m.createdAt,
+        canvas: m.canvas,
+        contentRect: zone.rect,
+        muted: m.muted,
+        timeZone: m.timeZone,
+        transition: zone.transition,
+        shuffle: zone.shuffle,
+        rotation: m.rotation,
+        workingHours: m.workingHours,
+        assets: m.assets.slice(from, from + zone.count),
+      };
+      from += zone.count;
+      return view;
+    });
+  }
+  ```
+  The views have `schemaVersion: 3`, so the player's `=== 4` gates (apps/player-web/src/core/playback.ts:409; core/time-rules.ts:93, :136; apps/player-web/src/app.ts:726) never see v5, and every "slice 0" fallback (time-rules.ts:123, :126, :137) is the zone's own run by construction.
+- `manifestPlaylists` (:330-346) gains an explicit v5 branch that returns one slice per zone with a running `from` (count, transition and shuffle of the zone), so it stays honest. Its doc comment says so.
+- `parseManifest` (:352-396): case 5 (`ManifestV5Schema`); the `schema` type gains it; the message becomes "expected 1, 2, 3, 4 or 5", built from the five constants.
+- Doc comment on `ManifestV4Schema` (:266-271): "Frozen." (drop "once player 0.4.0 is released; the next addition is version 5").
+
+**playlist.ts:** `PUBLISH_REJECTION_CODES += 'zone_too_small'` after `'multiple_regions_unsupported'` (:220), 19 codes. This widens the strict `PublishRejectionCodeSchema` used by `PushIssueSchema.code` (push.ts:52), so a portal tab still open on the previous build fails to parse a push plan with a blocked row that carries it (release note, section "Slice 4: release note and rollback"). No exhaustive map in the code consumes the list.
+
+**audit.ts:** `AUDIT_ACTIONS += 'layout.create', 'layout.update', 'layout.delete'` after the schedule actions (:33-35); `AUDIT_CATEGORIES += 'layout'` after `schedule` (:54).
+
+**errors.ts:** `API_ERROR_CODES += 'layout_in_use'` after `schedule_in_use` (:22).
+
+**routes.ts:** after the schedule routes (:75-79):
+```ts
+  /** GET, POST. */
+  layouts: '/api/layouts',
+  /** GET, PUT, DELETE (409 `layout_in_use` while a display has it assigned). */
+  layoutPattern: '/api/layouts/:id',
+  layout: (id: string) => `/api/layouts/${enc(id)}`,
+```
+The comment on `playlistPattern` (:66) becomes "…while a display has it assigned or a schedule or a layout uses it". Without these entries the session-csrf test misses the routes silently (tests/integration/session-csrf.test.ts:113-116 walks `ROUTES`).
+
+**`publication.playlist_id`** holds the main zone's playlist (section 2).
+
+### 4. Domain (packages/domain)
+
+**types.ts**
+- Remove `regions: 1` and its comment (:139-140). Its only writer is packages/domain/src/playlist.ts:230 and its only reader is packages/domain/src/capability.ts:25-29.
+- Add, after `DraftSchedule` (:112-129):
+  ```ts
+  /**
+   * One zone of a layout's publication: a rectangle in canvas pixels, already resolved for the
+   * target display, and a run of `count` consecutive entries of the draft's `items`. [0] is the
+   * main zone; its run starts at 0.
+   */
+  export interface DraftZone {
+    readonly rect: Rect;
+    readonly count: number;
+    readonly transition: Transition;
+    readonly shuffle: boolean;
+  }
+  ```
+- `PublicationDraft += readonly zones: readonly DraftZone[] | null` (required), after `schedule`, with the doc comment "Null unless a layout is assigned. Never set together with `schedule`." The doc comments of `items` and `transition` (:142-145) add "with a layout: every zone's items, main zone first" and "the main zone's".
+
+**playlist.ts:** `buildPublicationDraft` (:224-239) drops `regions: 1` and sets `zones: null`. No other change.
+
+**geometry.ts:** one new pure function, used by the planner and the portal preview (the portal already depends on `@tinnox/domain`, apps/portal/package.json:16):
+```ts
+/**
+ * A zone's rectangle in canvas pixels. `area` is the effective content rectangle (the content
+ * rectangle, or the whole canvas) and `zone` is in basis points of it (LAYOUT_UNITS). Edges are
+ * rounded, not sizes: two zones that share an edge in basis points share it in pixels, so they
+ * never gap or overlap, and rounding is monotone, so disjoint zones stay disjoint. The products
+ * are at most 16 384 × 10 000, exact in doubles.
+ */
+export function zoneRect(area: Rect, zone: LayoutBox): Rect {
+  const x0 = area.x + Math.round((area.width * zone.x) / LAYOUT_UNITS);
+  const x1 = area.x + Math.round((area.width * (zone.x + zone.width)) / LAYOUT_UNITS);
+  const y0 = area.y + Math.round((area.height * zone.y) / LAYOUT_UNITS);
+  const y1 = area.y + Math.round((area.height * (zone.y + zone.height)) / LAYOUT_UNITS);
+  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+}
+```
+`LAYOUT_UNITS` and `type LayoutBox` come from `@tinnox/contracts`. The zone origin is added (`area.x +`), because `effectiveContentRect` (:39-52) returns a non-zero origin when a content rectangle is set. A resolved side may be 0 or under 16 px on a small canvas; the planner refuses that (below), never clamps.
+
+**capability.ts**
+- `scheduleTotalMessage` (:8-11) is replaced by:
+  ```ts
+  /** Why the playlists of a schedule or a layout are refused together: their item total is over the route's limit. */
+  export function contentTotalMessage(owner: 'schedule' | 'layout', total: number, route: string, max: number): string {
+    return `The playlists of this ${owner} hold ${total} items in total; ${route} supports up to ${max}.`;
+  }
+  ```
+  The schedule sentence stays byte for byte.
+- `export function regionCount(draft: PublicationDraft): number { return draft.zones?.length ?? 1; }` drives the check at :25-31 (`regionCount(draft) > profile.maxRegions`, and the message names `regionCount(draft)`), so the count has one source.
+- Above it: `// shortcut: a layout may put video in every zone (up to 8 <video> elements while items swap); add CapabilityProfile.maxVideoRegions if Pi-class players lag (AV4:56).`
+- The `too_many_items` message (:57-66) branches: `draft.zones !== null` gives `contentTotalMessage('layout', …)`, `draft.schedule !== null` gives `contentTotalMessage('schedule', …)`, otherwise today's playlist sentence.
+
+**sources.ts (new; export from index.ts after `./schedule.ts`).** Lifted from schedule.ts:51-99, so the schedule and the layout planners share one planning step:
+```ts
+/**
+ * One playlist for the target display: its name, its number of items, and `plan`, which plans
+ * it (planPublication with the display, records, limits and route bound) when called.
+ * Undefined: the playlist no longer exists. Called once per source, with the id in lower case.
+ * A layout may name one playlist in two zones, so `plan` may run twice for one id and must be pure.
+ */
+export type PlanPlaylist = (playlistId: string) =>
+  | { readonly name: string; readonly itemCount: number; readonly plan: () => PlanPublicationResult }
+  | undefined;
+
+/** One playlist of a schedule or a layout, and where it is used: `default`, `events[n]` or `zones[n]`. */
+export interface PlanSource {
+  readonly source: string;
+  readonly playlistId: string;
+}
+
+export type PlannedSources =
+  | { readonly ok: true; readonly drafts: readonly PublicationDraft[] }
+  | { readonly ok: false; readonly issues: readonly PublishIssue[] };
+
+export function planSources(
+  sources: readonly PlanSource[],
+  planPlaylist: PlanPlaylist,
+  route: PublicationValidator,
+  owner: 'schedule' | 'layout',
+): PlannedSources;
+```
+It takes **a list**, never the schedule's Map, so a layout's two zones on one playlist stay two sources. In this order:
+1. `found = sources.map(...)`, `planPlaylist(playlistId)` for each.
+2. When `sources.length > 1` and every playlist exists: the raw total (`itemCount` summed); over `route.capabilities().maxItems` it returns the one issue `{ index: null, code: 'too_many_items', path: owner, message: contentTotalMessage(owner, total, profile.label, profile.maxItems) }` and plans nothing. Keep `// shortcut: one total for all playlists of a schedule or a layout; give them their own limit if 200 proves tight.`
+3. A missing playlist gives `` { index: null, code: 'playlist_empty', path: `${source}.playlist`, message: `A playlist of this ${owner} no longer exists. Open the ${owner} and choose another.` } `` (the schedule's wording, byte for byte, for `owner` `schedule`).
+4. A failed plan gives its issues with `` path: `${source}.${issue.index === null ? 'playlist' : `items[${issue.index}]`}` `` and `` message: `In playlist "${name}": ${issue.message}` ``. Keep the moved `// shortcut: a display-level refusal (canvas, content rectangle) is repeated once per playlist; the browser route never raises one. De-duplicate when a route that can ships.`
+5. Any issue: `{ ok: false, issues }`; otherwise `{ ok: true, drafts }` in source order.
+
+**schedule.ts:** `SchedulePlanInput.planPlaylist` becomes `readonly planPlaylist: PlanPlaylist` (the doc comment at :14-19 moves to `PlanPlaylist`). `planSchedulePublication` keeps its Map de-duplication (:43-49) and its collapse rule (:104-105) and replaces :51-99 with `const planned = planSources([...sources].map(([playlistId, source]) => ({ source, playlistId })), input.planPlaylist, input.route, 'schedule'); if (!planned.ok) return planned; const drafts = planned.drafts;`. So `sources.size > 1` keeps its meaning. **packages/domain/src/schedule.test.ts is the pin of this extraction and must not change** (it does not mention `regions`).
+
+**layout.ts (new; export from index.ts)**
+```ts
+export interface LayoutPlanInput {
+  readonly canvas: Canvas;
+  readonly contentRect: Rect | null;
+  /** Two to ABSOLUTE.maxLayoutZones zones in position order; [0] is the main zone. Basis points (LAYOUT_UNITS). */
+  readonly zones: readonly ({ readonly playlistId: string } & LayoutBox)[];
+  readonly planPlaylist: PlanPlaylist;
+  /** Judges the combined draft: the number of regions and the item total. */
+  readonly route: PublicationValidator;
+}
+export function planLayoutPublication(input: LayoutPlanInput): PlanPublicationResult;
+```
+Rule, in this order:
+1. `area = effectiveContentRect(canvas, contentRect)`; `rects = zones.map((zone) => zoneRect(area, zone))`. Every zone with a side under `ABSOLUTE.minCanvasSidePx` (16, the `RectSchema` floor, packages/contracts/src/canvas.ts:18) gives `` { index: null, code: 'zone_too_small', path: `zones[${n}]`, message: `On this screen zone ${n + 1} of the layout is ${w} × ${h} px; a zone needs at least 16 px each way. Make it larger in the layout, or assign other content.` } `` (`×` is U+00D7; zone 1 is the main zone). Any such issue: return all of them and plan nothing. Without this check `buildManifest`'s self-check throws and the request answers 500 (manifest.ts:134-142). Example: a 96 px tall LED canvas with a 10 % band gives a 10 px band (blocked); 20 % gives 19 px (plays).
+2. `` planned = planSources(zones.map((zone, n) => ({ source: `zones[${n}]`, playlistId: zone.playlistId.toLowerCase() })), planPlaylist, route, 'layout') ``, with **no de-duplication**; not ok: return its issues. `// shortcut: a playlist in two zones is sent twice; share a run by index if the item total bites.`
+3. The combined draft: `{ ...main, items: drafts.flatMap((d) => d.items), zones: drafts.map((d, n) => { const rect = rects[n]; if (rect === undefined) throw new Error('a zone has no rectangle'); return { rect, count: d.items.length, transition: d.transition, shuffle: d.shuffle }; }) }`. Every count is positive: an empty playlist is already refused as `playlist_empty` by its own plan.
+4. `route.validate(combined)`: any issue is returned with `path: 'layout'`; otherwise `{ ok: true, draft: combined }`. With the browser route only the region count (`maxRegions` 4) and the total can fail here.
+`const [main] = drafts` is always set after a clean step 2; if it is not, throw `new Error('a layout always has a main zone')` with the comment "Unreachable: with no issue there is one draft per zone." (as schedule.ts:101-103). The `rects[n]` guard in step 3 is unreachable too (one rectangle per zone). Both guards are what make step 3 typecheck: the repository sets `noUncheckedIndexedAccess` (tsconfig.base.json:9), so an indexed read is `T | undefined`.
+
+**manifest.ts**
+- `manifestVersionFor` (:44-52): `if (draft.zones !== null) return MANIFEST_SCHEMA_VERSION_V5;` first; return type `1 | 2 | 3 | 4 | 5`; doc "5 with a layout, 4 with a schedule, …".
+- `buildManifest` (:74-143): first `if (draft.zones !== null && draft.schedule !== null) throw new Error('a draft has a schedule or zones, not both');`. Next to the schedule block (:114-131), `...(draft.zones === null ? {} : { zones: draft.zones.map((zone) => ({ rect: { x: zone.rect.x, y: zone.rect.y, width: zone.rect.width, height: zone.rect.height }, count: zone.count, transition: zone.transition, shuffle: zone.shuffle })) })`, field by field. The Intl zone check runs for 2 to 5. Self-check through `ManifestSchema` as today.
+- `manifestAssetIds`, `manifestStorageBytes`: unchanged (flat `assets`).
+
+**push.ts**
+- `PlaybackField += 'zones'` (:41-48).
+- A private `sameRun(a, b)` (count, transition and shuffle equal), lifted from the per-playlist check of `sameSchedule` (:87-95), which then calls it.
+- `sameZones(a: readonly DraftZone[], b: readonly ManifestZone[])`: same length, then for each zone `sameRect(zone.rect, other.rect)` (:64-67) and `sameRun`. Key by key, never `JSON.stringify`.
+- In `firstDraftManifestDifference`, after the schedule check (:212-218): `draft.zones !== null && manifest.schemaVersion === MANIFEST_SCHEMA_VERSION_V5 && !sameZones(draft.zones, manifest.zones)` gives `{ kind: 'playback', field: 'zones' }`. A band-height change moves the rectangles, so the screen shows `changes`; a canvas change shows `canvas` first.
+- The "Compared" doc comment (:127-153): v5 with a layout; with a layout the play list is every zone's items in one list (a changed item is reported at its flat index), and last come the zones (each zone's rectangle, item count, transition and shuffle). "Not compared": `publicationId`, `createdAt` and `muted` (the "region count" is no longer a field).
+- `decidePushState`: unchanged; its `PushStateInput.plan` doc (:231-236) adds "`planLayoutPublication` for an assigned layout".
+
+**delivery (packages/delivery/src/browser/browser-route.ts)**
+- `profileVersion: 2` (:39): the profile changed, and the field exists to say so. Nothing reads it.
+- `maxRegions: ABSOLUTE.maxLayoutZones` (:44).
+- The doc comment (:28-31) becomes "Browser route, capability profile version 2: JPEG, PNG and MP4 (H.264), muted, up to four regions (the zones of a layout; one without a layout), contain or cover, optional content rectangle. Version 1 had one full-frame region. Tested in desktop Chrome only; it says nothing about LED controllers."
+- Test doubles that pin a refusal keep `maxRegions: 1`: packages/delivery/test/fake-route.ts:32 and the `route()` fixture at packages/domain/src/fixtures.test-support.ts:163-182 (which gains a second parameter, section 8).
+
+### 5. API (apps/api; every route inside the operator scope, so session, CSRF and exact Origin apply; org only from `session.orgId` and `app_org_id()`; the global rate limit)
+
+**routes/layouts.ts (new), `registerLayoutRoutes(api, ctx)`, registered after `registerScheduleRoutes` (apps/api/src/app.ts:111).** Template: routes/schedules.ts.
+- **One read for list and detail, in one statement.** One snapshot, so the strict two-to-four-zone DTO can never see a zone set half replaced by a PUT:
+  ```sql
+  WITH l AS (
+    SELECT l.id, l.name, l.description, l.created_at, l.updated_at,
+           (SELECT count(*) FROM display d
+            WHERE d.assigned_layout_id = l.id AND d.org_id = l.org_id) AS assigned_display_count
+    FROM layout l
+    WHERE l.org_id = app_org_id() AND ($2::uuid IS NULL OR l.id = $2::uuid)
+    ORDER BY lower(l.name), l.id
+    LIMIT $1
+  )
+  SELECT l.id, l.name, l.description, l.created_at, l.updated_at, l.assigned_display_count,
+         p.id AS playlist_id, p.name AS playlist_name, z.x_bp, z.y_bp, z.width_bp, z.height_bp
+  FROM l
+  JOIN layout_zone z ON z.layout_id = l.id AND z.org_id = app_org_id()
+  JOIN playlist p ON p.id = z.playlist_id AND p.org_id = z.org_id
+  ORDER BY lower(l.name), l.id, z.position
+  ```
+  `loadLayouts(tx, id: string | null): Promise<LayoutDto[]>` runs it with `[ABSOLUTE.maxListItems, id]` and groups the rows by layout in order. Inner joins: a layout written through the API always has two to four zones and a zone's playlist cannot be deleted, so nothing is lost; a layout without zones (direct SQL only) is left out. `// shortcut: no pagination, the list is capped at ABSOLUTE.maxListItems; page it when an organisation has more layouts than that.`
+- **GET /api/layouts** gives `{ items: await loadLayouts(tx, null) }`. **GET /api/layouts/:id** gives `loadLayouts(tx, id)[0]`, or 404 `notFound('The layout')`.
+- **POST /api/layouts** (`LayoutInputSchema`) answers 201 with a `LayoutDto`. **PUT /api/layouts/:id** (same schema) replaces the whole layout. Both, in one `withOrg`, through `saveLayout(tx, session, id | null, input)`:
+  1. PUT only: `SELECT 1 FROM layout WHERE id = $1 AND org_id = app_org_id() FOR UPDATE`; none gives 404. This lock is what a push waits on (below).
+  2. Lower-case every `playlistId` once, right after parsing (as routes/schedules.ts:118-124); only these values are used from here on.
+  3. `SELECT id FROM playlist WHERE org_id = app_org_id() AND deleted_at IS NULL AND id = ANY($1::uuid[]) FOR SHARE` over the distinct ids. A missing one gives 400 `validation_failed` "A playlist in this layout does not exist or was deleted." with details `` { path: `zones.${n}.playlistId`, message: 'The playlist was not found.' } `` for every zone that uses it (dots, n from 0). Another organisation's playlist is invisible here, so it gets exactly this answer (as routes/schedules.ts:126-147).
+  4. POST: `INSERT INTO layout (org_id, name, description) VALUES (app_org_id(), $1, $2) RETURNING id`. PUT: `DELETE FROM layout_zone WHERE layout_id = $1 AND org_id = app_org_id()`, then `UPDATE layout SET name = $2, description = CASE WHEN $3::boolean THEN $4::text ELSE description END WHERE id = $1 AND org_id = app_org_id()` (always touches the row, so `updated_at` reflects zone changes).
+  5. Zones in one statement; position 0 is the main zone:
+     ```sql
+     INSERT INTO layout_zone (layout_id, position, org_id, playlist_id, x_bp, y_bp, width_bp, height_bp)
+     SELECT $1, (t.ordinal - 1)::int, app_org_id(), t.playlist_id, t.x_bp, t.y_bp, t.width_bp, t.height_bp
+     FROM unnest($2::uuid[], $3::int[], $4::int[], $5::int[], $6::int[])
+          WITH ORDINALITY AS t(playlist_id, x_bp, y_bp, width_bp, height_bp, ordinal)
+     ```
+  6. `auditScoped` `layout.create` or `layout.update`, objectType `layout`, detail `{ mainPlaylistId, zoneCount }` (the lower-cased id of zone 0 and the number of zones; ids and a count, never names), on the same `Tx`.
+  7. The DTO from `loadLayouts(tx, layoutId)`.
+  8. Catch 23503 and 23001 (a playlist went away between step 3 and the write): 409 `conflict` "A playlist in this layout was deleted meanwhile. Reload and try again."
+- **DELETE /api/layouts/:id**: lock the row and count its zones in one statement, `SELECT (SELECT count(*) FROM layout_zone z WHERE z.layout_id = l.id AND z.org_id = l.org_id) AS zone_count FROM layout l WHERE l.id = $1 AND l.org_id = app_org_id() FOR UPDATE` (404 when absent; as routes/schedules.ts:302-309). Screens that have it assigned (`SELECT d.name FROM display d WHERE d.assigned_layout_id = $1 AND d.org_id = app_org_id() ORDER BY lower(d.name), d.id LIMIT 5`) give 409 `layout_in_use` "This layout is assigned to a screen. Assign other content to the screen first." with details `{ path: 'display', message: name }`. Otherwise `DELETE FROM layout WHERE id = $1 AND org_id = app_org_id()` (the zones cascade), audit `layout.delete` with detail `{ zoneCount }`, 204. 23503 (a screen took it meanwhile): 409 `layout_in_use` "This layout has just been assigned to a screen. Try again."
+
+**routes/displays.ts**
+- `DisplayRow` (:48-76) and `DISPLAY_SELECT` (:78-96) gain `lay.id AS assigned_layout_id, lay.name AS assigned_layout_name, lmp.id AS assigned_layout_playlist_id, lmp.name AS assigned_layout_playlist_name` through
+  ```sql
+  LEFT JOIN layout lay ON lay.id = d.assigned_layout_id AND lay.org_id = d.org_id
+  LEFT JOIN layout_zone lz ON lz.layout_id = lay.id AND lz.org_id = lay.org_id AND lz.position = 0
+  LEFT JOIN playlist lmp ON lmp.id = lz.playlist_id AND lmp.org_id = lz.org_id
+  ```
+  `toDisplayDto` (:120-158) builds `assignedLayout: { id, name, mainPlaylist: { id, name } }`, or null unless all four are set.
+- **PATCH** (:380-528):
+  - the locked SELECT (:395-399) also reads `d.assigned_layout_id`;
+  - a string `assignedLayoutId` is checked like a schedule (:426-434): `SELECT 1 FROM layout WHERE id = $1 AND org_id = app_org_id() FOR SHARE`, none gives `notFound('The layout')`;
+  - the two-column formula (:435-449) is replaced by one function over `ASSIGNMENT_KEYS`:
+    ```ts
+    const ASSIGNMENT_COLUMNS = {
+      assignedPlaylistId: 'assigned_playlist_id',
+      assignedScheduleId: 'assigned_schedule_id',
+      assignedLayoutId: 'assigned_layout_id',
+    } as const satisfies Record<AssignmentKey, string>;
+
+    /**
+     * The assignment columns as the one UPDATE writes them: a key the patch names takes its
+     * value; a key it does not name is cleared when another key is set to an id, and otherwise
+     * keeps the stored value. The contract refuses two ids; the database refuses a row with two.
+     */
+    function assignmentAfter(
+      current: Readonly<Record<(typeof ASSIGNMENT_COLUMNS)[AssignmentKey], string | null>>,
+      patch: DisplayPatch,
+    ): Record<AssignmentKey, string | null>
+    ```
+    So every existing caller that assigns a playlist or a schedule also clears a layout, with no change on its side;
+  - the UPDATE (:458-481) gains `assigned_layout_id = $15` with `after.assignedLayoutId`;
+  - the audit (:485-507) records, for each key of `ASSIGNMENT_KEYS` in order, `key: after[key]?.toLowerCase() ?? null` when the patch named the key **or** the stored value was set and is now null (the slice 3 rule, written as a loop). The exact-detail assertion at apps/api/test/audit-trail.integration.test.ts:206-215 stays green: that screen has no schedule or layout;
+  - error mapping (:512-528) adds `pg === '23503' && constraint === STAGE_B_CONSTRAINTS.displayAssignedLayout` giving `notFound('The layout')`.
+
+**routes/playlists.ts**
+- DELETE (:435-508): after the schedule check (:460-475), a layout check:
+  ```sql
+  SELECT l.name FROM layout l
+  WHERE l.org_id = app_org_id()
+    AND EXISTS (SELECT 1 FROM layout_zone z
+                WHERE z.layout_id = l.id AND z.org_id = l.org_id AND z.playlist_id = $1)
+  ORDER BY lower(l.name), l.id LIMIT 5
+  ```
+  Rows give 409 `playlist_in_use` "This playlist is used by a layout. Choose another playlist in the layout first." with details `{ path: 'layout', message: name }`. The 23001 race message (:501-503) becomes "This playlist has just been assigned to a screen or added to a schedule or a layout. Try again." The doc comment (:426-434) adds layouts.
+- Publish (:520-620):
+  - the idempotency refusal (:540-546) also covers a stored manifest with zones: `const container = typeof previous.manifest === 'object' && previous.manifest !== null && ('schedule' in previous.manifest || 'zones' in previous.manifest);` (a layout push stores the main zone's playlist id, but a v5 manifest is not what publishing that playlist makes);
+  - the UPDATE (:588-594) becomes `SET assigned_playlist_id = $2::uuid, assigned_schedule_id = NULL, assigned_layout_id = NULL` (same WHERE). Without it the one-assignment CHECK raises 23514, which answers 500;
+  - both calls of `auditRejectedPublication` and `createPublication` pass `layoutId: null`;
+  - `assigned_display_count` (:185-187) stays a count of direct assignments.
+
+**publishing.ts**
+- `DisplayPlanRow` (:55-72) gains `assigned_layout_id: string | null` (doc: "A display has one of a playlist, a schedule or a layout assigned (migration 0011)"); `DISPLAY_PLAN_COLUMNS` (:75-79) gains `d.assigned_layout_id`.
+- New, after `ScheduleDraft` (:100-111):
+  ```ts
+  /** A layout as publishing sees it: its zones in position order; [0] is the main zone. */
+  export interface LayoutDraft {
+    readonly id: string;
+    readonly name: string;
+    readonly zones: readonly {
+      readonly playlistId: string;
+      readonly x: number;
+      readonly y: number;
+      readonly width: number;
+      readonly height: number;
+    }[];
+  }
+  ```
+- New `export async function loadLayoutDrafts(tx, layoutIds, lock): Promise<Map<string, LayoutDraft>>`, after `loadScheduleDrafts` (:298-369); ids lower-cased and de-duplicated first, none gives an empty map. **Two statements, as `loadScheduleDrafts` does:**
+  ```sql
+  -- 1, only with lock
+  SELECT id FROM layout WHERE org_id = app_org_id() AND id = ANY($1::uuid[]) FOR SHARE
+  -- 2, always, with no locking clause
+  SELECT l.id, l.name, z.playlist_id, z.x_bp, z.y_bp, z.width_bp, z.height_bp
+  FROM layout l
+  JOIN layout_zone z ON z.layout_id = l.id AND z.org_id = l.org_id
+  WHERE l.org_id = app_org_id() AND l.id = ANY($1::uuid[])
+  ORDER BY l.id, z.position
+  ```
+  Its doc comment repeats the reason of :298-309: `withOrg` runs at READ COMMITTED; a single `… FOR SHARE OF l` join that waits on a PUT's `FOR UPDATE` took its snapshot before the PUT, and after the wait PostgreSQL re-reads only the locked layout row, so the zones (child rows) would still be the old ones. With the lock taken first, statement 2 takes its snapshot while the share lock is held, and PUT and DELETE both lock the layout row before they touch zones. Without `lock` (the push plan) statement 2 alone is one snapshot.
+- **`assessDisplays`** (:544-658):
+  - loads the schedules, then the layouts (`loadLayoutDrafts(tx, displays' assigned_layout_id, options.lock)`), then one `loadPlaylistDrafts` batch (:555-565) that also holds every zone's playlist id;
+  - `contentOf` (:578-589) returns `{ playlist, schedule: ScheduleDraft | null, layout: LayoutDraft | null }`: for a layout, `playlist` is the draft of `layout.zones[0].playlistId`. A layout missing from its map, or a missing main-zone playlist (only possible between two unlocked reads of the plan), gives undefined, so the row is `nothing_assigned` with `layout: null` and `schedule: null`; `PushPlanRowSchema` refuses a layout without a playlist. A missing playlist of another zone reaches `planPlaylist`'s undefined branch (a `playlist_empty` issue at `zones[n].playlist`). The doc comment (:566-577) says so. The current-manifest filter (:653) goes through `contentOf` and needs no change;
+  - the `planPlaylist` closure (:616-625) moves out of the schedule branch, typed `PlanPlaylist`, so both planners share it; the plan choice (:610-627) becomes `layout !== null ? planLayoutPublication({ canvas: { width: display.canvas_width, height: display.canvas_height }, contentRect: contentRectOf(display), zones: layout.zones, planPlaylist, route }) : schedule !== null ? planSchedulePublication({ …, planPlaylist, route }) : planDraft(…)`;
+  - the assessment carries `layout: layout === null ? null : { id: layout.id, name: layout.name }`, and the `nothing_assigned` one `layout: null`.
+- `DisplayAssessment` (:126-147) `+= readonly layout: LayoutRef | null`; the `playlist` doc adds "or the main zone's playlist of the assigned layout".
+- `issueDetails` (:159-170): unchanged code; its doc lists the layout paths.
+- `NewPublication` (:660-672) `+= readonly layoutId: string | null`. In `createPublication` (:726-747) the `publication.create` detail gains `...(input.layoutId === null ? {} : { layoutId: input.layoutId })` and, as :740-742, `...(input.via === 'publish' && display.assigned_layout_id !== null ? { assignedLayoutId: null } : {})`.
+- `auditRejectedPublication` (:755-779) input `+= readonly layoutId: string | null`; `objectType` is `'layout'` with `objectId: layoutId` when it is set, else as today (:770-771).
+- **Lock order** (no cycle): a push takes the display `FOR NO KEY UPDATE` (:226-236), then the schedule or layout `FOR SHARE`, then playlists `FOR SHARE`, then media and apps `FOR KEY SHARE`. A layout PUT takes the layout `FOR UPDATE`, then playlists `FOR SHARE`: the same direction. A display PATCH takes the display `FOR UPDATE`, then the layout `FOR SHARE`. A playlist DELETE locks the playlist `FOR UPDATE` and reads zones without a lock: it either waits for the push and then refuses because the zone exists, or it wins only when no zone uses the playlist.
+- The file's head comment (:1-14) adds "and a display with a layout plans every zone's playlist the same way (`planLayoutPublication`)".
+
+**routes/push.ts**
+- `toPlanRow` (:39-48) `+= layout: assessment.layout`.
+- `pushDisplay`: the skip at :107-110 stays (`playlist === null` still means nothing is assigned); `auditRejectedPublication` (:114-121) and `createPublication` (:139-147) both get `layoutId: assessment.layout?.id ?? null`.
+- The head comment (:4) reads "Editing a playlist, a schedule or a layout, or assigning one, changes nothing on a display."
+
+**Player routes:** no change. `GET /player/manifest` accepts v5 through the widened `ManifestSchema` (routes/player.ts:431-432); media URLs and media are authorised by `publication_asset` (:454-461, :543-549), which holds every media position of every zone.
+
+**Worst case:** at most `LIMIT_MAX_PLAYLIST_ITEMS` (500) items across four zones plus four small zone objects, far below the 1 MiB CHECK (500 tickers were about 550 KB in slice 2; a zone object is under 120 bytes).
+
+### 6. Player 0.5.0 (apps/player-web)
+
+- `PLAYER_VERSION = 'player-web/0.5.0'` (config.ts:5).
+- Staging, verification, quota, activation and GC need **no change**: `uniqueAssets` and `manifestHashes` read the flat `assets` (core/types.ts:186-196), so every zone's media is downloaded and probed before the one-transaction activation. Stored records accept v5 through `ManifestSchema` (core/types.ts:46-49).
+- `PlaybackLoop`, `nextStep`, core/time-rules.ts and core/sync.ts are **unchanged**: each zone's loop is handed a version 3 view (`manifestZones`, section 3). The one edit in core/playback.ts is the shortcut text at :222: `// shortcut: for manifests without a schedule (v1 to v3, and the v3 views of v5 zones) rules are checked at item boundaries; an item may overrun an edge by its own length. A video is never cut, in any version.`
+
+**ui/stage.ts (new), `DomStage`, one per session.** It owns everything about the whole display, so two zones cannot break each other:
+```ts
+/**
+ * The publication canvas in the window: `.canvas` (test id `canvas`), scaled to fit, centred and
+ * turned for the screen's rotation, with one box per zone. Zone 0's box is `.content` with test
+ * id `content`; zone n's box is `.content` with test id `zone-{n}`. The canvas shows while at
+ * least one zone shows something. One window resize listener, removed in `dispose`.
+ */
+export class DomStage {
+  constructor(root: HTMLElement);
+  /** The box of a zone, created (and appended to the canvas) on first use. A presenter puts its layers in it. */
+  box(zone: number): HTMLDivElement;
+  /**
+   * Lays out the zone's box from `effectiveContentRect(view.canvas, view.contentRect)`, marks the
+   * zone as showing and shows the canvas. The canvas itself (size, scale, rotation, `data-canvas`)
+   * follows the view zone 0 last placed; a zone 1 or higher sets it only while zone 0 has placed nothing.
+   */
+  place(zone: number, view: Manifest): void;
+  /** The zone shows nothing; the canvas is hidden when no zone shows anything. */
+  release(zone: number): void;
+  /** Takes a zone's box off the canvas (zones 1 and up). */
+  remove(zone: number): void;
+  /** Removes the resize listener and hides the canvas. */
+  dispose(): void;
+}
+```
+- The layout math moves from apps/player-web/src/ui/presenter.ts:105-133 unchanged (`stageTransform`, `canvasToViewport`, `px`), applied to every placed box; `data-canvas` stays on `.canvas`.
+- Every canvas-visibility site of today's presenter moves here: the `replaceChildren` (presenter.ts:90) goes to the constructor; the un-hide in `#applyGeometry` (:142-143) becomes `place`; the hide in the catch path (:205-206) and in `clear()` (:221) become `release`. The resize listener (:91-93, never removed today) is the stage's one listener, removed in `dispose()`.
+- A secondary zone never re-turns or rescales the canvas, so a stale view restored in its catch path moves only its own box. When zone 0 places a view with another canvas or rotation, every placed box is laid out again from its own last view (the same pass as a window resize).
+- Boxes are appended in zone order, so during a change of layout a later zone draws on top.
+- Zones sit inside `.canvas`, which `stageTransform` turns as a whole (presenter.ts:116-124): "bottom" is the bottom of the picture on any mounting. Neighbouring zones get their shared edge from the same integer through `px()` (presenter.ts:114); any hairline at a fractional scale is black on black (apps/player-web/src/styles.css:38-50). Unverified pending runtime.
+
+**ui/presenter.ts: `DomPresenter` becomes one zone**, built as `new DomPresenter(stage: DomStage, zone: number, getBlob, now)`.
+- `#contentEl = stage.box(zone)`. The fields `#stage` (the element), `#canvasEl`, `#geometry` and the method `#layout()` go; a field `#view: Manifest | null` (the view its box was last placed from) takes `#geometry`'s place.
+- `#applyGeometry(view)` becomes `this.#view = view; this.#stage.place(this.#zone, view);` (called at :175 and :183 as today).
+- The catch path (:202-211): `const shownView = this.#view` is captured where `shownGeometry` is today (:155); on failure, `if (this.#current === null) this.#stage.release(this.#zone); else if (this.#view !== shownView && shownView !== null) { this.#view = shownView; this.#stage.place(this.#zone, shownView); }`. A band whose first item fails therefore never blanks the main zone.
+- `clear()` (:217-222) ends with `this.#stage.release(this.#zone)`.
+- New `remove(): void` = `this.clear(); this.#stage.remove(this.#zone);` (zones 1 and up).
+- The layer test id (:255) is `active-layer` for zone 0 and `zone-${zone}-active-layer` for the others. Playwright's strict `getByTestId` on `canvas`, `content` and `active-layer` (tests/e2e/support/player.ts:86-88, :106; tests/e2e/02-canvases.spec.ts, 06-stage-b.spec.ts, 07-apps-player.spec.ts) still matches one element each. The v1 to v4 DOM is unchanged.
+- The layer logic (:146-419) is otherwise unchanged. `inUse()` stays.
+
+**core/zones.ts (new, no DOM, unit-tested with fakes), `ZoneSet`.**
+```ts
+/** A zone's presenter as the zone set uses it: DomPresenter, or a fake in tests. */
+export interface ZonePresenter extends Presenter {
+  inUse(): ReadonlySet<string>;
+  /** Clears the zone and takes its box off the stage. */
+  remove(): void;
+}
+export interface ZoneSetDeps {
+  /** Builds the presenter (and the box) of zone `zone`, 1 or more. */
+  createPresenter(zone: number): ZonePresenter;
+  /** Builds the loop of zone `zone`, 1 or more; the zone set starts it. */
+  createLoop(
+    zone: number,
+    presenter: Presenter,
+    loadActive: () => Promise<Manifest | null>,
+    signal: AbortSignal,
+  ): { start(): void; wake(): void };
+  /** The session's signal: every zone stops with it. */
+  readonly signal: AbortSignal;
+}
+export class ZoneSet {
+  constructor(deps: ZoneSetDeps);
+  /** The main zone's `loadActive` calls this with the active manifest; returns the main zone's view. */
+  adopt(manifest: Manifest | null): Manifest | null;
+  /** Hashes in use by zones 1 and up. */
+  inUse(): ReadonlySet<string>;
+  /** Stops every zone but the main one (revocation, reset). */
+  stopAll(): void;
+}
+```
+- Views are cached by `publicationId`: a call for the publication already adopted returns the cached view 0 and does nothing else, so most calls are free. For v1 to v4 view 0 is the manifest itself.
+- On a new publication `adopt` computes `manifestZones(manifest)` (none for null) and reconciles zones 1 and up, **in this order**:
+  1. **Gone zones are stopped first:** abort the zone's signal, `presenter.remove()` (which clears it and takes its box off). Their decoders are released before any new zone starts.
+  2. A kept zone gets its new view and `wake()`: a still or an app ends now, a video finishes first (core/playback.ts:254-257). Its loop picks the view up at its next item, because its `loadActive` reads the zone set's current views at each call.
+  3. A new zone gets `createPresenter(n)` and `createLoop(n, presenter, async () => this.#views[n] ?? null, AbortSignal.any([deps.signal, zoneAbort.signal]))`, then `start()`.
+  4. Return view 0, or null.
+- `adopt(null)` stops every secondary zone.
+- `// shortcut: zones adopt a new publication at their own next item; for up to one video old and new geometry share the screen (a later zone draws on top). Hand over atomically if operators notice.`
+- `// shortcut: removing a zone cuts a video playing in it.`
+
+**app.ts**
+- `#startSession` (:402-430): `const stage = new DomStage(this.#stage)`; `const presenter = new DomPresenter(stage, 0, getBlob, clock.now)`; `const zones = new ZoneSet({ createPresenter: (zone) => new DomPresenter(stage, zone, getBlob, clock.now), createLoop: (zone, zonePresenter, loadActive, zoneSignal) => new PlaybackLoop({ loadActive, presenter: zonePresenter, clock, sleep, random: Math.random, signal: zoneSignal, onEvent: (event) => { if (event.type === 'item_failed') this.#report(event.error); } }), signal })`. The main loop's `loadActive` becomes `async () => zones.adopt((await store.getActive())?.manifest ?? null)`.
+- `Session` (:56-67) gains `stage: DomStage` and `zones: ZoneSet`.
+- GC `inUse` (:442) is `() => new Set([...presenter.inUse(), ...zones.inUse()])`. An old band asset is collected at the next GC; this costs storage only.
+- Revocation (:602) and reset (:626): after `presenter.clear()`, `zones.stopAll()` and `stage.dispose()`.
+- `onActivated` (:466-469) still wakes the main loop, which adopts.
+- **Zone 0 drives everything display-wide, exactly as today** (:522-569): the phase, the slate and `session.rendering`; heartbeat `activeItemIndex`, which is already the flat index because zone 0's run starts at 0 (heartbeat v1 unchanged, contracts player.ts:127-128); GC on a publication change (:531-543). Zones 1 and up report only `item_failed`: their `all_failed` leaves their box black and retries after `allFailedRetryMs` (core/playback.ts:347-352), with no slate; zone 0's `all_failed` puts the fault slate over everything (:552-557). Working hours: every view carries them, so all zones go dark within one item of an edge.
+- `// shortcut: heartbeat v1 reports the main zone; a band can play while the screen reports idle. Heartbeat v2 with per-zone state if support needs it.` (next to the `item_started` case, :526).
+- No new diagnostics row: "Schedule picks" already reads "— (no schedule)" for v5 (:724-726), because `coveringSlices` returns `[]` for anything but v4 (core/time-rules.ts:93).
+
+**core/errors.ts:** above `ErrorLog.add` (:149-161): `// shortcut: the log dedupes only against the newest entry, so failures from two zones in turn can push older entries out; dedupe by code and asset if support reports it.`
+
+**Decoders.** At most 2 `<video>` per zone (the one showing and the one being prepared, presenter.ts:184-200): 4 with the preset, 8 at the ceiling. No limit (the shortcut is in capability.ts, section 4). Unverified pending runtime on Pi-class hardware (AV4:56).
+
+**PL-04 end-to-end test, `tests/e2e/13-layouts-player.spec.ts`** (written, not run by agents). All through `OperatorApi` (`createLayout`, `replaceLayout`, `assignLayout`, section 8).
+- Content: the main zone is a playlist with one image; the band is a playlist with one Ticker app; band 15 %.
+- Canvases: 1920 × 1080; 1080 × 1920; 1920 × 1080 at rotation 90; 3840 × 480 with a content rectangle.
+- For each it asserts that the fetched manifest has `schemaVersion` 5; that the `zone-1` box matches the band within 1 px (from `zoneRect` of the manifest, scaled as the page lays out); that the ticker font is `min(0.6·h, 0.25·w)` of the band box (packages/app-render/src/render.ts:238); and the reported `itemIndex` is 0.
+- With reduced motion emulated, the ticker text wraps inside the band (render.ts:220; the moving ticker never wraps, :234).
+- Changing the band height (`replaceLayout`) and pushing never shows two `canvas` elements, and the new `zone-1` box matches the new band.
+- Assigning the image's playlist instead and pushing gives v1 and no `zone-1`.
+- No CSP violations.
+
+### 7. Portal (UI kit only; operators read "screen"; no inline style attribute)
+
+**Shell**
+- apps/portal/src/shell/nav.ts:100: drop `planned: true` from the Layouts entry.
+- App.tsx:130: replace the planned route with `page('layouts', layoutsPage, (m) => <m.LayoutsPage />)` and `page('layouts/:id', layoutEditor, (m) => (<PerObject><m.LayoutEditorPage /></PerObject>))`, with `const layoutsPage = () => import('./features/layouts/LayoutsPage.tsx')` and `const layoutEditor = () => import('./features/layouts/LayoutEditorPage.tsx')` next to the schedule ones (:62-63).
+- features/planned/PlannedPage.tsx: drop `layouts` from `PlannedSection` (:6) and `PLANNED` (:37-42), and the unused icon import.
+- features/styleguide/SurfaceSections.tsx:196-205: the planned sample becomes Users, which is still planned (nav.ts:114): icon `Users` (ui/icons.ts:97), title "Users are planned", text "People and their roles will be managed here. They arrive with stage C." Swap the `LayoutTemplate` import (:29; the sample at :202 is its only use) for `Users`, or lint fails on an unused import.
+- nav.test.ts: the planned list (:43) loses `/layouts`; a line "Built in stage B, slice 4." asserts `/layouts` is not planned; the `navItemName` test (:132-138) uses `media-audio` ("Audio (planned)") instead of `layouts`; the active-link table (:100) gains `['/layouts/<uuid>', 'layouts']`.
+
+**api/endpoints.ts** (mirroring :142-148 and :325-346): `listLayouts(signal?): Promise<LayoutDto[]>`, `getLayout(id, signal?): Promise<LayoutDto>`, `createLayout(input: LayoutInput): Promise<LayoutDto>`, `replaceLayout(id, input: LayoutInput): Promise<LayoutDto>` (PUT; doc "The whole layout. Leaving `description` out keeps the stored one; null clears it."), `deleteLayout(id): Promise<void>` (doc "409 `layout_in_use` while a display has the layout assigned."). The `deletePlaylist` doc (:137) adds "or a layout".
+
+**lib/assignedContent.ts (new, pure, tested; WP5 writes it first).** Stops a third branch at about 25 call sites:
+```ts
+export type ContentKind = 'playlist' | 'schedule' | 'layout';
+export interface ContentRef { readonly kind: ContentKind; readonly id: string; readonly name: string }
+/** The Record makes TypeScript ask for a fourth kind. */
+export const CONTENT_KIND_LABEL: Record<ContentKind, string> = { playlist: 'Playlist', schedule: 'Schedule', layout: 'Layout' };
+/** What a screen has assigned, or null. At most one of the three is set. */
+export function assignedContent(display: Pick<DisplayDto, 'assignedPlaylist' | 'assignedSchedule' | 'assignedLayout'>): ContentRef | null;
+/** What a push-plan row is about: its layout, else its schedule, else its playlist; null for nothing assigned. A row of a layout or a schedule also carries a playlist (the main zone's or the default), so the container wins. */
+export function planRowContent(row: Pick<PushPlanRow, 'playlist' | 'schedule' | 'layout'>): ContentRef | null;
+/** `/playlists/:id`, `/schedules/:id` or `/layouts/:id`. */
+export function contentHref(kind: ContentKind, id: string): string;
+/** The sentence a playlist-assign dialog adds when a screen it is about has a schedule or a layout. */
+export const CONTENT_REPLACED_NOTE = 'A screen that has a schedule or a layout gets this playlist instead.';
+/** True when any of the screens has a schedule or a layout: assigning a playlist replaces it. */
+export function anyHasOtherContent(displays: readonly Pick<DisplayDto, 'assignedPlaylist' | 'assignedSchedule' | 'assignedLayout'>[]): boolean;
+```
+It is used **only at sites this slice must touch anyway** (WP6 unless marked):
+- `assignedContentName` and `hasContentAssigned` (lib/screensList.ts:103-115) are removed; their callers use `assignedContent(display)?.name ?? null` and `assignedContent(display) !== null` (screensList.ts:123, :250; ScreenRowMenu.tsx:21).
+- `pushMarkerFor` (screensList.ts:266-284): the plan row is about the assignment when `assignedContent(row.display)` and `planRowContent(push)` have the same kind and the same id (`idKey`). For a playlist screen this keeps today's rule: a row with a schedule or a layout is not a match.
+- The three "direct playlist" filters become `planRowContent(row)?.kind === 'playlist'` plus today's id test: lib/playlistEditor.ts:664 (`rowsForPlaylist`), lib/playlistsListActions.ts:229 (`assignPushView`, WP5) and the playlist branch of `pushMarkerFor` (screensList.ts:281).
+- features/push/PushDialog.tsx meta and link (:584-597, :638-658) and lib/pushDialog.ts `searchRows` (:56-62, which also matches `row.layout?.name`).
+- features/dashboard/PushCard.tsx caption (:105-110): `planRowContent(row)?.name`.
+- features/shared/ScreenPickerDialog.tsx `contentLabel` (:90-96): "Assigned: schedule {name}", "Assigned: layout {name}", "Assigned: {playlist}" or "Nothing assigned"; its search (:138-148) also matches `display.assignedLayout?.name`.
+- features/displays/list/ScreensList.tsx: the Content column (:415-440), `allowNone` (:924-925), the "kept" toast (:296-309) and the assign-dialog note (:917).
+- The four places that add `SCHEDULE_REPLACED_NOTE`: ContentCard.tsx:296, ScreensList.tsx:917, features/playlists/list/AssignToScreens.tsx:106 and features/playlists/editor/PushCard.tsx:223. `SCHEDULE_REPLACED_NOTE` and `anyHasSchedule` (lib/screensList.ts:390-400) are removed; the callers use `CONTENT_REPLACED_NOTE` and `anyHasOtherContent`.
+- The wizard note (features/displays/wizard/ContentStep.tsx:147-154).
+
+**lib/layouts.ts (new, pure, tested; mirrors lib/schedules.ts)**
+- `BAND_PERCENT = { min: 5, max: 50, initial: 15 } as const`.
+- `bandZones(percent: number, mainPlaylistId: string, bandPlaylistId: string): LayoutZoneInput[]`: `[{ playlistId: main, x: 0, y: 0, width: 10000, height: 10000 - percent·100 }, { playlistId: band, x: 0, y: 10000 - percent·100, width: 10000, height: percent·100 }]`.
+- `bandPercentOf(zones: readonly LayoutBox[]): number | null`: the band height in whole per cent when the zones are exactly `bandZones` of some percent from 5 to 50, else null.
+- `zoneLabel(index: number, preset: boolean): string`: "Main zone" for 0; "Band" for 1 when `preset`; otherwise "Zone {index + 1}".
+- `LayoutZoneDraft { playlistId: string ('' = not chosen); x; y; width; height }` and `LayoutDraft { name; description; bandPercent: string | null (the Stepper's text; null when the saved zones match no preset); zones: readonly LayoutZoneDraft[] }`.
+- `layoutDraftFromDto(dto)`, `layoutIsDirty(saved, draft)`.
+- `validateLayoutDraft(draft): { ok: true; value: LayoutInput } | { ok: false; errors: LayoutErrors }`. Messages: "Enter a name." (`nameProblem`, lib/playlistEditor.ts:173); the description through `descriptionProblem` (lib/playlistEditor.ts:184), sent always as the trimmed text or null (write the three lines of the private `descriptionToSave` locally, as lib/schedules.ts:110-114 does); band height "Enter a whole number from 5 to 50."; a zone without a playlist "Choose a playlist.". The value's zones are `bandZones(Number(bandPercent), zones[0].playlistId, zones[1].playlistId)` when `bandPercent !== null`, otherwise the saved geometry with the chosen playlists. **The editor never replaces zones silently.**
+- `LayoutErrors { name?; description?; bandPercent?; form?; zones: ReadonlyMap<number, { playlistId?: string }> }`, `NO_LAYOUT_ERRORS`.
+- `layoutErrorsFromApi(details, draft)` reads the dotted paths the API sends (section 3), split on `'.'` as lib/apps.ts:247 does: `name` and `description` to their slots; `zones.<n>.playlistId` to zone n; anything else (`zones`, `zones.<n>`, `zones.<n>.width`, an index with no zone, an unknown path) to `form`. The first message per slot wins; each is prefixed "The server refused this value: ", as lib/apps.ts does.
+- `layoutErrorEntries(errors, draft)` for the error summary: "Enter a name.", the description message, "Band height: Enter a whole number from 5 to 50.", "{zoneLabel}: Choose a playlist." and the form message.
+- `zoneSizes(shape: CanvasPreviewShape, zones: readonly LayoutBox[]): { rect: Rect; tooSmall: boolean }[]`: `zoneRect(effectiveContentRect(shape.canvas, shape.contentRectOutOfBounds ? null : shape.contentRect), zone)` from `@tinnox/domain`, `tooSmall` when a side is under 16 px.
+- `zoneSizeSentence(shape, zones, labels)`: "On 1080 × 1920: main zone 1080 × 1632 px, band 1080 × 288 px." (labels lower-cased).
+- `bandLabel(dto)`: "15%" or "Custom"; `layoutSummaryLabel(dto)`: "Main zone: {name} · Band 15%" or "Main zone: {name} · 3 zones".
+- `LAYOUT_SORT_ACCESSORS`, `DEFAULT_LAYOUT_SORT`, `filterLayoutList(items, query)` (name, description and every zone's playlist name).
+- Reused, not rewritten: `assignedScreensLabel` (lib/playlistsList.ts:94), `playlistsByName` (lib/schedules.ts:48), `refusalNames` (lib/playlistsListActions.ts, below).
+
+**Layouts list (`features/layouts/LayoutsPage.tsx`, the Schedules list pattern):** `SearchField` "Search layouts", the count, a refresh icon button, primary "Create layout". Table: Name (link), Main zone (link to the playlist, capped at 28ch with the full name in its `title`, as the schedules list), Band ("15%" or "Custom"), Screens, Updated, row menu (Edit, Delete). Empty state "No layouts yet" / "A layout splits a screen into a main zone and a band along the bottom, each with its own playlist." / "Create layout". No-results state "No layout matches" with "Clear search". `// shortcut: no grid, bulk selection or pagination; add when an organisation has over 100 layouts.`
+
+**Create dialog (`CreateLayoutDialog.tsx`, Dialog `md`):** `Field` "Name"; native `Select` "Main zone playlist"; native `Select` "Band playlist" (hint "Put a Ticker or Text app in this playlist; its text is sized to the band."). Both start on "Choose a playlist". With no playlist yet: an EmptyState "Create a playlist first" with a link to `/playlists`, and no form. Buttons Cancel and "Create layout". Validation "Enter a name.", "Choose a playlist for the main zone.", "Choose a playlist for the band."; a failed submit focuses the first invalid field (as CreateScheduleDialog.tsx:80-86). POST `{ name, zones: bandZones(BAND_PERCENT.initial, main, band) }`, navigate to `/layouts/:id`, toast "Layout created". The same playlist may be chosen twice.
+
+**Editor (`LayoutEditorPage.tsx` loads; `LayoutEditor.tsx` in `EditorPage`; back "Layouts"; Cancel and Save; `headerStatusLabel`; `useLeaveGuard(dirty, …)`; "Delete layout" in the header menu).** It loads the layout, `api.listPlaylists()` and `api.listDisplays()` (for "Preview on", as AppEditor.tsx:68, :115).
+- **Details card:** Name, Description (its error under the textarea). Facts: Screens (`assignedScreensLabel`), Created, Updated.
+- **Zones card:**
+  - Fixed help text at the top: "Screens need player 0.5.0 or later to show a layout. Reload the player page on each screen after this update; until then an older player keeps its last content and the screen's page says so."
+  - With a preset (`bandPercent !== null`): `Field` "Band height (%)" holding a `Stepper` (min 5, max 50, step 1, unit "%", `stepLabel` "band height"), hint "Part of the height of each screen's content area. The main zone fills the rest."
+  - Without one: an info `Banner` "These zones were set outside this editor; their sizes are kept." and no Stepper. Each zone's playlist stays editable.
+  - Then one `<fieldset>` per zone (`LayoutZoneFields.tsx`) with a visible `<legend>` from `zoneLabel` ("Main zone", "Band", "Zone 3"). Inside, `Field` "Playlist" with `PlaylistSelect` and its "Open playlist" link. The band's Field has the hint "Put a Ticker or Text app in the band; its text is sized to the band." Because each control sits in a named fieldset, every control has a unique accessible name.
+  - `// shortcut: one preset (bottom band); add numeric x/y/width/height fields per zone (the keyboard form of a free editor) and top/side presets when the client asks (question 1).`
+- **Preview card (`LayoutPreview.tsx`):**
+  - `Field` "Preview on": a native `Select` from `previewShapes(displays)` (lib/apps.ts:284-298).
+  - `CanvasFrame` (`size="xl"`, features/displays/detail/CanvasFrame.tsx:31) with one box per zone as its children. Each box is placed with `cssVars` percentages of the content area (ui/cssVars.ts:9; the content area itself comes from `frameGeometry`, lib/screenDetailCanvas.ts:202-222), computed from `zoneSizes`; no style attribute.
+  - Each box carries a text label "{zoneLabel}: {playlist name}" ("…: no playlist chosen" while none is chosen).
+  - The frame's `description` is `zoneSizeSentence`, so assistive technology hears the pixel sizes.
+  - When a zone is under 16 px on the chosen shape, a warning `Banner` under the frame: "On {shape label}, the {zone label, lower case} is {w} × {h} px. A zone needs at least 16 px each way, so screens of this shape cannot show this layout. Make it larger." Nothing is shown by colour alone.
+  - While the band height is not a whole number from 5 to 50 the frame shows its `emptyText` "Enter a band height from 5 to 50 to see the zones."
+  - `// shortcut: zone outlines only, no live content or 1:1 zoom in the preview.`
+- **Keyboard.** Every control is native (`Select`, `Stepper`, buttons and links); nothing works by pointer only, so no separate keyboard equivalent is needed. The Stepper steps by 1 with Arrow Up and Arrow Down and by 10 with Page Up and Page Down (ui/Stepper.tsx:46-57), and the preview follows the draft as it changes. The zone boxes in the preview are not focusable: they are a picture, described in text.
+- **Errors and focus.** Errors sit under their control with `aria-invalid` and `aria-describedby`. A Save that fails validation shows the error summary `Banner` and **focuses the summary** after the frame (as AppEditor.tsx:146-155). Each summary entry is a link (the whole line) that focuses its control, found by test id inside the form: `layout-name`, `layout-description`, `layout-band-percent`, `layout-zone-{n}-playlist`. Focus never falls to the body.
+- **Save:** `replaceLayout`, toast "Layout saved" with the detail "Screens that use it show Changes waiting until you push.", then `push.refresh()`. `validation_failed` details map through `layoutErrorsFromApi`.
+- **Delete (`DeleteLayoutDialog.tsx`, ConfirmDialog danger):** "Delete {name}?" / "The layout is removed for good. Screens that already show it keep it until their next push." / "Delete layout". `layout_in_use` shows the error and the screen names (`refusalNames(details, 'display')`). Every open starts without the previous refusal (slice 3 as-built).
+- `layouts.css` with `tx-layout-` classes: the zone boxes (outline, label), the cards; the fieldsets wrap at phone width (no sideways scroll).
+- Apply `.agents/skills/web-design-guidelines/`.
+- **Test ids:** list `layouts-create`, `layouts-table`, `layouts-search`, `layouts-refresh`, `layouts-count`, `layouts-empty`, `layouts-row-<id>`, `layouts-row-menu`; create dialog `layout-create-dialog`, `layouts-create-name`, `layouts-create-main`, `layouts-create-band`, `layouts-create-submit`; editor `layout-editor`, `layout-editor-missing`, `layout-name`, `layout-description`, `layout-save`, `layout-save-state`, `layout-cancel`, `layout-menu`, `layout-error-summary`, `layout-fact-screens`, `layout-band-percent`, `layout-custom-note`, `layout-zone-{n}` on each fieldset and inside it `-playlist` and `-open`, `layout-preview` (the frame; its content area `layout-preview-content`), `layout-preview-shape`, `layout-preview-zone-{n}`, `layout-preview-warning`; delete `layouts-delete-dialog` (`-confirm`, `-cancel`), `layouts-delete-screens`.
+
+**Pickers**
+- `PlaylistSelect` moves from features/schedules/ScheduleEventRow.tsx:21-87 to **features/shared/PlaylistSelect.tsx** unchanged (its shortcut comment moves with it), exported from shared/index.ts. Its CSS rule `.tx-schedule-pick` (features/schedules/schedules.css:114-125) moves to shared.css as `.tx-playlist-select`. ScheduleEventRow.tsx and ScheduleEditor.tsx (:49, the import only) import it from shared.
+- The body of `SchedulePickerDialog` (features/shared/SchedulePickerDialog.tsx:57-234) moves into a generic **features/shared/LibraryPickerDialog.tsx**: `LibraryPickerDialog<T extends { id: string; name: string }>` with today's props plus `load: (signal) => Promise<T[]>` (a module-level function, so `useLoadWhileOpen` sees a stable one), `meta: (item: T) => string`, `searchTexts: (item: T) => readonly (string | null)[]`, `icon: IconComponent` and `noun: { singular: string; plural: string; href: string }`. Its texts are built from the noun: "Search {plural}", "Loading {plural}", "The {plural} could not be loaded", "No {plural} yet", "Go to {plural}", "Create a {singular} first, then come back to choose it.", the radiogroup label "{Plural}", "No {singular} matches", `countLabel(n, singular)`.
+- `SchedulePickerDialog` keeps its props and texts as a thin wrapper, so its callers and tests pin it. A new thin **`LayoutPickerDialog`** beside it: props as `SchedulePickerDialog` with `onConfirm(layout: LayoutDto)`, defaults `title = 'Choose a layout'`, `confirmLabel = 'Choose layout'`, `testId = 'shared-layout-picker'`; icon `LayoutTemplate`; rows show the name and `layoutSummaryLabel`; search over name, description and zone playlist names; empty state links to `/layouts`. There is no third copy.
+
+**Screen page**
+- `detail/ContentCard.tsx`:
+  - `AssignState.kind` (:49) gains `'layout'`; `hasContent` (:65) and `savedHasContent` (:92) use `assignedContent(…) !== null`; the `save` patch type (:80-83) gains `assignedLayoutId`.
+  - Nothing assigned: three buttons, "Assign playlist" (primary, `screen-detail-choose-playlist`), "Assign schedule" (`screen-detail-choose-schedule`) and "Assign layout" (icon `LayoutTemplate`, `screen-detail-choose-layout`). The note (:183-185) says "Choose a playlist, a schedule or a layout for this screen, then push it."
+  - With a layout: the caption "Layout", its name, "Main zone: {mainPlaylist.name}" (`screen-detail-main-playlist`), the existing `PlaylistMeta`, and "Open layout" (`/layouts/:id`, `screen-detail-open-layout`).
+  - The Change menu (:207-228) gains "Choose a layout…" (icon `LayoutTemplate`) after "Choose a schedule…".
+  - "Remove content" (:132-139) sends `{ assignedPlaylistId: null, assignedScheduleId: null, assignedLayoutId: null }`.
+  - The playlist picker's description (:295-297) adds `CONTENT_REPLACED_NOTE` when the screen has a schedule or a layout.
+  - A `LayoutPickerDialog` with title "Assign content", description "Choose the layout for {name}. Nothing changes on the screen until you push. Screens need player 0.5.0 or later to show a layout.", `confirmLabel` "Assign layout", `errorTitle` "The layout was not assigned", `testId` `screen-detail-layout-picker`. Toast "{name} assigned".
+  - The focus rule stays: when a save swaps the buttons for the Change menu or back, focus moves to the first control that took their place (:67-76).
+- `detail/useAssignedPlaylist.ts` (:28-33): the `Pick` gains `assignedLayout`; the playlist read falls back to `display.assignedLayout?.mainPlaylist.id`. `// shortcut: with a layout the preview shows the main zone's playlist only; draw the zones on the screen page if operators ask.`
+- `detail/AssignedPreview.tsx` (:51-58) and `lib/screenDetail.ts` `previewCaption` (:536-549): a fifth parameter `layoutName: string | null = null` (the existing calls and tests keep their four arguments); with a layout the caption adds "This is the main zone of the layout “{name}”." The `nothing_assigned` text (:559) becomes "No playlist, schedule or layout is assigned to this screen, so there is nothing to preview."
+- `detail/ScreenTabs.tsx:102` and `detail/OverviewTab.tsx` (:22-23, :78-84, :173-178): the prop `scheduled: boolean` becomes `contentKind: ContentKind | null`; the schedule sentence is unchanged, and with a layout the "Item N of the active publication" fact adds "With a layout, this is the item in the main zone; other zones are not reported."
+- lib/screenStatusPush.ts:23: "No playlist, schedule or layout is assigned to this screen, so there is nothing to push."
+
+**Other places that say or assume "playlist or schedule"** (WP6 unless marked)
+- ScreensList Content column: "Layout: {name}" linking to the layout (the schedule and playlist cells as today), through `assignedContent` and `contentHref`. `allowNone` is offered only when `assignedContent(assignSingle)` is null or a playlist. The "kept" toast (:296-309) reads "{name} now has a {kind}" / "Its {kind} stays assigned. To remove it, use "Remove content" on the screen's page." for a schedule or a layout. The shortcut at :924 reads "content cannot be removed from a screen with a schedule or a layout in the list; …".
+- PushDialog row meta: a `LayoutTemplate` icon and "Layout: {name}" when `row.layout !== null`; with issues the link is "Open layout" (`/layouts/:id`, with the visually hidden name). Its empty state (:336): "Add a screen and assign a playlist, a schedule or a layout to it, then push from here."
+- Wording that says "a playlist or a schedule" becomes "a playlist, a schedule or a layout": lib/pushDialog.ts:111 and :568; lib/dashboard.ts:386 and :391; lib/playlistEditor.ts:707 ("…Screens that play it through a schedule or a layout are pushed with Push to screens."). The pins move with them: pushDialog.test.ts:199 and :732, dashboard.test.ts:477 and :482, playlistEditor.test.ts:903, screenDetail.test.ts:365, screenStatus.test.ts:241.
+- Wizard (ContentStep.tsx:147-154): with a schedule as today (`screen-wizard-schedule-note`); with a layout the same Banner reads "This screen has a layout. It gets the playlist you assign here instead of its layout." (`screen-wizard-layout-note`).
+- **Playlist delete refusal (WP5)**: `DeleteFailureText.bySchedule` (lib/playlistsListActions.ts:55) becomes `refusedBy: 'display' | 'schedule' | 'layout' | null` (null when the delete was not refused as in use). `refusalNames(details, path: 'display' | 'schedule' | 'layout')`. `deleteFailureText` checks schedule names, then layout names ("Used by the layout {names}." / "Used by the layouts A and B.", hint "Choose another playlist in that layout, then delete the playlist." / "…in those layouts…"), then screen names. The refusal without names (a race, :92-101) keeps `refusedBy: 'display'` and reads "A screen has this playlist assigned, or a schedule or a layout uses it." with the hint "Assign other content to the screen, or choose another playlist in the schedule or layout, then delete the playlist." (pinned at playlistsListActions.test.ts:158). features/playlists/list/DeletePlaylistsDialog.tsx (:212-229) adds a "Go to Layouts" button (icon `LayoutTemplate`, `/layouts`) when any refusal has `refusedBy === 'layout'`.
+- **Audit and activity (WP5; TypeScript forces the category and action maps)**:
+  - lib/auditView.ts: `AUDIT_CATEGORY_LABELS.layout = 'Layouts'` (:34-47), `CATEGORY_SUBJECTS.layout = 'Layout'` (:111-124), `OBJECT_TYPE_LABELS.layout = 'Layout'` (:253-266), `AuditTargetKind += 'layout'` (:285-286), `TARGET_KINDS` (:294-302) and `TARGET_LABELS` (:304-312) gain it (label "Layout"), and `auditTargetPath` (:400-422) gives `/layouts/:id`, `RELATED_KEYS += { key: 'layoutId', kind: 'layout' }, { key: 'assignedLayoutId', kind: 'layout' }, { key: 'mainPlaylistId', kind: 'playlist' }` (:319-329; the last so the main playlist of a `layout.create` or `layout.update` shows with its name and a link), `AuditNames.layout` and `NO_AUDIT_NAMES.layout = null` (:425-445). `OBJECT_TYPE_LABELS` and `RELATED_KEYS` are plain lists TypeScript does not force, so they are named here and tested.
+  - features/audit/useAuditNames.ts and features/dashboard/useActivityNames.ts read `listLayouts`; features/dashboard/ActivityCard.tsx:30 gains `layout: 'Layout'`.
+  - lib/activity.ts: `ACTIVITY_OBJECT_KINDS += 'layout'` (:24-31); `WORDING` (:80-147) "Layout created / updated / deleted" (attempts "Layout creation / update / deletion", icon `other`); `REMOVALS += 'layout.delete'` (:150-156); `CATEGORY_LABELS.layout = 'Layout'`, `OBJECT_KIND_OF_TYPE.layout = 'layout'` (:172-194); `activityHref` gives `/layouts/:id` (:421-436); `ASSIGNMENT_FIELDS` (:272) is imported from contracts `ASSIGNMENT_KEYS`.
+  - The `display.update` wording (:315-348) becomes a loop over `ASSIGNMENT_KEYS` with the same results for the two old keys. When `fields` holds assignment keys only: the first key (in `ASSIGNMENT_KEYS` order) whose recorded value is a string, or else the only named key when its value was not recorded (a failed attempt), reads "{Kind} assigned to screen" (attempt "{Kind} assignment", related: that object, label the kind); otherwise two or more named keys read "Content removed from screen" (attempt "Removing the content from a screen"), and one named key reads "{Kind} removed from screen" (attempt "Removing the {kind} from a screen"). `{ assignedPlaylistId: P, assignedLayoutId: null }` reads "Playlist assigned to screen".
+  - `publication.create` (:379-392) names the layout first: `ref('layout', detail.layoutId) ?? (objectType === 'layout' ? ref('layout', objectId) : null)` with the label "Layout", then the schedule, then the playlist.
+- Accessibility e2e (WP5): tests/e2e/11-accessibility.spec.ts `PAGES` (:83-99) gains `['layouts', () => '/layouts', 'Layouts']` and `` ['layout editor', () => `/layouts/${layoutId}`, `ZZ a11y layout ${runId}`] ``; its setup (:17-69) gains `let layoutId = ''` and creates the layout on the a11y playlist with `` operator.api.createLayout(bandLayout(`ZZ a11y layout ${runId}`, playlistId, playlistId)) ``.
+
+### 8. Tests
+
+Every list that pins schema version 5 as "unsupported" moves to 6, and every strict fixture gains the new required field. Both are listed per package below, with their lines.
+
+- **contracts** (contracts.test.ts, portal-v2.test.ts):
+  - contracts.test.ts:179-182: `parseManifest(manifest({ schemaVersion: 6 }))` gives `unsupported_version` with "manifest schemaVersion 6 is not supported (expected 1, 2, 3, 4 or 5)".
+  - v5 manifest: accepted (two zones, a band at the bottom); counts that do not add up refused (path `zones`); `zones[0]` transition or shuffle differing from the top level refused; a rect outside the content rectangle refused, and outside the canvas when there is none; two overlapping rects refused, two that touch accepted; one zone and five zones refused; an extra key refused; **a v5 document with a `schedule` key refused**; a v4 document with `zones` refused.
+  - `manifestZones`: v1 to v4 return `[m]` (`toBe` the same object); v5 returns one view per zone, each `ManifestV3Schema.parse`s, with `schemaVersion` 3, the zone's rect as `contentRect`, the zone's run of assets (running offsets), the zone's transition and shuffle, and `publicationId`, `displayId`, `createdAt`, `canvas`, `rotation`, `timeZone` and `workingHours` copied.
+  - `manifestPlaylists`: one slice per zone for v5, with running `from`.
+  - `rectsOverlap`: overlapping, touching on an edge, touching at a corner, one inside the other, disjoint; in pixels and in basis points.
+  - `LayoutInputSchema`: two zones accepted; one and five refused; `x + width` over 10 000 refused with path `['zones', 1, 'width']`, `y + height` with `['zones', 1, 'height']`; an overlap with `['zones', 1]` and "zone 2 overlaps zone 1"; width 0 and a negative x refused; an extra key refused; a blank description parses to null.
+  - `DisplayPatchSchema`: a layout and a playlist refused with path `['assignedLayoutId']` and "assign one of a playlist, a schedule or a layout"; a schedule and a layout the same; all three null accepted; one id with the other two null accepted. **portal-v2.test.ts:737 moves to the new message** (the path stays `assignedScheduleId`).
+  - `DisplayDtoSchema`: the fixture (portal-v2.test.ts:99-117) gains `assignedLayout: null`; the required-field loop (:651) gains `'assignedLayout'`; an assigned layout with its main playlist is accepted, malformed ones refused.
+  - `PushPlanRowSchema`: the fixture (:767-775) gains `layout: null`; a layout without a playlist refused; a schedule and a layout together refused.
+  - Routes `layouts`, `layoutPattern`, `layout(id)` with `'../x'` encoded (as :1193-1196); the audit categories still equal the derived set (:1103-1110); `layout.*` actions present; `PUBLISH_REJECTION_CODES` contains `zone_too_small`.
+- **domain** (new layout.test.ts; geometry.test.ts; push.test.ts; playlist.test.ts; fixtures.test-support.ts):
+  - fixtures.test-support.ts: `route(maxItems = 200, maxRegions = 1)` (:163-182) gains the second parameter; the default keeps the refusal pin. A `planLayout(playlists, zones, options)` helper beside `planSchedule` (:201-233), planning each playlist as the API does.
+  - geometry.test.ts `zoneRect`: 1920 × 1080 with a 15 % band gives a main zone 1920 × 918 and a band at y 918, 1920 × 162; neighbours share an edge; a content rectangle at (100, 50) offsets both; three zones of 3333, 3333 and 3334 basis points on 1000 px give edges at 333 and 667 that sum to 1000; 16 384 px is exact; a 96 px tall area gives a 10 px band at 10 % and 19 px at 20 %.
+  - layout.test.ts `planLayoutPublication` with `route(200, 4)`: two zones give `zones` with rects, counts, transitions and shuffles and items main first; `manifestVersionFor` is 5 and `buildManifest` parses; **the same playlist in both zones is planned twice and sent twice** (the items appear twice, counts are equal); a zone under 16 px gives `zone_too_small` at `zones[1]` with the message and plans nothing (assert `plan` was not called); a missing zone playlist gives `playlist_empty` at `zones[1].playlist` with "A playlist of this layout no longer exists. Open the layout and choose another."; an item problem keeps its per-playlist index (`zones[1].items[0]`) and the "In playlist" prefix; the total of two playlists of 150 items with `maxItems` 200 gives one `too_many_items` at `layout` with "The playlists of this layout hold 300 items in total; …"; with `route(200, 1)` the combined draft gives `multiple_regions_unsupported` at path `layout` ("… can show 1 content region(s); this publication needs 2.").
+  - schedule.test.ts: **no change**; it is the pin of the `planSources` extraction.
+  - playlist.test.ts (`checkCapabilities`, :581-694): a draft with two zones against `maxRegions: 1` gives `multiple_regions_unsupported`; the `too_many_items` message for a layout draft names "this layout"; a draft without zones still says "The playlist has …".
+  - push.test.ts: a band-height change gives `zones`; a zone's transition or shuffle changed gives `zones`; a changed item in zone 1 gives `item` at its flat index; a canvas change gives `canvas`; jsonb key order does not matter; a v5 manifest against a playlist draft gives `schemaVersion`; `buildManifest` throws for a draft with both `schedule` and `zones`.
+- **delivery** (packages/delivery/test/delivery.test.ts, fake-route.ts): the browser profile pin (delivery.test.ts:163-176) moves to `profileVersion: 2` and `maxRegions: 4`. fake-route.ts keeps `maxRegions: 1` and gains one case: the test-only route refuses a two-zone draft with `multiple_regions_unsupported`.
+- **db** (new `packages/db/test/stage-b-layouts.integration.test.ts`, template stage-b-schedules):
+  - layout CHECKs: name length and trimming, description length; layout_zone CHECKs: position 4 refused, negative x, width 0, `x_bp + width_bp` 10 001 and `y_bp + height_bp` 10 001 refused (23514 with the constraint names).
+  - Grants exactly as listed: on `layout` SELECT, INSERT, DELETE and UPDATE on `name` and `description` only; on `layout_zone` SELECT, INSERT, DELETE and no UPDATE at all; UPDATE on `display.assigned_layout_id`.
+  - Cross-organisation foreign keys (23503): a zone on another organisation's playlist; a zone in another organisation's layout; a display with another organisation's layout.
+  - `display_one_assignment`: a playlist and a layout, and a schedule and a layout, refused (23514, `display_one_assignment`).
+  - Guards: a deleted playlist put in a zone refused (23001, `layout_zone_playlist_guard`); soft-deleting a playlist that a zone uses refused (23001, `playlist_delete_guard`); **regression**: soft-deleting a playlist that a display has assigned, or that a schedule uses, is still refused, and an unused playlist can still be deleted.
+  - Deleting an assigned layout gives 23503 `display_assigned_layout_fk`; deleting an unassigned one removes its zones.
+  - A v5 publication with `publication_asset` rows for media positions of both zones is accepted by the 0004 guard.
+  - The manifest version: one line pointing at the two pins below (no third copy, as slice 3 as-built did).
+  - rls.integration.test.ts: `TENANT_TABLES` (:12-33) gains `layout` and `layout_zone`; `ROWS_PER_ORG.layout_zone = 2` (:38-42); the read probes (:263-289), the update and delete list (:323-340), the insert attempts (:382-430), the org-move list (:438-466) and the cross-organisation attach list (:469-545) each gain the layout rows, as they hold schedule rows; **:927 moves from 5 to 6**.
+  - stage-b.integration.test.ts: the display grant list (:139-166) gains `assigned_layout_id` with the comment `// 0011` and the test name says so; the version test (:170-199) is renamed "accepts schema versions 1 to 5 and refuses 6", `insert(5)` gives `'no error'` and **`insert(6)` gives `PG.check`** (was 5 at :197).
+  - migration-0005.integration.test.ts: `upgrade.applied` (:545-552) also contains `'0011_stage_b_layouts.sql'`; the definition check (:574-584) also expects `"'5'"`; the table list (:595-622) gains `layout` and `layout_zone` under "// 0011, applied with the rest."
+  - support.ts: `createOrg` (:69-223) seeds an unassigned layout with two zones on the organisation's playlist (positions 0 and 1; 0/0/10000/8500 and 0/8500/10000/1500) and `TestOrg.layoutId`; its doc comment says `layout_zone` gets two rows.
+- **api** (new `apps/api/test/layouts.integration.test.ts`; additions elsewhere; `apps/api/test/support.ts` gains `layoutZones(mainPlaylistId, bandPlaylistId, bandPercent = 15): LayoutZoneInput[]`, `createLayout(operator, name, zones): Promise<LayoutDto>` and `assignLayout(operator, displayId, layoutId | null)`, beside `createSchedule` and `assignSchedule` (:538-578)). A case goes into layouts.integration.test.ts unless the helpers it needs live in another file (`planRow`, `pushAgainstHeldEdit` and the publish helpers in push.integration.test.ts), as slice 3 as-built did (stage-b.md:1634):
+  - CRUD with audit events (`layout.create` and `layout.update` with `{ mainPlaylistId, zoneCount }`, `layout.delete` with `{ zoneCount }`); PUT replaces the zones and keeps their order; `updated_at` moves on a zone-only change; GET of the list and of one layout.
+  - **The path form of a refusal:** unknown, deleted and other-organisation playlists give 400 at `zones.1.playlistId`; one zone, five zones, an overlap (`zones.1`) and `x + width` over 10 000 (`zones.1.width`) give 400 with those paths.
+  - **Upper-case ids:** a POST and a PUT with upper-case `playlistId`s succeed; the DTO and the audit detail carry them in lower case (the schedule block of audit-trail.integration.test.ts, :399-513, gets a layout twin before the whole-trail check at :514).
+  - `layout_in_use` with screen names; the 23503 race answer is not tested (it needs two interleaved transactions), as for schedules.
+  - Displays: assigning a layout clears a playlist and a schedule, and assigning either clears a layout; a layout and a playlist in one patch refused (400, `assignedLayoutId`); all three null clears; unknown and foreign layouts 404; the DTO carries `assignedLayout` with the main playlist; **a name-only PATCH on a screen still works** (pins the `display` grant). Audit: `{ assignedPlaylistId: P }` on a layout screen records `fields: ['assignedPlaylistId']`, `assignedPlaylistId: P` and `assignedLayoutId: null`.
+  - **schedules.integration.test.ts:577** moves to the new refinement message, and the strict plan-row `toEqual` at :615-622 gains `layout: null` (as push.integration.test.ts:173-180; `toEqual` does not ignore a key whose value is null).
+  - Push (push.integration.test.ts): a layout gives `never_pushed`, then a v5 publication whose `publication_asset` rows cover media of both zones, `publication.playlist_id` is the main zone's playlist, the audit detail has `layoutId`; then `up_to_date`; a band-height PUT gives `changes`; **one layout on a 1920 × 1080 screen and a 192 × 96 screen with a 10 % band: the small screen is `blocked` with `zone_too_small` at `zones[1]`, the large one pushes**; a blocked push is audited with `objectType: 'layout'`; over the total gives `too_many_items` at `layout` (its own app with `LIMIT_MAX_PLAYLIST_ITEMS=3` and two playlists of two app items, as slice 3 as-built); the plan row at :173-180 gains `layout: null`.
+  - **Push against a concurrent PUT** with `pushAgainstHeldEdit` (push.integration.test.ts:1074): replace the zones (a new band height) and the name with SQL in the held transaction; the push answers `published` and the stored manifest's `zones` are the new ones.
+  - Publish (push.integration.test.ts, beside the schedule case): publishing a playlist to a layout screen clears the layout and the `publication.create` detail has `assignedLayoutId: null`; a repeated key whose stored manifest has `zones` answers 409 `idempotency_conflict`.
+  - Playlists (playlists.integration.test.ts): DELETE of a playlist used by a layout, as the main zone and as the band, gives 409 `playlist_in_use` with `{ path: 'layout', message: name }`.
+  - Player (player.integration.test.ts): `/player/manifest` serves v5; media URLs are issued for an asset that is only in zone 1.
+  - dashboard.integration.test.ts: the setup creates a layout, and the category sets (:376-392) gain `layout`.
+- **tests/integration** (cross-org.test.ts, session-csrf.test.ts):
+  - cross-org.test.ts: `world()` (:60-112) creates a layout on its published playlist in both zones and returns `layoutId`; the unknown-id reads (:140-180) gain `/api/layouts/${layoutId}`; the list checks (:182-253) gain `/api/layouts` (not leaking `a.layoutId`, and holding one item); the snapshot (:256-271) gains the layout and the list; the refused mutations (:276-399) gain `PUT layout`, `DELETE layout` and `assign A layout to own display` (all 404); **naming A's playlist in B's own layout, through POST and through PUT, as the main zone or as the band, answers 400 with 'The playlist was not found.'**, exactly as an unknown id (as :421-434 does for schedules); Bob's own display (:445-452) still has `assignedLayout: null`; `TABLES` (:572-592) gains `layout` and `layout_zone`.
+  - session-csrf.test.ts: `OPERATOR_ROUTE_PATTERNS` (:66-70 holds the schedule ones) gains all five: `['GET', '/api/layouts']`, `['POST', '/api/layouts']`, `['GET', '/api/layouts/:id']`, `['PUT', '/api/layouts/:id']`, `['DELETE', '/api/layouts/:id']`. "lists every /api route the application serves" (:105-125) then covers them.
+- **player** (core/zones.test.ts, new; `makeManifestV5(zones, overrides)` in core/fakes.test-support.ts beside `makeManifestV4` (:161-182), where `zones` are `{ rect, items, transition?, shuffle? }`):
+  - `ZoneSet` with fake presenters and fake loops that record calls in one shared log:
+    - v1 to v4: `adopt` returns the manifest itself and creates no zone;
+    - v5 with two zones: returns view 0 (`schemaVersion` 3, zone 0's rect and run); creates zone 1's presenter and loop and starts it; zone 1's `loadActive` gives view 1;
+    - the same publication again: the cached view 0, no new presenter, no wake;
+    - a new publication with the same zone count: zone 1 kept, its `loadActive` gives the new view, `wake` called once;
+    - **from three zones to two, and from v5 to v1: the gone zones' signals are aborted and `remove()` is called before any new presenter is created** (assert the order in the log);
+    - from two zones to three: a presenter for zone 2;
+    - `adopt(null)` stops every secondary zone; aborting the session's signal aborts every zone's signal; `stopAll`;
+    - `inUse` is the union of the secondary presenters.
+  - sync.test.ts: the unsupported version moves from 5 to 6 at **:226, :235, :255-257 and :360**; a v5 manifest activates and stages the media of both zones.
+  - No other playback or time-rules test changes: the loop and the rules are untouched.
+- **portal** (unit unless marked):
+  - new lib/layouts.test.ts: `bandZones` and `bandPercentOf` round trip for 5, 15 and 50; `bandPercentOf` gives null for three zones, a band at the top, 4 % and 51 %, and a non-whole percent; draft from DTO; dirty; validate (missing name, bad description, band "4", "51", "12.5" and "" refused; a zone without a playlist; a custom layout keeps its geometry); `layoutErrorsFromApi` with `name`, `description`, `zones.1.playlistId`, `zones.1.width`, `zones` and an unknown path (the last three to `form`); `zoneSizes` and `zoneSizeSentence` for 1080 × 1920 and a 3840 × 480 shape with a content rectangle; `tooSmall` on a 192 × 96 shape at 10 %; labels; filter and sort.
+  - new lib/assignedContent.test.ts: each kind for `assignedContent` and `planRowContent` (a layout row also carries its main playlist and reads as a layout); `contentHref`; `anyHasOtherContent`; the `CONTENT_REPLACED_NOTE` text.
+  - nav.test.ts (section 7); endpoints.test.ts: the five calls, and the display and plan-row fixtures gain `assignedLayout: null` and `layout: null`.
+  - **Every strict display fixture gains `assignedLayout: null` and every plan-row fixture `layout: null`**: lib/{screenDetail, screensList, screenDetailCanvas, dashboard, pushDialog, playlistEditor, lib}.test.ts (WP6), api/endpoints.test.ts (WP5), the `row()` helper of lib/playlistsListActions.test.ts (:51-68, typed `PushPlanRow`; WP5), and the component tests features/displays/detail/ContentCard.test.tsx and features/displays/list/ScreensList.test.tsx (WP6).
+  - screensList.test.ts: the marker for a layout screen; no marker for a playlist screen whose plan row carries a layout; the content label and link; the cases of the removed helpers (:571-586) are deleted here, because assignedContent.test.ts (WP5) covers them.
+  - pushDialog.test.ts: search by layout name; :199 and :732 reworded. dashboard.test.ts: :477 and :482 reworded. playlistEditor.test.ts: `rowsForPlaylist` leaves out a layout row whose main zone is this playlist; :903 reworded. screenDetail.test.ts: the layout caption; :365 reworded. screenStatus.test.ts: :241 reworded.
+  - playlistsListActions.test.ts (WP5): a layout refusal (one and two names); `refusalNames` with `'layout'`; :158 reworded; `assignPushView` does not take a layout row for caught up.
+  - auditView.test.ts (WP5): `layoutId`, `assignedLayoutId` and `mainPlaylistId` of a detail are related objects; the layout kind's label and path. activity.test.ts (WP5): the `layout.*` wordings; the `display.update` table with three keys (each kind assigned, each removed, all removed, `{ assignedPlaylistId: P, assignedLayoutId: null }` reads "Playlist assigned to screen", a failed attempt); a layout push names the layout; the names fixture (:49) gains `layout`.
+  - ContentCard.test.tsx (component, WP6): a layout screen shows "Layout", "Main zone: {name}" and "Open layout"; "Remove content" sends the three nulls; the third button on a screen with nothing assigned.
+- **e2e portal (`tests/e2e/12-layouts-portal.spec.ts`, written, not run by agents).** Playlists, the Ticker app and the screens through `OperatorApi`.
+  1. Create a layout through the dialog by keyboard (name, main zone playlist, band playlist); the editor opens with "Band height (%)" at 15.
+  2. Choose "Choose a playlist" for the band and save: focus lands on the error summary; its link focuses the band's Playlist select; choose the playlist again ("Open playlist" appears beside it).
+  3. Raise the band to 20 with Arrow Up; the preview on "Landscape 1920 × 1080" says "main zone 1920 × 864 px, band 1920 × 216 px"; on "Portrait 1080 × 1920", "main zone 1080 × 1536 px, band 1080 × 384 px"; save; toast "Layout saved".
+  4. Preview on a 192 × 96 screen at 5 %: the warning names the band and its size.
+  5. Assign the layout on a screen's page with "Assign layout"; the push dialog row says "Layout: {name}"; push; the row reads Up to date.
+  6. Deleting the layout is refused with the screen's name; deleting a playlist the layout uses is refused with "Used by the layout {name}." and a "Go to Layouts" button.
+  7. Assigning a playlist to that screen through the Change menu replaces the layout, and the picker said "A screen that has a schedule or a layout gets this playlist instead."
+  8. Phone width does not scroll sideways (`scrollsSideways`); no CSP violations; no web storage.
+- **e2e player (`tests/e2e/13-layouts-player.spec.ts`):** section 6.
+- **e2e, other files:** tests/e2e/11-accessibility.spec.ts (section 7); tests/e2e/09-schedules-portal.spec.ts: the note at :312-314 becomes `CONTENT_REPLACED_NOTE`, and the two `assignedContent()` checks (:53-56 type, :253-256 and :320-323) also expect `assignedLayout: null`.
+- **e2e support:** tests/e2e/support/operator.ts (WP4, written first): `export interface LayoutInput { readonly name: string; readonly zones: readonly { readonly playlistId: string; readonly x: number; readonly y: number; readonly width: number; readonly height: number }[] }`, `export function bandLayout(name: string, mainPlaylistId: string, bandPlaylistId: string, percent = 15): LayoutInput`, and `OperatorApi.createLayout(input): Promise<{ id: string }>`, `replaceLayout(id, input): Promise<void>`, `assignLayout(displayId, layoutId): Promise<void>` (as :240-258). tests/e2e/support/player.ts (WP4): `zoneBox(page, zone)` (the `zone-{n}` box's client rectangle). tests/e2e/support/portal.ts (WP5): `createLayoutInPortal(page, name, mainName, bandName): Promise<string>`, `saveLayout(page)`, `assignLayoutOnScreenPage(page, screenId, layoutName)`.
+
+### 9. Docs (WP7)
+
+- docs/portal-v2/stage-b.md: the Date line (:3) names slice 4; after the build, the as-built table of this slice. The slice 3 as-built table is history and is not edited.
+- docs/portal-v2/README.md row B (:26): "multi-zone layouts with a canvas editor" becomes "layouts: a main zone and a band along the bottom, each with its own playlist (a free canvas editor is deferred)"; slice 4 built, with manifest v5 and `player-web/0.5.0`; "Layouts are the slice that remains." goes.
+- docs/player-protocol-v1.md: section 5 "Manifest v5 (stage B, slice 4: layouts)" (after :195-241): the fields, the flat list, the zone views, the main zone's role, gaps are black, no overlap; section 9 (:341-357): profile version 2 with up to four regions, the version sentence (v5 exactly when a layout is assigned), the old-player bullet for 0.5.0, the version rule (v4 frozen; v5 frozen when 0.5.0 is released; next is v6), the item total applies to all zones together and a playlist in two zones counts twice, and `zone_too_small`.
+- docs/security/threat-model.md: a new section "13. Stage B, slice 4: layouts" (section 12 is the round 3 fixes) with one row (T2, T5): layouts add no outside data; layout names are operator text shown as text nodes only and are not in the manifest; two new tenant tables under forced RLS. docs/security/control-matrix.md row B4: "(20; …" becomes "(22; …" and a layouts passage after the schedules one.
+- docs/dev-handoff.md:190: the publish replay is also refused when the stored manifest has `zones`.
+- apps/player-web/README.md: Renderer (:272-321): `DomStage`, one presenter and one loop per zone, zone views, the main zone speaks for the screen, the shortcuts of section 6; the version paragraph (:213) accepts v1 to v5 and refuses 6; the build in the diagnostics overlay (:421) is `player-web/0.5.0`.
+- apps/portal/README.md (:35-40, :65), apps/portal/src/ui/README.md (route table: `/layouts` and `/layouts/:id` added after :1025, and `/layouts` removed from the PlannedPage row at :1026; Layouts notes after :1034; the Content card note :1038), features/shared/README.md (`LibraryPickerDialog`, `LayoutPickerDialog`, `PlaylistSelect`; :322 `CONTENT_REPLACED_NOTE` and `anyHasOtherContent`; :383 the "Assigned: layout" label), features/push/README.md (:52 row wording), tests/README.md (the two new spec files).
+
+### 10. Work packages (file ownership does not overlap between packages)
+
+- **Wave 1 / WP1 Contracts, domain and delivery** (sections 3 and 4).
+  - packages/contracts/src/{layout (new), ids, refs, limits, canvas, display, push, manifest, playlist, audit, errors, routes, index}.ts, contracts.test.ts, portal-v2.test.ts.
+  - packages/domain/src/{layout (new), layout.test (new), sources (new), schedule, types, playlist, capability, geometry, manifest, push, index}.ts, geometry.test.ts, playlist.test.ts, push.test.ts, fixtures.test-support.ts. schedule.test.ts is read, never edited.
+  - packages/delivery/src/browser/browser-route.ts, packages/delivery/test/{delivery.test, fake-route}.ts.
+  - Publish contracts `layout.ts`, `manifest.ts`, `display.ts` (`ASSIGNMENT_KEYS`) and domain `types.ts` first, with the exact names above.
+- **Wave 1 / WP2 Migration 0011 and DB tests** (section 2).
+  - db/migrations/0011_stage_b_layouts.sql; packages/db/src/constraints.ts.
+  - packages/db/test/{stage-b-layouts.integration.test.ts (new), rls.integration.test.ts, stage-b.integration.test.ts, migration-0005.integration.test.ts, support.ts}, and any other packages/db/test file that pins the table list, the display grants or the accepted manifest versions.
+- **Wave 2 / WP3 API** (section 5).
+  - apps/api/src/{app.ts, publishing.ts, routes/layouts.ts (new), routes/displays.ts, routes/playlists.ts, routes/push.ts}.
+  - apps/api/test/{layouts.integration.test.ts (new), push, publish, playlists, player, audit-trail, dashboard, schedules}.integration.test.ts, apps/api/test/support.ts.
+  - tests/integration/{cross-org, session-csrf}.test.ts.
+- **Wave 2 / WP4 Player 0.5.0** (section 6).
+  - apps/player-web/src/{config.ts, app.ts}; ui/{stage.ts (new), presenter.ts}; core/{zones.ts (new), zones.test.ts (new), playback.ts (the :222 shortcut text only), errors.ts (the shortcut only), fakes.test-support.ts, sync.test.ts}.
+  - tests/e2e/13-layouts-player.spec.ts (new), tests/e2e/support/{operator, player}.ts. **Writes `OperatorApi.createLayout`, `replaceLayout`, `assignLayout` and `bandLayout` first**: WP5's e2e files call them.
+- **Wave 2 / WP5 Portal: layouts** (section 7: shell, endpoints, lib/assignedContent.ts, the layouts pages, the pickers, audit and activity, the playlist-delete refusal).
+  - apps/portal/src/{App.tsx, shell/nav.ts, shell/nav.test.ts, api/endpoints.ts, api/endpoints.test.ts}.
+  - features/layouts/** (new); features/planned/PlannedPage.tsx; features/styleguide/SurfaceSections.tsx; features/schedules/{ScheduleEventRow.tsx, ScheduleEditor.tsx (the import only), schedules.css (the moved rule only)}; features/audit/**; features/shared/{LibraryPickerDialog.tsx (new), LayoutPickerDialog.tsx (new), PlaylistSelect.tsx (new), SchedulePickerDialog.tsx, index.ts, shared.css}; features/dashboard/{ActivityCard.tsx, useActivityNames.ts}; features/playlists/list/DeletePlaylistsDialog.tsx.
+  - lib/{assignedContent (new), layouts (new), auditView, activity, playlistsListActions}.ts and their tests. In playlistsListActions.ts WP5 also makes the `assignPushView` change (section 7), although the flow it serves is WP6's.
+  - tests/e2e/{12-layouts-portal.spec.ts (new), 11-accessibility.spec.ts, 09-schedules-portal.spec.ts}, tests/e2e/support/portal.ts.
+  - **Writes `lib/assignedContent.ts`, `api/endpoints.ts` and `LayoutPickerDialog` first**: WP6 codes against the names in section 7.
+- **Wave 2 / WP6 Portal: screens and push** (section 7, "Screen page" and "Other places", except audit, activity and the delete refusal).
+  - features/displays/** (ContentCard and its test, useAssignedPlaylist, AssignedPreview, ScreenTabs, OverviewTab, ScreensList and its test, ScreenRowMenu, wizard/ContentStep); features/push/{PushDialog.tsx, push.css (only if a rule is needed)}; features/dashboard/PushCard.tsx; features/shared/ScreenPickerDialog.tsx; features/playlists/{list/AssignToScreens.tsx, editor/PushCard.tsx}.
+  - lib/{screensList, screenDetail, screenStatusPush, pushDialog, dashboard, playlistEditor}.ts and the tests lib/{screenDetail, screensList, screenStatus, pushDialog, screenDetailCanvas, dashboard, playlistEditor, lib}.test.ts.
+- **Wave 3 / WP7 Docs** (section 9): every file listed there, nothing else.
+
+**Checks per package are scoped to what the package owns** (as slice 3, stage-b.md:1523-1531, with its as-built correction at :1653). WP1 makes `DisplayDto.assignedLayout`, `PushPlanRow.layout` and `PublicationDraft.zones` required and removes `PublicationDraft.regions`, so after Wave 1 the root typecheck and the unit run are red in apps/api and apps/portal until WP3, WP5 and WP6 have all landed. No package can make the root commands green alone, so no package runs them as its gate:
+- Typecheck, own workspaces only: WP1 `npm run typecheck -w @tinnox/contracts -w @tinnox/domain -w @tinnox/delivery`; WP2 `-w @tinnox/db`; WP3 `-w @tinnox/api`; WP4 `-w @tinnox/player-web`; WP5 and WP6 `-w @tinnox/portal`. Files under tests/ are the `@tinnox/tests` workspace: WP3, WP4 and WP5 also run `npm run typecheck -w @tinnox/tests` and answer for the errors in their own files.
+- Unit tests by path: `npx vitest run --project unit <own files or folders>`. WP6 also runs its two component tests by path: `npx vitest run --project component apps/portal/src/features/displays/detail/ContentCard.test.tsx apps/portal/src/features/displays/list/ScreensList.test.tsx` (headless Chromium; if it is not installed, say so in the hand-back).
+- Lint by path: `npx eslint --max-warnings=0 <own files or folders>`.
+- WP2 and WP3 also run their own integration files (`npx vitest run --project integration <file>`), one agent at a time.
+- **A failure in a file the package does not own is expected. Report it (file, line, message) in the hand-back; do not fix it.** For WP5 and WP6 the portal typecheck stays red on the other package's files until both have landed: each reports the errors left in its own files as zero and lists the rest.
+
+**Integration step (the orchestrator, after Wave 2 and before WP7):** run the root `npm run typecheck`, `npm run lint`, `npm test` and `npm run test:component`, then the integration files of WP2 and WP3 once more, and `npm run format:check`. The orchestrator owns every failure in a file that no package listed, and hands a failure in an owned file back to that package.
+
+Nobody runs the e2e suite, starts or stops the dev stack, commits, pushes or switches branches.
+
+### 11. Deferred (recorded, not dropped)
+
+| Source | What it asks | Status after this slice |
+|---|---|---|
+| README row B (docs/portal-v2/README.md:26) | "multi-zone layouts with a canvas editor" | One preset: a main zone and a bottom band, 5 to 50 %. The data, the API, v5 and the player take two to four free rectangles, so a free editor is portal-only work (client question 1). |
+| mvp-spec:60, :88 | "Full-canvas single region" template | Assign a playlist instead (client question 11). |
+| mvp-spec:127 | Text band "with font size and colour"; a playlist or media per region | The band is a playlist; a Ticker or Text app gives the text and its colours, and its size follows the band (client question 3). |
+| mvp-spec:127 | Preview "at the exact canvas pixel dimensions … with a 1:1 zoom option" | Zone outlines with pixel sizes in the accessible description; no live content, no 1:1 zoom. |
+| mvp-spec:151 | Canvas change needs confirmation because layouts depend on it | Not needed: zones are relative to each screen's content area. A screen whose zone would be under 16 px is blocked with `zone_too_small`. |
+| PL-04 (docs/acceptance-tests.md:77) | "ticker text wraps correctly on portrait and custom canvases" | The moving ticker stays on one line by design (render.ts:234) and wraps only with reduced motion (render.ts:220); 13-layouts-player checks the band box, the font size and the reduced-motion wrap. |
+
+Also deferred:
+- **Editor:** numeric x, y, width and height fields per zone (the keyboard equivalent of a free editor), then drag; top and side presets; a template gallery; duplicating a layout.
+- **Zone content:** a media item or an app placed directly in a zone; fit per zone; stretch and none.
+- **Text band:** an explicit font size.
+- **Nesting:** layouts as schedule events, schedules in zones, dated events (all v6 once 0.5.0 is released).
+- **Player:** an atomic relayout (drain and swap); heartbeat v2 with per-zone state; `CapabilityProfile.maxVideoRegions`; the error log deduplicated by code and asset.
+- **Visual:** a background colour; z-order, overlap and transparency.
+- **Portal:** live content and 1:1 zoom in the preview; layouts in the Add-screen wizard and in bulk assign; the zones drawn on the screen page; a pre-push warning for old players (needs the player version on the server).
+- **Delivery:** one run of `assets` shared by two zones that use the same playlist; Huidu area compilation.
+
+Every `// shortcut:` this slice adds: one preset (lib/layouts.ts or LayoutEditor.tsx); a playlist in two zones is sent twice (domain layout.ts); one item total for a schedule or a layout and the repeated display-level refusal (domain sources.ts, moved); video in every zone (domain capability.ts); zones adopt at their own next item, and removing a zone cuts its video (player core/zones.ts); heartbeat v1 reports the main zone (player app.ts); the error log dedupes against the newest entry only (player core/errors.ts); the v1-to-v3 boundary rule, extended to zone views (player core/playback.ts:222); zone outlines only in the preview (LayoutPreview.tsx); the screen page previews the main zone's playlist only (useAssignedPlaylist.ts); no pagination of the list (API routes/layouts.ts); no grid or bulk actions (LayoutsPage.tsx); content cannot be removed in the Screens list from a screen with a schedule or a layout (ScreensList.tsx:924, reworded).
+
+### 12. Risks
+
+1. **Concurrent decoders and tickers on Pi-class hardware.** Up to 8 `<video>` elements at the ceiling, 4 with the preset; more than one moving zone lags on a Pi 5 (AV4:56). No limit is enforced (shortcut). Unverified pending runtime.
+2. **Rollout and rollback.** Every running player is 0.4.0 until its page is reloaded and refuses v5 (it keeps its content and retries on its backoff). Taking the player below 0.5.0 with a v5 version stored shows the waiting slate (`getActive` returns null when the stored manifest no longer parses, apps/player-web/src/platform/idb-store.ts:148-150). Taking the API below this slice after a v5 row exists makes `GET /player/manifest` throw (routes/player.ts:431-432), and `assessDisplays` reads `changes` for ever (apps/api/src/publishing.ts:518). Mitigation: the release note.
+3. **The non-atomic relayout and zone removal** (section 6 shortcuts): for up to one video the old and new geometry share the screen; removing a zone cuts a video in it. On-screen behaviour is unverified pending runtime.
+4. **Migration 0011** holds ACCESS EXCLUSIVE on `display` and `publication` until commit and re-reads every publication: quiet window. A missing `display` grant or a missing `assigned_layout_id = NULL` in the publish UPDATE would turn every display PATCH or every publish into a 500 (42501 or 23514); integration tests cover both (a name-only PATCH; publishing to a layout screen).
+5. **Strict fixtures and stale tabs.** The required `assignedLayout`, `PushPlanRow.layout` and `PublicationDraft.zones` keep the root checks red until WP3, WP5 and WP6 land (section 10). A portal tab left open on the previous build parses responses strictly (apps/portal/src/api/endpoints.ts:81-84): the new `assignedLayout` and `layout` keys, and any blocked row that carries `zone_too_small`, give `invalid_response` until the tab is reloaded (release note; unverified pending runtime). The `planSources` extraction touches shipped schedule code; the unchanged schedule tests are its only guard.
+
+Also: the replaced `playlist_delete_guard` is shared with stage A and slice 3 behaviour (the regression tests in section 8 guard it); one shortcut of slice 2 (`maxRegions` refusals in route profiles) now has a real consumer, pinned by the domain and delivery tests.
+
+### 13. Client questions (the build uses the default shown)
+
+| # | Question | Default built |
+|---|---|---|
+| 1 | A canvas editor or templates? README row B says "canvas editor". | One preset, a main zone and a band at the bottom, 5 to 50 %. The data allows free zones, so an editor is portal-only work. |
+| 2 | Band at the top or the side? | Bottom only. |
+| 3 | Font size of the text band | Auto-fit to the band; colours come from the Ticker or Text app. |
+| 4 | A layout as a schedule event, or a schedule in a zone? **Decide before 0.5.0 ships.** | Neither. A yes after 0.5.0 is a v6. |
+| 5 | Dated events in this v5? **Decide before 0.5.0 ships.** | No. If yes, they go into the same v5 now, so one version is cut. |
+| 6 | Maximum zones; video in more than one zone | 4 on the wire, 2 from the editor; video is allowed in every zone (untested on hardware). |
+| 7 | What the screen's status reports | The main zone. |
+| 8 | The main zone fails or has nothing to show | The fault slate or "Waiting" over the whole screen; a failing band only goes black and is tried again after 30 s. |
+| 9 | Gaps and background | Black. |
+| 10 | Item limit | One total for all zones: 200 by default, configurable up to 500. A playlist in two zones counts twice. |
+| 11 | The "full canvas" template | Assign a playlist instead. |
+| 12 | A band too thin for a small LED screen | That screen is blocked with `zone_too_small` and the reason; other screens with the layout are pushed. |
+| 13 | Moving players to 0.5.0 | Manual page reload of each screen, while it can reach the player host. |
+
+### Self-check against the requested list
+
+- **The task:** a screen split into zones, each with its own content: sections 2 to 7. Nothing else is built.
+- **Forced RLS and tenant isolation:** both tables are forced, have the policy and organisation-scoped foreign keys, are in the RLS lists, are seeded per organisation, and have cross-organisation cases (`TABLES`, the routes, a display patch naming another organisation's layout, and another organisation's playlist in one's own layout).
+- **Organisation only from the session:** every query uses `app_org_id()` inside `withOrg(session.orgId)`; the routes sit in the operator scope; no `sec.*` change.
+- **Audit in the same transaction:** `layout.create`, `layout.update` and `layout.delete` are written with `auditScoped` on the same `Tx` as the change; details hold ids and counts only.
+- **Immutable publications and idempotent push:** the layout is copied into the manifest; no publication column changes; a publish does not replay a stored manifest with zones.
+- **A failed update never interrupts playback:** old players keep their content; all media of all zones is staged before activation; gone zones are stopped before new ones start.
+- **v1 to v4 and released players:** screens without a layout keep v1 to v4 byte for byte; the player hands v1 to v4 to the main loop as the same object and the v1 to v4 DOM is unchanged.
+- **Validation, security, accessibility not cut:** DB CHECKs twin the contract; the API refuses overlap and bounds; every control is native and has a unique accessible name; errors are tied to fields and the summary takes focus; the preview's sizes are in text; no inline style attribute.
+- **Judges' points:** zone views are version 3, so the slice-0 fallbacks are each zone's own (sections 3, 6); the zone origin is in the rounding (4); no hidden pending generation and gone zones stop first (6); one source for the region count (4); `ordinal - 1` (5); the release note for `zone_too_small` and stale tabs (release note); `DomStage` owns every canvas-visibility site and the one resize listener (6); `planSources` takes a list and its doc says `plan` may run twice (4); a new code, not `multiple_regions_unsupported` (3, 4); `loadLayoutDrafts` is two statements with the reason in its doc (5); the cross-organisation smuggle case (8); locks held until commit, quiet window, the CHECK last, and the version pins (2, 8).
+- **Architect's overrides:** the CHECK is replaced as 0009 did, with no `NOT VALID` and no `NOT VALID` test (2, 8); the browser route's `maxRegions` is `ABSOLUTE.maxLayoutZones` and its `profileVersion` 2 (4); the stale "0010" in "After this slice: layouts" carries a parenthesis, and the slice 3 as-built table is left as history.
+- **Over-building avoided:** one preset, one new rejection code, one new error code, no zone ids, no layout id or name in the manifest, no heartbeat change, no status-contract change, no diagnostics row, no drain-and-swap, no new limit beyond the wire ceiling.
+
+#### Critical files for implementation
+- packages/contracts/src/manifest.ts
+- packages/domain/src/layout.ts (new) and packages/domain/src/sources.ts (new)
+- db/migrations/0011_stage_b_layouts.sql (new)
+- apps/api/src/publishing.ts
+- apps/player-web/src/core/zones.ts (new) and apps/player-web/src/ui/stage.ts (new)
+- apps/portal/src/features/layouts/LayoutEditor.tsx (new)
+
+### Slice 4: release note and rollback
+
+- Release note: **reload screens after upgrading the player to `player-web/0.5.0`, before assigning a layout to them.** A running player is never reloaded by the server. Until its page is reloaded, a 0.4.0 or older player that is sent a v5 manifest reports `manifest_unsupported_version` and keeps playing its last content, or its waiting slate when it has none; the screen's Overview tab tells the operator to reload the player page. A 0.4.0 player retries the refused publication on its update backoff, not every 2 seconds. **Reload while the screen can reach the player host; if the Overview error stays, reload again** (a reload that gets no answer within 4 seconds shows the old build from the cache, apps/player-web/sw/sw.ts:22). The diagnostics overlay shows the build (`player-web/0.5.0`). Screens with a playlist or a schedule keep getting v1 to v4. **Reload open portal tabs after the API and portal deploy:** a tab on the previous build cannot read screens and push plans that mention layouts, or a push plan with a screen blocked by `zone_too_small`, and says `invalid_response` until it is reloaded.
+- Operations, in this order: rebuild (`npm run build`); apply 0011 (`npm run db:migrate`) in a quiet window, because it takes ACCESS EXCLUSIVE locks on `display` and `publication` until commit and re-reads every publication; deploy the API and the portal together; deploy the player 0.5.0 build; reload each screen; then make the first layout push. Contracts, API and migration go out together, so no v5 row can exist before the API can read it. An API started without 0011 answers 500 on the layout routes.
+- Rollback: taking a player below 0.5.0 while a v5 version is stored on it is unsupported and shows the waiting slate. First, on the server: assign a playlist (or a schedule) to every screen that has a layout and push; the push builds v1 to v4; wait until each screen reports it; then roll the player back. Taking the API below this slice after a v5 publication exists is unsupported for the same reason (`GET /player/manifest` would fail on it, and the push plan would read `changes` for ever): push v1 to v4 to every layout screen first. Rolling the migration back is not supported. Read from the code, not run: the earlier API keeps working on the migrated database only once no screen has a layout assigned (its display PATCH and its publish UPDATE do not clear `assigned_layout_id`, so the three-column CHECK would refuse them with 23514) and no screen's desired publication is v5; the push of v1 to v4 above gives both.
+
+### Slice 4: as built (2026-11-18)
+
+Built as specified above, except for the rows below. Checked at integration on 2026-11-18, with nothing committed: `npm run typecheck`, `npm run lint`, `npm test` (80 files, 1751 tests after the review fixes), `npm run format:check`, `npm run test:component` (2 files, 7 tests), `npm run test:integration` (30 files, 359 tests, the `_test` database rebuilt from 0001 to 0011), `npm run build` and `npm run scan:secrets` all pass.
+
+**Not verified yet:** real hardware (several zones with video or a ticker on a Pi-class player); the hairline at a shared zone edge at a fractional scale; a screen-reader pass of the layout editor.
+
+**Verified in the browser.** The full end-to-end suite passes (131 tests, run before and again after the review fixes), including 12-layouts-portal and 13-layouts-player (PL-04: a main zone and a Ticker band on landscape, portrait, a turned screen and a strip with a content rectangle), the layouts pages in 11-accessibility in light and dark, and 09 and 10 with their slice 4 changes.
+
+| Topic | Spec | As built, and why |
+|---|---|---|
+| Fake-route refusal test (section 8, delivery) | fake-route.ts gains one case | fake-route.ts holds no tests and is unchanged. The case is in delivery.test.ts: a layout is refused on the test-only route (path `layout`) and accepted on the browser route. |
+| `manifestPlaylists` for v5 (section 3) | An explicit v5 branch | One shared branch for v4 and v5 that reads the runs from `schedule.playlists` or `zones`; same result, no second copy of the loop. |
+| `SchedulePlanInput.planPlaylist` doc (section 4) | The doc comment moves to `PlanPlaylist` | It moved; the field keeps one line, "Called once per distinct playlist", because that rule belongs to the schedule only. |
+| Domain test helpers (section 8, domain) | `route(maxItems, maxRegions)` and `planLayout` | Also `bandZones` and a shared `planPlaylistOf`; `planLayout` defaults to `route(200, ABSOLUTE.maxLayoutZones)`. |
+| Message numbers (section 3) | Literals "10000" and "16 px" | Built from `LAYOUT_UNITS` and `ABSOLUTE.minCanvasSidePx`; the text is the same and the tests pin it. |
+| DB test extras (section 8, db) | The listed cases | Also position -1 and 3, a repeated position (23505), `updated_at` on a layout update, a hard delete of a zone's playlist, and a zone updated to a deleted playlist. The migration-0005 test is renamed "through 0006 to 0011". |
+| `ZoneSet.adopt` after the session stops (section 6) | No rule | Once the session signal is aborted, `adopt` treats the manifest as null: a read that was in flight at revocation cannot start a zone after `stopAll`. Unit-tested. |
+| `DomStage.place` for a removed zone (section 6) | Not listed | Does nothing: an aborted zone whose item was being prepared cannot bring its box back. |
+| Layout passes in `DomStage` (section 6) | A secondary zone moves only its own box | Every `place` runs one pass over the canvas and every showing box; since the canvas follows zone 0 once zone 0 has placed a view, the result is the same with one code path. |
+| Ticker and wrap checks in 13-layouts-player (section 6) | Font is min(0.6·h, 0.25·w) of the band box; wrap with reduced motion | The formula is applied to the renderer's measured box (the band less its 4 % padding), and the root is checked to fill the band. The wrap is checked once, on the portrait screen. |
+| Error summary entries (section 7) | "Enter a name.", … | Each entry carries its field label ("Name: Enter a name.", "Band: Choose a playlist.", "Layout: …" for a form message), as the schedule and app editors do. |
+| Extra exports of lib/layouts.ts (section 7) | The listed names | Also `bandPercentValue`, `draftZones` (the preview's zones, null while the band height is invalid), `withoutLayoutError` and `layoutSearchTexts` (one source for the list filter and the picker search). |
+| `LibraryPickerDialog` props (section 7) | Today's props plus five | `LibraryPickerProps<T>` is the one props type; the two wrappers alias it and supply their defaults. It is not exported from shared/index.ts. |
+| Band height text (section 7) | A whole number from 5 to 50 | Read with the Stepper's own parser, so " 15 " and "15.0" count as 15. |
+| Screens for "Preview on" (section 7) | The editor page loads the screens | `LayoutPreview` loads them itself, as AppEditor does, so a failed screens list leaves only Landscape and Portrait and never stops the editor opening. |
+| `DeleteFailureText.inUse` (section 7) | `bySchedule` becomes `refusedBy` | As specified; the existing `inUse` boolean stays (always `refusedBy !== null`). |
+| Zone fieldset markup (section 7) | One fieldset per zone | The inset background is on a wrapping div, as ScheduleEventRow does, so the legend does not sit across the fieldset's own background. |
+| "Open" links (section 7) | "Open layout" beside the playlist and schedule links | One link built from `assignedContent` or `planRowContent` and `contentHref` ("Open {kind}", test id `screen-detail-open-{kind}`); the playlist and schedule texts, ids and links are unchanged. |
+| Extra tests (section 8, portal and e2e) | The listed cases | A ScreensList component case for the "kept" toast with a layout, a `screensToAssign` case for a layout screen, and in 12-layouts-portal a final case that deletes the unassigned layout from its editor. |
+| Files owned by no package (section 10) | Not listed | tests/e2e/10-schedules-player.spec.ts:194 expects build `player-web/0.5.0`; the comments at apps/player-web/src/styles.css:42 (now ui/stage.ts) and apps/portal/src/features/push/push.css:222 (layout names). |
+
+**Review round (2026-11-18).** Five lenses (security, contracts/domain/API, player, portal and accessibility, spec conformance), each finding checked by a second reviewer told to refute it. No Critical or High finding. Fixed:
+
+| Severity | Finding | Fix |
+|---|---|---|
+| Medium | Right after a new publication is activated, garbage collection kept only what each band zone had on screen. Until the main zone adopted the publication (up to one video), a band kept picking items of the old publication whose files were gone, and reported `storage_error` for each. | `ZoneSet.inUse()` also returns every media item of the adopted views of zones 1 and up (core/zones.ts). Unit-tested. |
+| Low | The canvas kept the previous publication's size and rotation while only a band was showing (a main zone with nothing available now, after a rotation or canvas change). | `DomStage.place`: a secondary zone sets the canvas whenever zone 0 shows nothing, not only before zone 0's first item (ui/stage.ts). |
+| Low | A removed zone's presenter that was still preparing an item could release or place the box of a new zone with the same number. | `DomPresenter` sets `#removed` in `remove()` and never touches the stage after it (ui/presenter.ts). |
+| Low | A layout DELETE that waited for a concurrent PUT wrote the zone count from before the PUT into its audit event. | The DELETE locks the row first, then deletes the zones itself and records that row count (routes/layouts.ts). |
+| Low | The preview drew a cropped slice of a zone's label when the zone was only a few pixels tall in the frame. | The label is hidden in a box under 16 px (a container query in layouts.css); the outline and the frame's description stay. |
+| Low | apps/portal/src/ui/README.md had no Layouts notes, and its Content card note described two kinds of content. | Both written. |
+
+Recorded, not changed: the `layout.create` and `layout.update` audit detail names the main zone's playlist and the zone count only, as the spec asks and as schedules do (add `playlistIds` if the trail must show every zone's playlist); in forced-colours mode the focused error summary has no focus ring, a pattern shared with the app and schedule editors; 0011 holds its locks until commit (documented above). `DomStage` and `DomPresenter` have no unit test (the unit project has no DOM); 13-layouts-player is their check.

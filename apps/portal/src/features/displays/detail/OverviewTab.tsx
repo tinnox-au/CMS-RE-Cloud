@@ -1,5 +1,6 @@
 import type { DeliveryStatusView } from '@tinnox/contracts';
 import type { LoadState } from '../../../hooks/useLoad.ts';
+import type { ContentKind } from '../../../lib/assignedContent.ts';
 import { formatAge, formatTimestamp } from '../../../lib/format.ts';
 import { REPORTED_FACTS_NOTE, SCREEN_STATUS_POLL_MS } from '../../../lib/screenDetail.ts';
 import { presentStatus } from '../../../lib/status.ts';
@@ -19,12 +20,15 @@ import { useNow } from '../../shared/index.ts';
 export interface OverviewTabProps {
   readonly status: LoadState<DeliveryStatusView>;
   readonly onReload: () => void;
-  /** The screen has a schedule assigned: the active item is counted across its playlists. */
-  readonly scheduled: boolean;
+  /**
+   * What the screen has assigned, or null. With a schedule the active item is counted across
+   * its playlists; with a layout it is the item in the main zone.
+   */
+  readonly contentKind: ContentKind | null;
 }
 
 /** The M0 live status facts: what the operator set, and what the player software reported. */
-export function OverviewTab({ status, onReload, scheduled }: OverviewTabProps) {
+export function OverviewTab({ status, onReload, contentKind }: OverviewTabProps) {
   if (status.status === 'loading') {
     return (
       <SkeletonGroup label="Loading status" className="tx-screen-detail-skeleton">
@@ -48,7 +52,7 @@ export function OverviewTab({ status, onReload, scheduled }: OverviewTabProps) {
       fetchedAt={status.fetchedAt}
       refreshError={status.refreshError}
       onReload={onReload}
-      scheduled={scheduled}
+      contentKind={contentKind}
     />
   );
 }
@@ -75,13 +79,13 @@ function StatusFacts({
   fetchedAt,
   refreshError,
   onReload,
-  scheduled,
+  contentKind,
 }: {
   readonly view: DeliveryStatusView;
   readonly fetchedAt: number;
   readonly refreshError: unknown;
   readonly onReload: () => void;
-  readonly scheduled: boolean;
+  readonly contentKind: ContentKind | null;
 }) {
   const now = useNow();
   const elapsedMs = Math.max(0, now - fetchedAt);
@@ -171,10 +175,15 @@ function StatusFacts({
             ) : (
               <>
                 Item {p.activeItemNumber} of the active publication
-                {scheduled && (
+                {contentKind === 'schedule' && (
                   <span className="tx-screen-detail-block tx-screen-detail-note">
                     With a schedule, items are counted across all of its playlists, default playlist
                     first.
+                  </span>
+                )}
+                {contentKind === 'layout' && (
+                  <span className="tx-screen-detail-block tx-screen-detail-note">
+                    With a layout, this is the item in the main zone; other zones are not reported.
                   </span>
                 )}
               </>

@@ -1,6 +1,7 @@
 import type { DisplayDto, PlaylistSummaryDto } from '@tinnox/contracts';
 import { useState } from 'react';
 import { api } from '../../../api/index.ts';
+import { anyHasOtherContent, CONTENT_REPLACED_NOTE } from '../../../lib/assignedContent.ts';
 import { mergeBulkOutcomes, runInSequence, type BulkOutcome } from '../../../lib/bulkOutcome.ts';
 import {
   assignConfirmLabel,
@@ -10,7 +11,6 @@ import {
   canPushAfterAssign,
   failureText,
 } from '../../../lib/playlistsListActions.ts';
-import { anyHasSchedule, SCHEDULE_REPLACED_NOTE } from '../../../lib/screensList.ts';
 import { CircleCheck, Monitor, Send } from '../../../ui/icons.ts';
 import {
   Banner,
@@ -103,7 +103,7 @@ export function AssignToScreens({ playlist, onClose, onAssigned }: AssignToScree
                 <>
                   <strong className="tx-break">{shown.name}</strong> replaces the playlist that each
                   chosen screen has now. Nothing changes on a screen until you push.
-                  {anyHasSchedule(chosen) && ` ${SCHEDULE_REPLACED_NOTE}`}
+                  {anyHasOtherContent(chosen) && ` ${CONTENT_REPLACED_NOTE}`}
                   {shown.itemCount === 0 &&
                     ' This playlist has no items yet, so it cannot be pushed until it has some.'}
                 </>

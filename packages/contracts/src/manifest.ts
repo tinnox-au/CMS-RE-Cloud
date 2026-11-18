@@ -5,6 +5,7 @@ import {
   contentRectProblem,
   FitModeSchema,
   RectSchema,
+  rectsOverlap,
   RotationSchema,
   type Rotation,
 } from './canvas.ts';
@@ -27,6 +28,7 @@ export const MANIFEST_SCHEMA_VERSION = 1;
 export const MANIFEST_SCHEMA_VERSION_V2 = 2;
 export const MANIFEST_SCHEMA_VERSION_V3 = 3;
 export const MANIFEST_SCHEMA_VERSION_V4 = 4;
+export const MANIFEST_SCHEMA_VERSION_V5 = 5;
 
 export const ManifestAssetV1Schema = z
   .object({
@@ -267,7 +269,7 @@ function checkManifestV4Body(
  * Manifest version 4: version 3 plus `schedule`. Written only when the assigned schedule has
  * an event that uses a playlist other than its default. `assets` is every playlist's items in
  * one flat list, default playlist first; the top-level `transition` and `shuffle` are the
- * default playlist's. Frozen once player 0.4.0 is released; the next addition is version 5.
+ * default playlist's. Frozen.
  */
 export const ManifestV4Schema = manifestV2Object
   .extend({
@@ -278,6 +280,85 @@ export const ManifestV4Schema = manifestV2Object
   .strict()
   .superRefine(checkManifestV4Body);
 export type ManifestV4 = z.infer<typeof ManifestV4Schema>;
+
+/**
+ * One zone of a layout's manifest: a rectangle in canvas pixels, inside the content rectangle
+ * (the whole canvas when there is none), and the next `count` entries of `assets`, played with
+ * this zone's transition and shuffle. `zones[0]` is the main zone.
+ */
+export const ManifestZoneSchema = z
+  .object({
+    rect: RectSchema,
+    count: z.number().int().positive().max(ABSOLUTE.maxPlaylistItems),
+    transition: TransitionSchema,
+    shuffle: z.boolean(),
+  })
+  .strict();
+export type ManifestZone = z.infer<typeof ManifestZoneSchema>;
+
+/** Checks of version 5: those of version 2 over the flat list, plus the zones. */
+function checkManifestV5Body(
+  m: Pick<ManifestV3, 'canvas' | 'contentRect' | 'assets' | 'transition' | 'shuffle'> & {
+    zones: ManifestZone[];
+  },
+  ctx: z.RefinementCtx,
+): void {
+  checkManifestV2Body(m, ctx);
+  if (m.zones.reduce((sum, zone) => sum + zone.count, 0) !== m.assets.length) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['zones'],
+      message: 'zone counts must add up to the number of assets',
+    });
+  }
+  const first = m.zones[0];
+  if (first !== undefined && (first.transition !== m.transition || first.shuffle !== m.shuffle)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['zones', 0],
+      message: 'the first zone must carry the top-level transition and shuffle',
+    });
+  }
+  const area = m.contentRect ?? { x: 0, y: 0, width: m.canvas.width, height: m.canvas.height };
+  m.zones.forEach((zone, i) => {
+    const r = zone.rect;
+    if (
+      r.x < area.x ||
+      r.y < area.y ||
+      r.x + r.width > area.x + area.width ||
+      r.y + r.height > area.y + area.height
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['zones', i, 'rect'],
+        message: 'the zone must lie inside the content rectangle',
+      });
+    }
+    if (m.zones.slice(0, i).some((other) => rectsOverlap(other.rect, r))) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['zones', i, 'rect'],
+        message: 'zones must not overlap',
+      });
+    }
+  });
+}
+
+/**
+ * Manifest version 5: version 3 plus `zones`. Written exactly when the screen has a layout
+ * assigned. `assets` is every zone's items in one flat list, zone 0 (the main zone) first; the
+ * top-level `transition` and `shuffle` are the main zone's. No layout id or name: a player reads
+ * neither. Frozen once player 0.5.0 is released; the next addition is version 6.
+ */
+export const ManifestV5Schema = manifestV2Object
+  .extend({
+    schemaVersion: z.literal(MANIFEST_SCHEMA_VERSION_V5),
+    assets: z.array(ManifestItemV3Schema).min(1).max(ABSOLUTE.maxPlaylistItems),
+    zones: z.array(ManifestZoneSchema).min(2).max(ABSOLUTE.maxLayoutZones),
+  })
+  .strict()
+  .superRefine(checkManifestV5Body);
+export type ManifestV5 = z.infer<typeof ManifestV5Schema>;
 
 export type ManifestItem = ManifestAssetV1 | ManifestAssetV2 | ManifestAppItem;
 
@@ -291,6 +372,7 @@ export const ManifestSchema = z.discriminatedUnion('schemaVersion', [
   ManifestV2Schema,
   ManifestV3Schema,
   ManifestV4Schema,
+  ManifestV5Schema,
 ]);
 export type Manifest = z.infer<typeof ManifestSchema>;
 
@@ -324,24 +406,54 @@ export interface ManifestPlaylistSlice {
 
 /**
  * The playlists of any manifest, so player code has no version branches: version 4 gives one
- * slice per `schedule.playlists` entry (`[0]` is the default playlist), versions 1 to 3 give
- * one slice that is the whole list.
+ * slice per `schedule.playlists` entry (`[0]` is the default playlist), version 5 one slice per
+ * zone (`[0]` is the main zone), versions 1 to 3 give one slice that is the whole list.
  */
 export function manifestPlaylists(m: Manifest): ManifestPlaylistSlice[] {
-  if (m.schemaVersion !== MANIFEST_SCHEMA_VERSION_V4) {
+  if (
+    m.schemaVersion !== MANIFEST_SCHEMA_VERSION_V4 &&
+    m.schemaVersion !== MANIFEST_SCHEMA_VERSION_V5
+  ) {
     const { transition, shuffle } = manifestV2Facts(m);
     return [{ from: 0, count: m.assets.length, transition, shuffle }];
   }
+  const runs = m.schemaVersion === MANIFEST_SCHEMA_VERSION_V4 ? m.schedule.playlists : m.zones;
   let from = 0;
-  return m.schedule.playlists.map((playlist) => {
-    const slice = {
-      from,
-      count: playlist.count,
-      transition: playlist.transition,
-      shuffle: playlist.shuffle,
-    };
-    from += playlist.count;
+  return runs.map((run) => {
+    const slice = { from, count: run.count, transition: run.transition, shuffle: run.shuffle };
+    from += run.count;
     return slice;
+  });
+}
+
+/**
+ * The zones of any manifest, each as a manifest a player can play on its own, so player code
+ * has no version branches. Versions 1 to 4 give `[m]`, the same object. Version 5 gives one
+ * version 3 view per zone: the zone's run of `assets`, the zone's transition and shuffle, and
+ * the zone's rectangle as the content rectangle; every other field is copied from `m`.
+ * Built on the player; never stored or sent.
+ */
+export function manifestZones(m: Manifest): Exclude<Manifest, ManifestV5>[] {
+  if (m.schemaVersion !== MANIFEST_SCHEMA_VERSION_V5) return [m];
+  let from = 0;
+  return m.zones.map((zone): ManifestV3 => {
+    const view: ManifestV3 = {
+      schemaVersion: MANIFEST_SCHEMA_VERSION_V3,
+      publicationId: m.publicationId,
+      displayId: m.displayId,
+      createdAt: m.createdAt,
+      canvas: m.canvas,
+      contentRect: zone.rect,
+      muted: m.muted,
+      timeZone: m.timeZone,
+      transition: zone.transition,
+      shuffle: zone.shuffle,
+      rotation: m.rotation,
+      workingHours: m.workingHours,
+      assets: m.assets.slice(from, from + zone.count),
+    };
+    from += zone.count;
+    return view;
   });
 }
 
@@ -362,7 +474,8 @@ export function parseManifest(
     | typeof ManifestV1Schema
     | typeof ManifestV2Schema
     | typeof ManifestV3Schema
-    | typeof ManifestV4Schema;
+    | typeof ManifestV4Schema
+    | typeof ManifestV5Schema;
   switch (version.data.schemaVersion) {
     case MANIFEST_SCHEMA_VERSION:
       schema = ManifestV1Schema;
@@ -376,11 +489,14 @@ export function parseManifest(
     case MANIFEST_SCHEMA_VERSION_V4:
       schema = ManifestV4Schema;
       break;
+    case MANIFEST_SCHEMA_VERSION_V5:
+      schema = ManifestV5Schema;
+      break;
     default:
       return {
         ok: false,
         reason: 'unsupported_version',
-        message: `manifest schemaVersion ${version.data.schemaVersion} is not supported (expected ${MANIFEST_SCHEMA_VERSION}, ${MANIFEST_SCHEMA_VERSION_V2}, ${MANIFEST_SCHEMA_VERSION_V3} or ${MANIFEST_SCHEMA_VERSION_V4})`,
+        message: `manifest schemaVersion ${version.data.schemaVersion} is not supported (expected ${MANIFEST_SCHEMA_VERSION}, ${MANIFEST_SCHEMA_VERSION_V2}, ${MANIFEST_SCHEMA_VERSION_V3}, ${MANIFEST_SCHEMA_VERSION_V4} or ${MANIFEST_SCHEMA_VERSION_V5})`,
       };
   }
   const parsed = schema.safeParse(input);

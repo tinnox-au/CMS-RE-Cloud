@@ -74,6 +74,7 @@ function display(n: number, name: string): DisplayDto {
     tagIds: [],
     assignedPlaylist: null,
     assignedSchedule: null,
+    assignedLayout: null,
     createdAt: T,
     updatedAt: T,
   };
@@ -104,6 +105,7 @@ function row(n: number, state: PushState, name = `Screen ${n}`): PushPlanRow {
     display: { id: ID(n), name },
     playlist: state === 'nothing_assigned' ? null : { id: ID(500), name: 'Reception loop' },
     schedule: null,
+    layout: null,
     state,
     issues:
       state === 'blocked'
@@ -474,12 +476,12 @@ describe('pushOverview', () => {
     expect(pushOverview(plan([]))).toMatchObject({
       state: 'no_screens',
       headline: 'Nothing to push yet',
-      text: 'Add a screen and assign a playlist or a schedule to it. Its changes then wait here until you push.',
+      text: 'Add a screen and assign a playlist, a schedule or a layout to it. Its changes then wait here until you push.',
     });
     const unassigned = pushOverview(plan(['nothing_assigned', 'nothing_assigned']));
     expect(unassigned.state).toBe('nothing_assigned');
     expect(unassigned.text).toBe(
-      'Assign a playlist or a schedule to a screen. Its changes then wait here until you push.',
+      'Assign a playlist, a schedule or a layout to a screen. Its changes then wait here until you push.',
     );
   });
 

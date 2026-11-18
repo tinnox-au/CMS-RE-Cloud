@@ -25,16 +25,19 @@ import { MANIFEST_BATCH_SIZE } from '../src/publishing.ts';
 import {
   CLOCK,
   appItem,
+  assignLayout,
   assignPlaylist,
   assignSchedule,
   auditEvents,
   createApp,
   createDisplay,
+  createLayout,
   createOrg,
   createPlaylist,
   createSchedule,
   desiredPublicationId,
   imageItem,
+  layoutZones,
   pairPlayer,
   pngBytes,
   push,
@@ -146,6 +149,26 @@ describe('assign, then push', () => {
     return { displayId: display.id, playlistId };
   }
 
+  /** Media positions recorded for a publication, as [position, media id]. */
+  async function publicationFiles(publicationId: string | null | undefined): Promise<unknown[]> {
+    return withOrg(t.pool, orgA.orgId, async (tx) => {
+      const { rows } = await tx.query<{ position: number; media_id: string }>(
+        'SELECT position, media_id FROM publication_asset WHERE publication_id = $1 ORDER BY position',
+        [publicationId],
+      );
+      return rows.map((row) => [row.position, row.media_id]);
+    });
+  }
+
+  /** Sets a display's canvas, with no content rectangle. */
+  async function setCanvas(displayId: string, width: number, height: number): Promise<void> {
+    const response = await alice.fetch(`/api/displays/${displayId}`, {
+      method: 'PATCH',
+      json: { canvas: { width, height } },
+    });
+    expect(response.status, await response.clone().text()).toBe(200);
+  }
+
   describe('assigning', () => {
     it('records the playlist on the display and changes nothing on the display itself', async () => {
       const display = await createDisplay(alice, orgA, 'Reception');
@@ -174,6 +197,7 @@ describe('assign, then push', () => {
         display: { id: display.id, name: 'Reception' },
         playlist: { id: playlistId, name: 'Reception loop' },
         schedule: null,
+        layout: null,
         state: 'never_pushed',
         issues: [],
         lastPushedAt: null,
@@ -895,6 +919,168 @@ describe('assign, then push', () => {
     });
   });
 
+  describe('layouts', () => {
+    it('publishes every zone of a layout as one version 5 publication, then follows edits', async () => {
+      const main = await createPlaylist(alice, 'Main zone loop', [imageItem(imageA, 4)]);
+      // Zone 1's first image is in no other zone.
+      const band = await createPlaylist(alice, 'Band zone loop', [
+        imageItem(imageB, 6),
+        imageItem(imageA, 3),
+      ]);
+      const layout = await createLayout(alice, 'Window split', layoutZones(main, band));
+      const display = await createDisplay(alice, orgA, 'Split window');
+      await assignLayout(alice, display.id, layout.id);
+
+      // The row names the layout, and its main zone's playlist as the playlist.
+      expect(await planRow(alice, display.id)).toEqual({
+        display: { id: display.id, name: 'Split window' },
+        playlist: { id: main, name: 'Main zone loop' },
+        schedule: null,
+        layout: { id: layout.id, name: 'Window split' },
+        state: 'never_pushed',
+        issues: [],
+        lastPushedAt: null,
+      });
+
+      const [first] = await pushed(alice, [display.id]);
+      expect(first).toMatchObject({ outcome: 'published', issues: [] });
+      const publicationId = first?.publicationId;
+      expect(await desiredPublicationId(alice, display.id)).toBe(publicationId);
+      const [stored] = await publications(orgA, display.id);
+      // The publication's playlist is the main zone's.
+      expect(stored).toMatchObject({ id: publicationId, playlistId: main });
+      const manifest = stored?.manifest;
+      if (manifest?.schemaVersion !== 5) throw new Error('expected a version 5 manifest');
+      // One flat list, main zone first; each zone's rectangle in whole pixels of 640 x 360.
+      expect(manifest.assets.map((asset) => asset.durationMs)).toEqual([4000, 6000, 3000]);
+      expect(manifest.zones).toEqual([
+        {
+          rect: { x: 0, y: 0, width: 640, height: 306 },
+          count: 1,
+          transition: 'cut',
+          shuffle: false,
+        },
+        {
+          rect: { x: 0, y: 306, width: 640, height: 54 },
+          count: 2,
+          transition: 'cut',
+          shuffle: false,
+        },
+      ]);
+      // Media of every zone is recorded at its position in the flat list.
+      expect(await publicationFiles(publicationId)).toEqual([
+        [0, imageA],
+        [1, imageB],
+        [2, imageA],
+      ]);
+      const [created] = (await auditEvents(alice, '&category=publication')).filter(
+        (e) => e.objectId === publicationId,
+      );
+      expect(created).toMatchObject({
+        action: 'publication.create',
+        result: 'success',
+        objectType: 'publication',
+        detail: {
+          displayId: display.id,
+          playlistId: main,
+          layoutId: layout.id,
+          items: 3,
+          route: 'browser',
+          via: 'push',
+        },
+      });
+      expect(created?.detail).not.toHaveProperty('scheduleId');
+
+      // Equal to what would be built now: nothing to push. A new name is not part of it.
+      expect(await planRow(alice, display.id)).toMatchObject({ state: 'up_to_date' });
+      const renamed = await alice.fetch(`/api/layouts/${layout.id}`, {
+        method: 'PUT',
+        json: { name: 'Window split two', zones: layoutZones(main, band) },
+      });
+      expect(renamed.status).toBe(200);
+      expect(await planRow(alice, display.id)).toMatchObject({
+        layout: { name: 'Window split two' },
+        state: 'up_to_date',
+      });
+      expect((await pushed(alice, [display.id]))[0]).toMatchObject({
+        outcome: 'unchanged',
+        publicationId,
+      });
+
+      // A new band height moves the rectangles: a change, published once.
+      const taller = await alice.fetch(`/api/layouts/${layout.id}`, {
+        method: 'PUT',
+        json: { name: 'Window split two', zones: layoutZones(main, band, 20) },
+      });
+      expect(taller.status).toBe(200);
+      expect(await planRow(alice, display.id)).toMatchObject({ state: 'changes' });
+      expect((await pushed(alice, [display.id]))[0]?.outcome).toBe('published');
+      const edited = (await publications(orgA, display.id)).at(-1)?.manifest;
+      if (edited?.schemaVersion !== 5) throw new Error('expected a version 5 manifest');
+      expect(edited.zones.map((zone) => zone.rect)).toEqual([
+        { x: 0, y: 0, width: 640, height: 288 },
+        { x: 0, y: 288, width: 640, height: 72 },
+      ]);
+
+      // A playlist in place of the layout offers a push back to a version every player takes.
+      await assignPlaylist(alice, display.id, main);
+      expect(await planRow(alice, display.id)).toMatchObject({ layout: null, state: 'changes' });
+      expect((await pushed(alice, [display.id]))[0]?.outcome).toBe('published');
+      const plain = (await publications(orgA, display.id)).at(-1)?.manifest;
+      expect(plain?.schemaVersion).toBe(1);
+      expect(plain).not.toHaveProperty('zones');
+    });
+
+    it('blocks a screen on which a zone would be under 16 px, and pushes the others', async () => {
+      const main = await createPlaylist(alice, 'Thin main', [imageItem(imageA)]);
+      const band = await createPlaylist(alice, 'Thin band', [imageItem(imageB)]);
+      const layout = await createLayout(alice, 'Ten per cent', layoutZones(main, band, 10));
+      const large = await createDisplay(alice, orgA, 'Large split');
+      const small = await createDisplay(alice, orgA, 'Small split');
+      await setCanvas(large.id, 1920, 1080);
+      await setCanvas(small.id, 192, 96);
+      await assignLayout(alice, large.id, layout.id);
+      await assignLayout(alice, small.id, layout.id);
+
+      expect(await planRow(alice, large.id)).toMatchObject({ state: 'never_pushed', issues: [] });
+      const row = await planRow(alice, small.id);
+      expect(row).toMatchObject({
+        playlist: { id: main },
+        layout: { id: layout.id },
+        state: 'blocked',
+      });
+      expect(row.issues).toEqual([
+        {
+          path: 'zones[1]',
+          code: 'zone_too_small',
+          message:
+            'On this screen zone 2 of the layout is 192 × 10 px; a zone needs at least 16 px each way. Make it larger in the layout, or assign other content.',
+        },
+      ]);
+
+      const results = await pushed(alice, [large.id, small.id]);
+      expect(results.map((r) => r.outcome)).toEqual(['published', 'rejected']);
+      expect(results[1]?.issues).toEqual(row.issues);
+      expect(await desiredPublicationId(alice, small.id)).toBeNull();
+      const manifest = (await publications(orgA, large.id))[0]?.manifest;
+      if (manifest?.schemaVersion !== 5) throw new Error('expected a version 5 manifest');
+      expect(manifest.zones.map((zone) => zone.rect)).toEqual([
+        { x: 0, y: 0, width: 1920, height: 972 },
+        { x: 0, y: 972, width: 1920, height: 108 },
+      ]);
+      // The failure is recorded against the layout.
+      const [event] = (await auditEvents(alice, '&category=publication&result=failure')).filter(
+        (e) => e.objectId === layout.id,
+      );
+      expect(event).toMatchObject({
+        action: 'publication.create',
+        result: 'failure',
+        objectType: 'layout',
+        detail: { displayId: small.id, reasons: ['zone_too_small'], via: 'push' },
+      });
+    });
+  });
+
   describe('POST /api/playlists/:id/publish', () => {
     function publish(playlistId: string, displayId: string, key = randomUUID()): Promise<Response> {
       return alice.fetch(`/api/playlists/${playlistId}/publish`, {
@@ -982,6 +1168,47 @@ describe('assign, then push', () => {
       ).toBe(204);
     });
 
+    it('takes a layout off the display it publishes a playlist to', async () => {
+      const display = await createDisplay(alice, orgA, 'Split, then published to');
+      const usual = await createPlaylist(alice, 'Usual', [imageItem(imageA)]);
+      const other = await createPlaylist(alice, 'Other', [imageItem(imageB)]);
+      const layout = await createLayout(alice, 'Split', layoutZones(usual, other));
+      await assignLayout(alice, display.id, layout.id);
+      expect((await pushed(alice, [display.id]))[0]?.outcome).toBe('published');
+
+      const published = await publish(other, display.id);
+      expect(published.status).toBe(201);
+      const { publicationId } = (await published.json()) as { publicationId: string };
+      expect(await getDisplay(alice, display.id)).toMatchObject({
+        assignedPlaylist: { id: other, name: 'Other' },
+        assignedLayout: null,
+      });
+      // One event for the publish, and it says the layout was taken off.
+      const events = (await auditEvents(alice, '&category=publication')).filter(
+        (e) => e.objectId === publicationId,
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0]?.detail).toMatchObject({
+        via: 'publish',
+        playlistId: other,
+        assignedLayoutId: null,
+      });
+      expect(events[0]?.detail).not.toHaveProperty('layoutId');
+      expect(events[0]?.detail).not.toHaveProperty('assignedScheduleId');
+      expect(await planRow(alice, display.id)).toMatchObject({
+        playlist: { id: other },
+        layout: null,
+        state: 'up_to_date',
+      });
+      expect((await publications(orgA, display.id)).map((p) => p.manifest.schemaVersion)).toEqual([
+        5, 1,
+      ]);
+      // And the layout is free to be deleted.
+      expect((await alice.fetch(`/api/layouts/${layout.id}`, { method: 'DELETE' })).status).toBe(
+        204,
+      );
+    });
+
     it('keeps the assignment and the desired publication in step under concurrent publishes', async () => {
       // Two playlists published to one display at the same moment, with a push in between.
       // Whichever order they commit in, none fails on a lock, and the playlist the display
@@ -1060,6 +1287,21 @@ describe('assign, then push', () => {
         publicationId: result?.publicationId,
         replayed: true,
       });
+    });
+
+    it('does not replay a pushed layout as a publish of its main playlist', async () => {
+      const display = await createDisplay(alice, orgA, 'Split key');
+      const usual = await createPlaylist(alice, 'Usual key', [imageItem(imageA)]);
+      const layout = await createLayout(alice, 'Split key', layoutZones(usual, usual));
+      await assignLayout(alice, display.id, layout.id);
+      const key = randomUUID();
+      expect((await pushed(alice, [display.id], key))[0]?.outcome).toBe('published');
+      // The publication records the main zone's playlist, but it plays a band too.
+      const refused = await publish(usual, display.id, key);
+      expect(refused.status).toBe(409);
+      expect(((await refused.json()) as ErrorBody).error.code).toBe('idempotency_conflict');
+      expect((await getDisplay(alice, display.id)).assignedLayout?.id).toBe(layout.id);
+      expect(await publications(orgA, display.id)).toHaveLength(1);
     });
   });
 
@@ -1206,6 +1448,50 @@ describe('assign, then push', () => {
         state: 'up_to_date',
       });
     });
+
+    it('holds the layout, so its zones cannot change between reading the row and the zones', async () => {
+      const display = await createDisplay(alice, orgA, 'Layout under push');
+      const usual = await createPlaylist(alice, 'Usual', [imageItem(imageA)]);
+      const band = await createPlaylist(alice, 'Band', [imageItem(imageB)]);
+      const layout = await createLayout(alice, 'Before the edit', layoutZones(usual, band));
+      await assignLayout(alice, display.id, layout.id);
+      // As PUT /api/layouts/:id does: lock the layout, replace its zones (a band of 25 %
+      // in place of 15 %), then write the row.
+      const { waited, results } = await pushAgainstHeldEdit(display.id, async (tx) => {
+        await tx.query('SELECT 1 FROM layout WHERE id = $1 AND org_id = app_org_id() FOR UPDATE', [
+          layout.id,
+        ]);
+        await tx.query('DELETE FROM layout_zone WHERE layout_id = $1 AND org_id = app_org_id()', [
+          layout.id,
+        ]);
+        await tx.query(
+          `INSERT INTO layout_zone
+             (layout_id, position, org_id, playlist_id, x_bp, y_bp, width_bp, height_bp)
+           VALUES ($1, 0, app_org_id(), $2, 0, 0, 10000, 7500),
+                  ($1, 1, app_org_id(), $3, 0, 7500, 10000, 2500)`,
+          [layout.id, usual, band],
+        );
+        await tx.query(
+          "UPDATE layout SET name = 'After the edit' WHERE id = $1 AND org_id = app_org_id()",
+          [layout.id],
+        );
+      });
+      expect(waited).toBe(true);
+      expect(results[0]?.outcome).toBe('published');
+      const [publication] = await publications(orgA, display.id);
+      expect(publication?.id).toBe(results[0]?.publicationId);
+      const manifest = publication?.manifest;
+      if (manifest?.schemaVersion !== 5) throw new Error('expected a version 5 manifest');
+      expect(manifest.zones.map((zone) => zone.rect)).toEqual([
+        { x: 0, y: 0, width: 640, height: 270 },
+        { x: 0, y: 270, width: 640, height: 90 },
+      ]);
+      // What was published is what the plan now compares with: the committed layout.
+      expect(await planRow(alice, display.id)).toMatchObject({
+        layout: { id: layout.id, name: 'After the edit' },
+        state: 'up_to_date',
+      });
+    });
   });
 });
 
@@ -1229,6 +1515,38 @@ describe('push rate limit at its real value', () => {
       expect(statuses.slice(30).every((s) => s === 429)).toBe(true);
       // Reading the plan is not held to the push limit.
       expect((await operator.fetch('/api/push')).status).toBe(200);
+    } finally {
+      await t.close();
+    }
+  });
+});
+
+describe('the item total of a layout', () => {
+  it('blocks a layout whose zones together hold more items than the route takes', async () => {
+    const t = await startTestApp({ LIMIT_MAX_PLAYLIST_ITEMS: '3' });
+    try {
+      const org = await createOrg('Layout total');
+      const operator = await signIn(t, org);
+      const clock = await createApp(operator);
+      // Each playlist fits on its own; the four items of the two do not.
+      const main = await createPlaylist(operator, 'Main', [appItem(clock.id), appItem(clock.id)]);
+      const band = await createPlaylist(operator, 'Band', [appItem(clock.id), appItem(clock.id)]);
+      const layout = await createLayout(operator, 'Total', layoutZones(main, band));
+      const display = await createDisplay(operator, org, 'Total screen');
+      await assignLayout(operator, display.id, layout.id);
+      const row = PushPlanResponseSchema.parse(await (await operator.fetch('/api/push')).json())
+        .items[0];
+      expect(row?.state).toBe('blocked');
+      expect(row?.issues).toEqual([
+        expect.objectContaining({ path: 'layout', code: 'too_many_items' }),
+      ]);
+      expect(row?.issues[0]?.message).toContain(
+        'The playlists of this layout hold 4 items in total',
+      );
+      const response = await push(operator, [display.id]);
+      expect(PushResponseSchema.parse(await response.json()).results).toEqual([
+        { displayId: display.id, outcome: 'rejected', publicationId: null, issues: row?.issues },
+      ]);
     } finally {
       await t.close();
     }

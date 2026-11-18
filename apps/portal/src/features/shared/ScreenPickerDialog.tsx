@@ -2,6 +2,7 @@ import type { DeliveryStatusView, DisplayDto } from '@tinnox/contracts';
 import { useId, useRef, useState, type ReactNode } from 'react';
 import { api } from '../../api/index.ts';
 import { isAbort, isApiRequestError } from '../../api/client.ts';
+import { assignedContent } from '../../lib/assignedContent.ts';
 import { countOf } from '../../lib/bulkOutcome.ts';
 import { matchesSearch } from '../../lib/listView.ts';
 import { setMany, summariseSelection, toggleOne } from '../../lib/selection.ts';
@@ -40,7 +41,7 @@ export interface ScreenPickerDialogProps {
   readonly title?: string;
   /**
    * A function gets the screens that are chosen now, for a sentence that depends on them:
-   * "A screen that has a schedule gets this playlist instead of its schedule."
+   * "A screen that has a schedule or a layout gets this playlist instead."
    */
   readonly description?: ReactNode | ((chosen: readonly DisplayDto[]) => ReactNode);
   /**
@@ -87,17 +88,18 @@ async function loadScreens(signal: AbortSignal): Promise<ScreensData> {
   };
 }
 
+/** "Assigned: Reception loop", "Assigned: schedule Weekdays", "Assigned: layout Foyer band". */
 function contentLabel(display: DisplayDto): string {
-  if (display.assignedSchedule !== null)
-    return `Assigned: schedule ${display.assignedSchedule.name}`;
-  return display.assignedPlaylist === null
-    ? 'Nothing assigned'
-    : `Assigned: ${display.assignedPlaylist.name}`;
+  const content = assignedContent(display);
+  if (content === null) return 'Nothing assigned';
+  return content.kind === 'playlist'
+    ? `Assigned: ${content.name}`
+    : `Assigned: ${content.kind} ${content.name}`;
 }
 
 /**
  * Chooses one screen or several: a searchable list with each screen's status pill (what its
- * player last reported, and when) and the playlist or schedule assigned to it. Screens and statuses are
+ * player last reported, and when) and the playlist, schedule or layout assigned to it. Screens and statuses are
  * loaded afresh each time the dialog opens. If only the statuses cannot be read, the screens
  * are still listed and a notice says so.
  */
@@ -142,6 +144,7 @@ export function ScreenPickerDialog({
         display.name,
         display.assignedPlaylist?.name,
         display.assignedSchedule?.name,
+        display.assignedLayout?.name,
         display.description,
       ],
       query,

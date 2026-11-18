@@ -11,13 +11,16 @@
  * operator sees says "screen" (P2-03).
  */
 import {
+  ASSIGNMENT_KEYS,
   AUDIT_ACTIONS,
   auditCategoryOf,
+  type AssignmentKey,
   type AuditAction,
   type AuditActorType,
   type AuditEventDto,
   type AuditResult,
 } from '@tinnox/contracts';
+import { CONTENT_KIND_LABEL, type ContentKind } from './assignedContent.ts';
 import { formatAge } from './format.ts';
 
 /** The kinds of object an activity sentence can name. */
@@ -25,6 +28,7 @@ export const ACTIVITY_OBJECT_KINDS = [
   'display',
   'playlist',
   'schedule',
+  'layout',
   'media',
   'tag',
   'folder',
@@ -56,9 +60,9 @@ export interface ActivityDescription {
   readonly text: string;
   /** The object the sentence is about; its name follows the text after a colon. */
   readonly subject: ActivityRef | null;
-  /** A second object worth naming: the playlist or schedule of a push, or the one that was assigned. */
+  /** A second object worth naming: the playlist, schedule or layout of a push, or the one that was assigned. */
   readonly related: ActivityRef | null;
-  /** What the related object is to the event: "Playlist", "Schedule", "Copied from". Null without one. */
+  /** What the related object is to the event: "Playlist", "Schedule", "Layout", "Copied from". Null without one. */
   readonly relatedLabel: string | null;
   readonly icon: ActivityIcon;
   /** False when the action is not one this portal knows; the raw action is then shown too. */
@@ -133,6 +137,9 @@ const WORDING: { readonly [K in AuditAction]: Wording } = {
   'schedule.create': { done: 'Schedule created', attempt: 'Schedule creation', icon: 'other' },
   'schedule.update': { done: 'Schedule updated', attempt: 'Schedule update', icon: 'other' },
   'schedule.delete': { done: 'Schedule deleted', attempt: 'Schedule deletion', icon: 'other' },
+  'layout.create': { done: 'Layout created', attempt: 'Layout creation', icon: 'other' },
+  'layout.update': { done: 'Layout updated', attempt: 'Layout update', icon: 'other' },
+  'layout.delete': { done: 'Layout deleted', attempt: 'Layout deletion', icon: 'other' },
   'publication.create': { done: 'Pushed to screen', attempt: 'Push to screen', icon: 'push' },
   'security.cross_org_denied': {
     done: 'Cross-organisation request recorded',
@@ -153,6 +160,7 @@ const REMOVALS: ReadonlySet<string> = new Set<AuditAction>([
   'folder.delete',
   'playlist.delete',
   'schedule.delete',
+  'layout.delete',
 ]);
 
 const CATEGORY_ICONS: { readonly [category: string]: ActivityIcon } = {
@@ -180,6 +188,7 @@ const CATEGORY_LABELS: { readonly [category: string]: string } = {
   app: 'App',
   playlist: 'Playlist',
   schedule: 'Schedule',
+  layout: 'Layout',
   publication: 'Push',
   security: 'Security',
 };
@@ -188,6 +197,7 @@ const OBJECT_KIND_OF_TYPE: { readonly [objectType: string]: ActivityObjectKind }
   display: 'display',
   playlist: 'playlist',
   schedule: 'schedule',
+  layout: 'layout',
   media: 'media',
   tag: 'tag',
   folder: 'folder',
@@ -269,18 +279,27 @@ function displayOf(event: AuditEventDto): ActivityRef | null {
   );
 }
 
-const ASSIGNMENT_FIELDS: readonly unknown[] = ['assignedPlaylistId', 'assignedScheduleId'];
+/** The kind of content each assignment key of a display patch names. */
+const ASSIGNMENT_KIND: { readonly [K in AssignmentKey]: ContentKind } = {
+  assignedPlaylistId: 'playlist',
+  assignedScheduleId: 'schedule',
+  assignedLayoutId: 'layout',
+};
+
+function isAssignmentKey(key: unknown): key is AssignmentKey {
+  return ASSIGNMENT_KEYS.some((known) => known === key);
+}
 
 /**
  * The fields a `display.update` patch named, when they are assignment keys and nothing else;
  * else null. `fields` holds the keys of the patch; the detail's values may also carry a null
- * for the side the API cleared (a screen has a playlist or a schedule, never both).
+ * for each kind the API cleared (a screen has one of a playlist, a schedule or a layout).
  */
-function assignmentFields(event: AuditEventDto): readonly unknown[] | null {
+function assignmentFields(event: AuditEventDto): readonly AssignmentKey[] | null {
   const fields: unknown = detailValue(event, 'fields');
   if (!Array.isArray(fields) || fields.length === 0) return null;
   const keys: readonly unknown[] = fields;
-  return keys.every((key) => ASSIGNMENT_FIELDS.includes(key)) ? keys : null;
+  return keys.every(isAssignmentKey) ? keys : null;
 }
 
 /**
@@ -314,34 +333,28 @@ export function describeActivity(event: AuditEventDto): ActivityDescription {
   switch (action) {
     case 'display.update': {
       // A change of the assignment alone is worth its own words: nothing else was edited.
-      // What was assigned decides first, so a playlist that replaced a schedule (the detail
-      // then carries `assignedScheduleId: null`) reads as the assignment it was.
+      // What was assigned decides first, so a playlist that replaced a schedule or a layout
+      // (the detail then carries null for the kind it cleared) reads as the assignment it was.
       const fields = assignmentFields(event);
-      if (fields === null) break;
-      const playlist = detailValue(event, 'assignedPlaylistId');
-      const schedule = detailValue(event, 'assignedScheduleId');
-      const playlistNamed = fields.includes('assignedPlaylistId');
-      const scheduleNamed = fields.includes('assignedScheduleId');
+      const [only] = fields ?? [];
+      if (fields === null || only === undefined) break;
       // A value that was not recorded (an attempt that failed) reads as an assignment.
-      if (typeof playlist === 'string' || (!scheduleNamed && playlist !== null)) {
-        done = 'Playlist assigned to screen';
-        attempt = 'Playlist assignment';
-        related = ref('playlist', playlist);
-        relatedLabel = 'Playlist';
-      } else if (typeof schedule === 'string' || (!playlistNamed && schedule !== null)) {
-        done = 'Schedule assigned to screen';
-        attempt = 'Schedule assignment';
-        related = ref('schedule', schedule);
-        relatedLabel = 'Schedule';
-      } else if (playlistNamed && scheduleNamed) {
+      const assigned =
+        ASSIGNMENT_KEYS.find((key) => typeof detailValue(event, key) === 'string') ??
+        (fields.length === 1 && detailValue(event, only) === undefined ? only : undefined);
+      if (assigned !== undefined) {
+        const kind = ASSIGNMENT_KIND[assigned];
+        done = `${CONTENT_KIND_LABEL[kind]} assigned to screen`;
+        attempt = `${CONTENT_KIND_LABEL[kind]} assignment`;
+        related = ref(kind, detailValue(event, assigned));
+        relatedLabel = CONTENT_KIND_LABEL[kind];
+      } else if (fields.length > 1) {
         done = 'Content removed from screen';
         attempt = 'Removing the content from a screen';
-      } else if (scheduleNamed) {
-        done = 'Schedule removed from screen';
-        attempt = 'Removing the schedule from a screen';
       } else {
-        done = 'Playlist removed from screen';
-        attempt = 'Removing the playlist from a screen';
+        const kind = ASSIGNMENT_KIND[only];
+        done = `${CONTENT_KIND_LABEL[kind]} removed from screen`;
+        attempt = `Removing the ${kind} from a screen`;
       }
       break;
     }
@@ -377,14 +390,20 @@ export function describeActivity(event: AuditEventDto): ActivityDescription {
       break;
     }
     case 'publication.create': {
-      // A push is about a screen; the event's own object is the publication, the playlist
-      // or the schedule. A scheduled push names its schedule: its `playlistId` is only the
-      // schedule's default playlist.
+      // A push is about a screen; the event's own object is the publication, the playlist,
+      // the schedule or the layout. A push of a layout or a schedule names it: its
+      // `playlistId` is only the main zone's or the default playlist.
       subject = displayOf(event);
       related =
-        ref('schedule', detailValue(event, 'scheduleId')) ??
-        (event.objectType === 'schedule' ? ref('schedule', event.objectId) : null);
-      relatedLabel = 'Schedule';
+        ref('layout', detailValue(event, 'layoutId')) ??
+        (event.objectType === 'layout' ? ref('layout', event.objectId) : null);
+      relatedLabel = 'Layout';
+      if (related === null) {
+        related =
+          ref('schedule', detailValue(event, 'scheduleId')) ??
+          (event.objectType === 'schedule' ? ref('schedule', event.objectId) : null);
+        relatedLabel = 'Schedule';
+      }
       if (related === null) {
         related =
           ref('playlist', detailValue(event, 'playlistId')) ??
@@ -426,6 +445,8 @@ export function activityHref(target: ActivityRef): string | null {
       return `/playlists/${target.id}`;
     case 'schedule':
       return `/schedules/${target.id}`;
+    case 'layout':
+      return `/layouts/${target.id}`;
     case 'media':
       return `/media/${target.id}`;
     case 'tag':
@@ -454,7 +475,7 @@ export interface ActivityItem {
   /** The named object, or null when the event has none or its name is not known. */
   readonly subject: ActivityObject | null;
   readonly related: ActivityObject | null;
-  /** What `related` is to the event: "Playlist", "Schedule", "Copied from". */
+  /** What `related` is to the event: "Playlist", "Schedule", "Layout", "Copied from". */
   readonly relatedLabel: string | null;
   /**
    * True when the event is about an object that existed then and is in no list now: it was

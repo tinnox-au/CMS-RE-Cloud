@@ -1,4 +1,6 @@
+import type { PushPlanRow } from '@tinnox/contracts';
 import { Link } from 'react-router-dom';
+import { planRowContent } from '../../lib/assignedContent.ts';
 import { formatCount, pushOverview, type PushOverview } from '../../lib/dashboard.ts';
 import { Button, Card, CardHeader, cx, ErrorNotice, Icon } from '../../ui/index.ts';
 import { ChevronRight, CircleCheck, CircleDashed, Lock } from '../../ui/icons.ts';
@@ -102,14 +104,7 @@ function PushSummary({ summary }: { readonly summary: PushOverview }) {
                 >
                   {row.display.name}
                 </Link>
-                {(row.schedule ?? row.playlist) !== null && (
-                  <span
-                    className="tx-dashboard-row__caption tx-small tx-truncate"
-                    title={row.schedule?.name ?? row.playlist?.name}
-                  >
-                    {row.schedule?.name ?? row.playlist?.name}
-                  </span>
-                )}
+                <ContentCaption row={row} />
               </span>
               <PushStatePill
                 state={row.state}
@@ -133,5 +128,16 @@ function PushSummary({ summary }: { readonly summary: PushOverview }) {
         </p>
       )}
     </div>
+  );
+}
+
+/** The name of what the screen has assigned: its layout or schedule, else its playlist. */
+function ContentCaption({ row }: { readonly row: PushPlanRow }) {
+  const name = planRowContent(row)?.name;
+  if (name === undefined) return null;
+  return (
+    <span className="tx-dashboard-row__caption tx-small tx-truncate" title={name}>
+      {name}
+    </span>
   );
 }

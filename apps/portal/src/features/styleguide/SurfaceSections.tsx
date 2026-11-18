@@ -26,12 +26,12 @@ import {
 import {
   CalendarDays,
   Copy,
-  LayoutTemplate,
   Monitor,
   Plus,
   RefreshCw,
   Send,
   TriangleExclamationPoint,
+  Users,
 } from '../../ui/icons.ts';
 import { DEMO_STORAGE, useDemoArt } from './demoData.ts';
 import { Demo, Section } from './Section.tsx';
@@ -199,8 +199,8 @@ export function SurfaceSection() {
         note="A planned section says in one sentence what it will do and when. It has no controls."
       >
         <Card flush>
-          <EmptyState variant="inline" icon={LayoutTemplate} title="Layouts are planned">
-            Layouts will split a screen into zones. They arrive with stage B.
+          <EmptyState variant="inline" icon={Users} title="Users are planned">
+            People and their roles will be managed here. They arrive with stage C.
           </EmptyState>
         </Card>
       </Demo>

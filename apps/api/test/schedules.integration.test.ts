@@ -574,7 +574,7 @@ describe('schedules', () => {
       });
       expect(both.status).toBe(400);
       expect(((await both.json()) as ErrorBody).error.details).toEqual([
-        { path: 'assignedScheduleId', message: 'assign a playlist or a schedule, not both' },
+        { path: 'assignedScheduleId', message: 'assign one of a playlist, a schedule or a layout' },
       ]);
 
       for (const id of [randomUUID(), foreign.id]) {
@@ -616,6 +616,7 @@ describe('schedules', () => {
         display: { id: display.id, name: 'Cafe' },
         playlist: { id: fallback, name: 'Fallback' },
         schedule: { id: schedule.id, name: 'Cafe week' },
+        layout: null,
         state: 'never_pushed',
         issues: [],
         lastPushedAt: null,

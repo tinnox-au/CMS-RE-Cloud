@@ -1,0 +1,191 @@
+/*
+ * Layouts list, create dialog and editor (docs/portal-v2/stage-b.md, slice 4, section 7). The
+ * frame, the cards, the table, the fields and the controls come from the kit; this file only
+ * arranges the pages' own parts.
+ */
+
+/* ---------- List ---------- */
+
+/* The 44 px tile in a table row: a layout has no thumbnail, so the section's icon stands in. */
+.tx-layout-icon-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--link);
+}
+
+/*
+ * The main zone's playlist in a row: a second link, quieter than the row's own. A fixed cap,
+ * because a percentage does not limit a nowrap box in an auto-layout table cell; the full
+ * name is in the title.
+ */
+.tx-layout-list__link {
+  display: inline-block;
+  overflow: hidden;
+  max-inline-size: 28ch;
+  border-radius: 4px;
+  color: var(--ink);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.tx-layout-list__link:hover {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+/* ---------- Editor ---------- */
+
+.tx-layout-editor-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.tx-layout-editor-status[data-state='unsaved'] {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.tx-layout-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-6);
+  min-inline-size: 0;
+}
+
+/* The error summary: each line is a link that moves focus to its control. */
+.tx-layout-editor-summary:focus-visible {
+  outline: none;
+}
+
+.tx-layout-editor-summary .tx-banner:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.tx-layout-editor-summary ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Details and Zones, one above the other beside the preview. */
+.tx-layout-editor__side,
+.tx-layout-editor__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-4);
+  min-inline-size: 0;
+}
+
+.tx-layout-editor__side {
+  gap: var(--s-6);
+}
+
+.tx-layout-editor-facts.tx-facts {
+  grid-template-columns: minmax(84px, max-content) minmax(0, 1fr);
+  gap: 0;
+}
+
+.tx-layout-editor-facts > dt,
+.tx-layout-editor-facts > dd {
+  padding-block: 10px;
+  border-block-start: 1px solid var(--line);
+}
+
+.tx-layout-editor-facts > dt {
+  padding-inline-end: var(--s-4);
+}
+
+.tx-layout-editor__help {
+  max-inline-size: 76ch;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* One zone: an inset fill inside the card. Its controls wrap, so a phone never scrolls sideways. */
+.tx-layout-zone {
+  min-inline-size: 0;
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+/* A legend is laid out by the fieldset, not by a grid, so the parts space themselves. */
+.tx-layout-zone__fields > * + * {
+  margin-block-start: var(--s-3);
+}
+
+.tx-layout-zone__legend {
+  color: var(--ink);
+  font: 600 15px/20px var(--font-body);
+  letter-spacing: -0.01em;
+}
+
+/* ---------- Preview ---------- */
+
+.tx-layout-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-4);
+  min-inline-size: 0;
+}
+
+/*
+ * A zone in the preview: an outline placed in the content area of the frame from its pixel
+ * rectangle. The label is light on the dark panel in both themes (as canvasDiagram.css).
+ */
+.tx-layout-preview__zone {
+  --tx-zone-ink: var(--surface);
+
+  position: absolute;
+  inset-block-start: var(--tx-zone-top);
+  inset-inline-start: var(--tx-zone-left);
+  display: grid;
+  place-items: center;
+  inline-size: var(--tx-zone-width);
+  block-size: var(--tx-zone-height);
+  overflow: hidden;
+  outline: 1px dashed var(--tx-canvas-mark);
+  outline-offset: -1px;
+  color: var(--tx-zone-ink);
+  container-type: size;
+}
+
+/* A zone too thin for one line of text shows its outline only; the frame's description has its size. */
+@container (max-height: 15px) {
+  .tx-layout-preview__label {
+    display: none;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .tx-layout-preview__zone {
+    --tx-zone-ink: var(--ink);
+  }
+}
+
+.tx-layout-preview__label {
+  max-inline-size: 100%;
+  overflow: hidden;
+  padding-inline: var(--s-2);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
