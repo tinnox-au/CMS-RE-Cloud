@@ -108,6 +108,12 @@ const WORDING: { readonly [K in AuditAction]: Wording } = {
     attempt: 'Pairing request',
     icon: 'security',
   },
+  // Written by migration 0012 for claims left from before migration 0010.
+  'pairing.cancel': {
+    done: 'Pending pairing cancelled for screen',
+    attempt: 'Pending pairing cancellation',
+    icon: 'player',
+  },
   'player.revoke': {
     done: 'Player revoked on screen',
     attempt: 'Player revocation',

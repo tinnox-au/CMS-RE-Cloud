@@ -237,13 +237,15 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
           <p>
             The player paired with <strong>{display.name}</strong> will lose access immediately. To
             use it again it must be paired with a new code. Content it already cached stays on the
-            device until it is reset there.
+            device until it is reset there. Every pairing code accepted for this screen that no
+            player has collected yet is cancelled too.
           </p>
         ) : (
           <p>
-            A pairing code accepted for <strong>{display.name}</strong> that no player has collected
-            yet will stop working. If the player has collected its credential in the meantime, that
-            credential is revoked. To pair a player afterwards, enter the code it shows then.
+            This applies to the whole screen: every pairing code accepted for{' '}
+            <strong>{display.name}</strong> that no player has collected yet will stop working. If a
+            player has collected its credential in the meantime, that credential is revoked. To pair
+            a player afterwards, enter the code it shows then.
           </p>
         )}
       </ConfirmDialog>

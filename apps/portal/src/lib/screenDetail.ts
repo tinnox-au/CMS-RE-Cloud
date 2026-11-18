@@ -372,7 +372,7 @@ export function endPairingWords(paired: boolean): EndPairingWords {
       }
     : {
         button: 'Cancel pending pairing',
-        note: 'No player holds a credential. If a pairing code was accepted for this screen by mistake, cancel it here before the player collects its credential.',
+        note: 'No player holds a credential. If a pairing code was accepted for this screen by mistake, cancel it here before the player collects its credential. This cancels every code accepted for this screen that no player has collected.',
         dialogTitle: 'Cancel the pending pairing?',
         confirmLabel: 'Cancel pairing',
         cancelLabel: 'Keep it',

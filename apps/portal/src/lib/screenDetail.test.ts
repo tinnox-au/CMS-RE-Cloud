@@ -279,6 +279,8 @@ describe('pairing', () => {
       cancelLabel: 'Keep it',
       errorTitle: 'The pending pairing was not cancelled',
     });
+    // The request cancels every uncollected code of the screen, and the note says so.
+    expect(endPairingWords(false).note).toMatch(/cancels every code accepted for this screen/);
     expect(pairingStateText(null)).toBe('No player is paired with this screen.');
     expect(pairingStateText('1 Jan')).toMatch(/since 1 Jan/);
   });

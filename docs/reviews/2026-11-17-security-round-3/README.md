@@ -179,7 +179,7 @@ Sections 1 to 10 are the review record as written and are unchanged. Before fixi
 - One test looked its upload up by SHA-256, which could match an earlier upload in about 1 run in 19.
 - The per-subject sign-out wrote no audit event (see SCX-06 above).
 
-One finding was refuted: claims left outstanding from before migration 0010. They expire within 10 minutes, and completion still refuses them while the display has a player.
+One finding was refuted: claims left outstanding from before migration 0010. They expire within 10 minutes, and completion still refuses them while the display has a player. **Corrected in section 13:** the refutation was wrong. Completion does not refuse such a claim on a screen whose player was revoked, and the code lifetime is configurable. Migration 0012 cancels these claims.
 
 **Proof on the code as reviewed.** Every new test was run with the product code taken from `f138439`, migration 0010 removed, and the tests from the branch. Each failed for the reason in its finding: 17 integration and 4 unit failures in all. These include three existing tests updated for the new function count, the new poll outcome and the new revoke answer, plus one existing test that failed only because the new test before it left files behind. All pass on the branch.
 
@@ -194,7 +194,7 @@ One finding was refuted: claims left outstanding from before migration 0010. The
 - SCX-05 and SCX-06: Low.
 - SCU-02: an Observation. For the API, two of the three timeouts were already pinned per connection.
 
-**Deploy order.** Run migration 0010 before starting the new API.
+**Deploy order.** Run migration 0010 before starting the new API. Section 13 adds migration 0012 and one step: stop the old API before migrating.
 - The new API against a database without 0010 fails on claim and revoke.
 - An older API against the new database answers 500 instead of 404 on the poll that locks a session (the lock still commits).
 
@@ -211,7 +211,7 @@ The fixes in section 11 were checked again on `main` at `5fa4a76`. SCX-02, SCX-0
 
 | Point | Outcome | Evidence |
 |---|---|---|
-| SCX-01: a claim from before migration 0010, on a display revoked by the old code, can still pair | **Not changed.** Such a claim expires within 10 minutes of the migration, so a later migration could not reach it. Section 11 records the same residual. | None needed. |
+| SCX-01: a claim from before migration 0010, on a display revoked by the old code, can still pair | **Not changed at the time; fixed in section 13.** The reason recorded here was: such a claim expires within 10 minutes of the migration, so a later migration could not reach it. That holds only for a database already past 0010, and only at the default code lifetime. | See section 13. |
 | SCX-01: the portal disabled or hid "Revoke player" while no player was paired, so a claim no player had collected could be cancelled only through the API | **Fixed.** With no player paired, the Pairing tab of a screen offers "Cancel pending pairing". It sends the same revoke request, which cancels uncollected claims. If the player collected its credential in the meantime, that credential is revoked, and the confirmation says so. The row menu of the screen list still offers revocation only for a paired screen. | `tests/e2e/05-hardening.spec.ts` "an accepted pairing code can be cancelled from the screen page before a player collects it". `apps/portal/src/lib/screenDetail.test.ts` (`endPairingWords`). |
 | SCX-03: `commitRefused()` took every class 40 error as a confirmed rollback, including `40003` (statement completion unknown) | **Fixed.** `40003` now gives `CommitOutcomeUnknownError`, so files are kept. PostgreSQL itself is not known to send it at COMMIT; a proxy or a compatible server could. | `packages/db/src/tx.test.ts` "treats SQLSTATE 40003 (statement completion unknown) as unknown, although it is class 40". |
 | An upload committed and queued while the sweep ran could lose its bytes when its last byte was older than the two-minute grace period (present before round 3) | **Fixed.** The sweep notes the uploads in progress before it reads the pending jobs, and leaves their files alone. | `apps/api/test/upload.integration.test.ts` "keeps the bytes of an upload that is queued while the sweep runs". On the code before this change the sweep removed the bytes file. |
@@ -220,3 +220,24 @@ The fixes in section 11 were checked again on `main` at `5fa4a76`. SCX-02, SCX-0
 | With old and new versions side by side, a successful revoke can look failed: `cancelledPairingCount` is required by a strict schema on both sides | **Not changed.** The portal and the API are released together; see the deploy order in section 11. | None. |
 
 **Test runs on the follow-up branch (macOS, Node 23.10).** Lint and type checks passed. Unit: 1659 passed. Component: passed. Integration: 329 passed. Browser: the `05-hardening` spec (3 passed), and the `01-journey` and `11-accessibility` specs (50 passed, including the journey's revocation of a paired player). The other browser specs were not run again.
+
+## 13. Follow-up after a third check (18 November 2026)
+
+Another review agent checked the follow-up in section 12 on `main` at `3d8a968`. Every point it raised was confirmed by reading the code. Sections 11 and 12 were corrected where they said otherwise.
+
+| Point | Outcome | Evidence |
+|---|---|---|
+| SCX-01: a claim accepted before migration 0010, on a screen whose player the old code then revoked, can still complete after the upgrade and hand out a lasting credential. The recorded reason for leaving it (it expires within 10 minutes) assumed the default lifetime, which `LIMIT_PAIRING_CODE_TTL_SECONDS` can raise, and did not hold for a database not yet upgraded. | **Fixed.** Migration `0012_pairing_upgrade_cleanup.sql` cancels every claim that could still complete, in the same pass as 0010 on a database that has neither. It is numbered 0012 because `0011_stage_b_layouts.sql` reached `main` first. Each affected screen gets one `pairing.cancel` audit event in the same transaction: actor `system`, `reason: upgrade` and the cancelled pairing ids. A player that was waiting is told its code expired and asks for a new one. On a new database it changes nothing. | `packages/db/test/migration-0012.integration.test.ts` rebuilds the database at 0010 with claims as the older code could leave them, then applies 0012. With the cancellation taken out of the migration, such a claim completed and a registration was created. |
+| `sec.pairing_cancel_claims` took the screen's lock before it checked that the screen belongs to the organisation | **Fixed** in migration 0012. A screen of another organisation, or an unknown id, takes no lock and returns nothing. | `packages/db/test/sec.integration.test.ts` "takes the screen's lock only for the organisation that owns the screen". On the function from 0010 the owner's call waited for the other organisation's transaction and timed out. |
+| Portal: a code could be sent while a cancellation was on its way, and the other way round | **Fixed** on the Pairing tab. The cancel button is inactive while a code is being sent, and a code is not sent while a cancellation runs. A claim started on the Pairing tab and a revocation started from the Summary tab can still overlap; the database handles them one at a time. | By reading. No test: it needs a claim that stays unanswered. |
+| Portal: after a cancellation the "Code accepted" banner still said the player was about to collect its credential | **Fixed.** A revocation that went through removes the banner. | `tests/e2e/05-hardening.spec.ts` "an accepted pairing code can be cancelled…". It fails without the change. |
+| Portal: the confirmation did not say that every uncollected code of the screen is cancelled | **Fixed.** Both confirmations and the note on the tab say so. | The same browser test, and `apps/portal/src/lib/screenDetail.test.ts`. |
+| Control matrix B4 said that role defaults changed by `tinnox_app` do not reach the API | **Corrected.** That holds for the four settings the pool sends; B4 now says so. | None needed. |
+| No test of the sweep racing an upload that has a media row | **Added.** The upload goes through the route and is held at the statement that writes its row. | `apps/api/test/upload.integration.test.ts` "keeps the bytes of a real upload whose row is committed and queued while the sweep runs". On the sweep from before section 12 the files were removed. |
+| The lost-COMMIT test stored no thumbnail | **Added.** The test now checks that the thumbnail object is kept and served. | "keeps validated media whose commit went through when the answer to COMMIT was lost". |
+| The SCU-02 test cleans up with `RESET ALL` | **Not changed.** The runtime role's defaults are set for the role, not for the database, so this clears only what the test set. | `infra/postgres/init/01-roles.sh`. |
+| Mixed portal and API versions during a release are covered only here | **Not changed.** They are released together. | None. |
+
+**Deploy order.** Stop the old API, run the migrations (0010 to 0012), then start the new API. Migration 0012 cancels the claims that exist when it runs. An API from before 0010 that is still running afterwards can leave new ones, because its revocation does not cancel claims. A database that reached 0010 more than one code lifetime ago holds no such claim.
+
+**Test runs on this branch (macOS, Node 23.10).** Lint, type and format checks passed. Unit: 1671 passed. Component: passed. Integration: 354 passed. After merging `main` with the layouts change (the renumbering to 0012): unit 1765 and integration 385 passed. Browser, before that merge: the `05-hardening` spec (3 passed), and the `01-journey` and `11-accessibility` specs (50 passed). The other browser specs were not run again.
