@@ -82,6 +82,7 @@ PR #19 merged after CI passed (quality, integration, secret scan); CX-01 logout 
 
 **Notes**
 - 18 Nov: 18 Nov: backup:verify run on realistic dev data (portal API, real sign-ins, paired players). App-only: merged script passes, pre-fix fails only on the CU-01 check. With media: both pass. Open: section c still fails a database with no publications; no automated test.
+- 18 Nov: The open items above (no-publication false failure, no automated test) were closed by CMS-7, PR #21.
 
 ### CMS-6
 from: CMS-1
