@@ -22,7 +22,7 @@ Run everything from the repository root. You should not need `npm install`; `nod
 | `npm run test:integration` | Integration tests against PostgreSQL. Rebuilds database `tinnox_test` first. |
 | `npm run test:e2e` | Playwright suite in `tests/e2e` (25 tests; rebuilds database `tinnox_e2e_test`, builds and starts portal, player and API itself; evidence to `tests/.run/evidence` unless `E2E_EVIDENCE_DIR` is set). |
 | `npm run build` | `vite build` for portal and player. The API and worker run from TypeScript source. |
-| `npm run audit` | `npm audit --audit-level=high`. |
+| `npm run audit` | `scripts/audit.ts`: `npm audit`, failing on high or critical advisories apart from the dated development-only exceptions in `scripts/audit-exceptions.json` (operations checklist section 6). |
 | `npm run scan:secrets` | gitleaks (container, no network) over git history and all non-ignored files. |
 | `npm run reset -- --yes` | Deletes the database volume, the Keycloak container and `./data`. Keeps `.env`. Run `npm run setup -- --quiet` afterwards: it recreates `./data/jobs`, without which the media worker stays unhealthy. |
 | `npm run otp` | Prints the current TOTP code of the development operator (`-- --show-password`, `-- --second`). |
