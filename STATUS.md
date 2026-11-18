@@ -3,7 +3,7 @@ contract: status/v2
 repo: tinnox-au/tinnox-cms
 initiative: TINNOX CMS
 key: CMS
-next_id: 8
+next_id: 9
 phase: Not written yet: one sentence on what this project is and where it stands
 gate: -
 seeded: 17 Nov 2026 by status init
@@ -38,6 +38,7 @@ None.
 | Id | Card | Agreed | PR | Since |
 |---|---|---|---|---|
 | CMS-2 | Layouts (stage B): split a screen into zones, each with its own content | Michael 18 Nov | - | 18 Nov |
+| CMS-8 | CI audit gate: dated exception for picomatch GHSA-fc5q-39xc-vjpf (high, development tooling only, no fixed release); every other high or critical still blocks | Michael 18 Nov | - | 18 Nov |
 
 ## In review
 
