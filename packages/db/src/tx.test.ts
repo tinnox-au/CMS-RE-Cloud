@@ -142,8 +142,18 @@ describe('a COMMIT that does not confirm (review round 3, SCX-03)', () => {
     );
   });
 
+  it('treats SQLSTATE 40003 (statement completion unknown) as unknown, although it is class 40', async () => {
+    const unknown = serverError('40003');
+    const { pool } = fakePool(['COMMIT'], () => unknown);
+    const error: unknown = await withoutOrg(pool, () => Promise.resolve(1)).catch(
+      (thrown: unknown) => thrown,
+    );
+    expect(error).toBeInstanceOf(CommitOutcomeUnknownError);
+    expect((error as Error).cause).toBe(unknown);
+  });
+
   it('passes on a refusal that rolled the transaction back: a deferred constraint or a serialization failure', async () => {
-    for (const code of ['23505', '40001']) {
+    for (const code of ['23505', '40001', '40P01']) {
       const refusal = serverError(code);
       const { pool } = fakePool(['COMMIT'], () => refusal);
       await expect(withoutOrg(pool, () => Promise.resolve(1))).rejects.toBe(refusal);

@@ -5,6 +5,7 @@ import { api } from '../../../api/index.ts';
 import { useLoad } from '../../../hooks/useLoad.ts';
 import { displayFormFromDto, type DisplayFormValues } from '../../../lib/displayForm.ts';
 import {
+  endPairingWords,
   revokeOutcomeText,
   sameTagIds,
   SCREEN_STATUS_POLL_MS,
@@ -107,6 +108,9 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
     setStatusKey((value) => value + 1);
   }, [onReload]);
 
+  // With no player paired, the same request cancels a pairing code accepted but not yet collected.
+  const paired = display.player !== null;
+  const endPairing = endPairingWords(paired);
   const [revoke, setRevoke] = useState<RevokeState | null>(null);
   const askRevoke = (origin: RevokeOrigin) => {
     setRevoke({ origin, confirming: true, busy: false, error: null, result: null });
@@ -221,18 +225,27 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
 
       <ConfirmDialog
         open={revoke?.confirming === true}
-        title="Revoke this player?"
-        confirmLabel="Revoke player"
-        tone="danger"
+        title={endPairing.dialogTitle}
+        confirmLabel={endPairing.confirmLabel}
+        cancelLabel={endPairing.cancelLabel}
+        tone={paired ? 'danger' : 'default'}
         busy={revoke?.busy === true}
         onConfirm={runRevoke}
         onCancel={dismissRevoke}
       >
-        <p>
-          The player paired with <strong>{display.name}</strong> will lose access immediately. To
-          use it again it must be paired with a new code. Content it already cached stays on the
-          device until it is reset there.
-        </p>
+        {paired ? (
+          <p>
+            The player paired with <strong>{display.name}</strong> will lose access immediately. To
+            use it again it must be paired with a new code. Content it already cached stays on the
+            device until it is reset there.
+          </p>
+        ) : (
+          <p>
+            A pairing code accepted for <strong>{display.name}</strong> that no player has collected
+            yet will stop working. If the player has collected its credential in the meantime, that
+            credential is revoked. To pair a player afterwards, enter the code it shows then.
+          </p>
+        )}
       </ConfirmDialog>
 
       {leaveGuard.dialog}
