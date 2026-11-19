@@ -31,9 +31,7 @@ None.
 
 ## To do
 
-| Id | Card | Agreed | PR | Since |
-|---|---|---|---|---|
-| CMS-9 | Review picomatch audit exception GHSA-fc5q-39xc-vjpf: upgrade if fixed, else renew or remove (CI fails once its date passes) | Michael 18 Nov | - | 18 Nov |
+None.
 
 ## In progress
 
@@ -44,6 +42,7 @@ None.
 | Id | Card | Agreed | PR | Since |
 |---|---|---|---|---|
 | CMS-11 | Fix the gaps from the 2026-11-19 manual user test (sign-out notice, upload summary, Apps note, test plan corrections) | Michael 19 Nov | #29 | 19 Nov |
+| CMS-9 | Review picomatch audit exception GHSA-fc5q-39xc-vjpf: upgrade if fixed, else renew or remove (CI fails once its date passes) | Michael 18 Nov | #29 | 19 Nov |
 
 ## Done, last 14 days
 
