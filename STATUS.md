@@ -3,7 +3,7 @@ contract: status/v2
 repo: tinnox-au/tinnox-cms
 initiative: TINNOX CMS
 key: CMS
-next_id: 19
+next_id: 20
 phase: Not written yet: one sentence on what this project is and where it stands
 gate: -
 seeded: 17 Nov 2026 by status init
@@ -34,6 +34,7 @@ None.
 | CMS-16 | Playback report (stage C): what each screen played and when, from player reports | proposed | - | 19 Nov |
 | CMS-17 | Audio and PDF media (stage C): the Planned Audio and Documents entries in Media | proposed | - | 19 Nov |
 | CMS-18 | Web pages on screens (stage C): sandboxed, off by default per organisation; needs the P2-06 threat review first, like CMS-3 | proposed | - | 19 Nov |
+| CMS-19 | Re-run manual tests T11.1, T11.3, T12.1 and T12.3 after PR 29 (schedule and layout create and play) | proposed | - | 19 Nov |
 
 ## To do
 
@@ -130,3 +131,6 @@ PR 30 merged to main after lint, unit, build, audit, integration and secret-scan
 
 ### CMS-18
 from: CMS-3
+
+### CMS-19
+from: CMS-11
