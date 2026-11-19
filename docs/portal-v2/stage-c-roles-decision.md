@@ -1,6 +1,6 @@
 # CMS-13 roles and users: decision draft
 
-**Status:** DECIDED by Michael, 2026-11-19 (DEC-35). Nothing built. The next step is the build spec for PRs C1 and C2.
+**Status:** DECIDED by Michael, 2026-11-19 (DEC-35). Build spec: `stage-c.md` (C1 and C2 on one branch). Where the two differ, the build spec is what is built: `restore-owner` is a `provision-member` subcommand, `fulfil` takes `--username`, the trigger fires on `role, removed_at, removed_by` and exempts `session_user = 'tinnox_migrator'`, `pairing` and `player` are activity categories, and the new threat is T17.
 
 **Decided by Michael, 2026-11-19:** four roles, Owner, Admin, Editor and Viewer, keeping Owner so that Admins cannot remove each other ("Bring back owner"). Editors get as much access as possible ("Give editor as much access to make things easier"): everything about content and screens, including pushing, deleting, screen set-up and pairing. Admins add people management and the full audit log. The remaining choices are D1 to D7 below.
 
@@ -136,13 +136,13 @@ Y means allowed and N means refused. "D*n*" marks a cell that depends on a decis
 | Reserved | Playback report (CMS-16) | later | Y | Y | Y | Y | Default only |
 | Reserved | API tokens (Epic J) | later | Y | Y | N | N | A token's role can be no higher than its creator's |
 
-There is no billing row, because billing is not in the product (DEC-27). ISO-05 (`docs/acceptance-tests.md:31`) uses three roles as test preconditions and names a billing right. It must be aligned to these four roles.
+There is no billing row, because billing is not in the product (DEC-27). ISO-05 (`docs/acceptance-tests.md:31`) tests these four roles and has no billing step.
 
-**The matrix in one sentence each (as recommended):**
-- **Viewer:** `org.read` and `activity.read`.
-- **Editor:** Viewer, plus `content.write`, `content.delete`, `media.delete`, `screen.assign` and `push.publish`.
-- **Admin:** Editor, plus `screen.details`, `screen.hours`, `screen.setup`, `screen.pair`, `audit.read`, `member.read`, and `member.manage` over Editors and Viewers.
-- **Owner:** Admin, plus everything at Admin and Owner level, and `org.rename` and `org.delete` when they are built.
+**The matrix in one sentence each:**
+- **Viewer:** `org.read`, `activity.read`.
+- **Editor:** Viewer plus `content.write`, `content.delete`, `media.delete`, `screen.assign`, `push.publish`, `screen.details`, `screen.hours`, `screen.setup`, `screen.pair`.
+- **Admin:** Editor plus `audit.read`, `member.read`, `member.manage` (over Editors and Viewers only, the rank rule).
+- **Owner:** Admin's keys plus the rank rule over Admins and Owners; `org.rename` and `org.delete` when built.
 
 ### People routes
 
@@ -177,7 +177,7 @@ Each new route has its own entry in the route-to-key table.
 ### Escalation limits
 - Rank rule: an Admin acts only on Editors and Viewers and grants only those roles. Only an Owner grants, changes or removes Admin or Owner.
 - Nobody raises, changes or removes their own role, and nobody renames themselves (D7). Handing over ownership therefore takes two people: Owner A makes B an Owner, then B demotes or removes A.
-- Admins invite Editors and Viewers. Owners may also invite Admins (D6). Owner comes only from promoting someone who has signed in at least once. The API checks `membership.first_signed_in_at`, which only `sec.session_create` writes and which reactivation clears. It never reads the audit log for this.
+- Admins invite Editors and Viewers. Owners may also invite Admins (D6). Owner comes only from promoting someone who has signed in at least once. The API checks `membership.first_signed_in_at`, which only `sec.session_create` writes (and migration 0013 once, from the earliest session row still kept at the upgrade) and which reactivation clears. It never reads the audit log for this.
 - What stops a mistyped e-mail address is TINNOX's own step. Staff confirm the person with the requester before sending credentials, `fulfil` records that confirmation's reference, and `fulfil` refuses an account whose e-mail address differs from the invite's.
 - The API checks the role named in the request against what the actor may grant. The portal's choices are never trusted.
 
@@ -467,10 +467,10 @@ Recommend: a.
   - The `UPDATE membership SET role` assertion in `packages/db/test/rls.integration.test.ts:641-645` changes on purpose. The `INSERT` refusal stays.
 - **`sec.*` functions,** under `SET LOCAL ROLE tinnox_definer` … `RESET ROLE`. Each pins `search_path`, gets `EXECUTE` for `tinnox_app` only, and is covered by the ownership check from `0002:385-415`.
   - **New:** `sec.session_revoke_membership`. It acts only when the membership's organisation equals `app_org_id()`, revokes the sessions, sets `sessions_valid_after` and returns a count. The precedent is `sec.pairing_claim`'s organisation check (`0010:48-50`). It is needed because `tinnox_app` has no rights on `session`.
-  - **`session_create`:** gains an `auth_time` parameter, so it is dropped and created again. It refuses removed members and an `auth_time` not after `sessions_valid_after`, and sets `first_signed_in_at` when it is empty.
+  - **`session_create`:** gains an `auth_time` parameter, so it is dropped and created again. It refuses removed members and an `auth_time` not after `sessions_valid_after`, and sets `first_signed_in_at` when it is empty. As built, 0013 also fills `first_signed_in_at` once for existing members from their earliest session row still kept (sessions are purged a day after they end, so a member with no kept row stays "Not signed in yet" until their next sign-in), with `FORCE` lifted on `session` too, inside the transaction.
   - **`CREATE OR REPLACE`** of `session_by_id_hash` (ignores removed members and sessions created before `sessions_valid_after`) and `membership_by_oidc_sub` (ignores removed members).
   - **`pairing_claim`:** also requires a member who has not been removed. It checks no role: the route and the check inside the write decide who may pair, so who may pair stays a one-line change. The signature does not change.
-- **Locks:** `membership` is tiny, so the brief lock is harmless.
+- **Locks:** `membership` is tiny, so the brief lock is harmless. As built, 0013 holds ACCESS EXCLUSIVE on `membership` and `session` until commit, while the API is stopped (`stage-c.md`, release note).
 
 **API:**
 - `packages/domain/src/permissions.ts`: roles, keys, the role-to-key table, `can` and `canManage`, with exhaustive unit tests.

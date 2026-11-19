@@ -104,7 +104,7 @@ Owner differs from Admin only through the rank rule (1.4), never through a key. 
 | Rank rule, self-action or a role the actor may not grant (people routes, after the target is read) | 403 `forbidden` |
 | The change would leave no active Owner | 409 `last_owner` (new code) |
 | Owner for a member who never signed in | 409 `conflict`, detail `{ path: 'role', code: 'not_signed_in_yet' }` |
-| `lock_timeout` (55P03) anywhere in a write transaction (membership lock, actor row, target row, any other lock) | 503 `service_unavailable` (existing code, `apps/api/src/errors.ts:69`), header `retry-after: 2`; mapped by `withOrgAllowed` and `withOrgDecisionAllowed` (6.3) |
+| `lock_timeout` (55P03) anywhere in a write transaction (membership lock, actor row, target row, any other lock) | 503 `service_unavailable` (existing code, `apps/api/src/errors.ts:69`), message "Another change is being saved. Try again in a moment.", header `retry-after: 2`; mapped by `withOrgAllowed` and `withOrgDecisionAllowed` (6.3) |
 
 This is how DEC-35 reads AGENTS.md §2: cross-organisation ids still answer 404; a refusal by role is the same 403 for every id. In-organisation refusals never use SQLSTATE 42501, because `apps/api/src/errors.ts:159-163` answers 42501 as 404.
 
@@ -118,7 +118,7 @@ This is how DEC-35 reads AGENTS.md §2: cross-organisation ids still answer 404;
 -- 0013: roles and members (CMS-13, DEC-35; docs/portal-v2/stage-c.md). 0001 to 0012 are unchanged.
 --
 --   1. membership: four roles; today's 'operator' rows become 'owner' (D4 a); display name,
---      removal, first sign-in and the session cut-off.
+--      removal, first sign-in (filled from the session rows still kept) and the session cut-off.
 --   2. membership_guard: an organisation keeps an active Owner; a removal is final.
 --   3. membership_display_name_stamp: records when a set name is changed.
 --   4. member_invite: invite requests that TINNOX completes, and member_invite_guard.
@@ -140,8 +140,8 @@ This is how DEC-35 reads AGENTS.md §2: cross-organisation ids still answer 404;
 -- sessions_valid_after or display_name_changed_at. tinnox_definer gets UPDATE on the two
 -- columns its sec.* functions write, and a script-only read of member_invite (section 5).
 --
--- Locks and deploy order. Takes ACCESS EXCLUSIVE on membership until commit, which waits for
--- every API request (sec.session_by_id_hash joins membership). It drops the five-argument
+-- Locks and deploy order. Takes ACCESS EXCLUSIVE on membership and session until commit, which
+-- waits for every API request (sec.session_by_id_hash reads both). It drops the five-argument
 -- sec.session_create, so an API from before 0013 cannot sign anyone in afterwards: stop the
 -- API, migrate, then start the new API and portal together.
 
@@ -159,7 +159,8 @@ ALTER TABLE public.membership
   ADD COLUMN removed_at timestamptz,
   -- The member who removed this one; NULL when TINNOX's script removed them.
   ADD COLUMN removed_by uuid,
-  -- Written by sec.session_create only; reactivation by provision-member fulfil clears it.
+  -- Written by sec.session_create only, after the one-time fill below; reactivation by
+  -- provision-member fulfil clears it.
   ADD COLUMN first_signed_in_at timestamptz,
   -- Written by sec.session_revoke_membership only: sessions created, and sign-ins
   -- authenticated, before it are refused.
@@ -180,12 +181,24 @@ CREATE UNIQUE INDEX membership_org_display_name_key ON public.membership (org_id
 -- sec.session_revoke_membership ends a member's live sessions by membership_id.
 CREATE INDEX session_membership_idx ON public.session (membership_id) WHERE revoked_at IS NULL;
 
--- Row-level security is forced, so even the owner sees no membership rows without an
--- organisation context, and this statement spans every organisation. FORCE is lifted for this
--- one statement and restored at once, inside this transaction, as 0005:179-201 does: no other
--- session ever sees the table without it, and tinnox_app stays subject to the policy.
+-- Row-level security is forced, so even the owner sees no membership or session rows without an
+-- organisation context, and these two statements span every organisation. FORCE is lifted for
+-- them and restored at once, inside this transaction, as 0005:179-201 does: no other session
+-- ever sees the tables without it, and tinnox_app stays subject to the policy.
 ALTER TABLE public.membership NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.session NO FORCE ROW LEVEL SECURITY;
 UPDATE public.membership SET role = 'owner' WHERE role = 'operator';
+-- A member who signed in before 0013 has signed in: first_signed_in_at becomes their earliest
+-- session row. Only sec.session_create ever wrote one, after a verified sign-in. Sessions are
+-- purged a day after they end (0004), so a member whose last sign-in is older stays NULL until
+-- the next one. The audit log is not read: tinnox_app can write it, and no permission decision
+-- reads it (stage-c-roles-decision.md, "Known residuals"; control-matrix.md:31).
+UPDATE public.membership m
+SET first_signed_in_at = s.first_at
+FROM (SELECT membership_id, org_id, min(created_at) AS first_at
+      FROM public.session GROUP BY membership_id, org_id) s
+WHERE m.id = s.membership_id AND m.org_id = s.org_id;
+ALTER TABLE public.session FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.membership FORCE ROW LEVEL SECURITY;
 
 -- Validated against every row now: a row the mapping missed fails the migration.
@@ -393,7 +406,7 @@ GRANT UPDATE (status, closed_by) ON public.member_invite TO tinnox_app;
 
 -- Owner of the sec.* functions: sec.session_create writes first_signed_in_at and locks the
 -- row (FOR NO KEY UPDATE needs UPDATE on one column); sec.session_revoke_membership writes
--- sessions_valid_after.
+-- sessions_valid_after; sec.pairing_complete share-locks the claimer's row.
 GRANT UPDATE (first_signed_in_at, sessions_valid_after) ON public.membership TO tinnox_definer;
 
 -- Script-only: provision-member pending and the first step of fulfil read the invite queue of
@@ -538,7 +551,16 @@ $$;
 -- cut-off: sessions created, and sign-ins authenticated, before it are refused. The member
 -- row is updated first, so a sign-in that locked it first and committed is visible to the
 -- second statement and is revoked too (each statement takes a fresh snapshot). Returns the
--- number of sessions ended. tinnox_app has no rights on session, hence a sec.* function.
+-- number of sessions ended; one that had already expired is left alone and not counted, as in
+-- scripts/revoke-subject-sessions.sql (sec.session_purge_expired clears its ID token).
+-- tinnox_app has no rights on session, hence a sec.* function.
+--
+-- The cut-off is the start of this call, not of the transaction: the people routes first wait
+-- for the membership lock and the member row (lock_timeout 5 s each), and a sign-in at the
+-- identity provider during those waits must be refused too. From then on the member row is
+-- locked, so a sign-in that commits later reads this cut-off. greatest() skips NULL and never
+-- moves the cut-off back, so a revocation that commits after a later one cannot let the
+-- sessions between the two back in.
 CREATE FUNCTION sec.session_revoke_membership(p_membership_id uuid)
   RETURNS integer
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER
@@ -553,9 +575,6 @@ BEGIN
       USING ERRCODE = 'insufficient_privilege';
   END IF;
   -- An id from another organisation changes nothing and takes no lock (0012:11-13).
-  -- Built (Wave 1 review): the cut-off is the start of this call, not of the transaction, so an
-  -- identity-provider sign-in during the people route's lock waits is refused too; greatest()
-  -- never moves it back.
   UPDATE public.membership m
   SET sessions_valid_after = greatest(m.sessions_valid_after, statement_timestamp())
   WHERE m.id = p_membership_id AND m.org_id = v_org;
@@ -589,11 +608,12 @@ The SQL above is near-full: copy `pairing_claim` and `pairing_complete` from 001
 **Facts that follow from the SQL:**
 - `sec.*` functions: 18 today (`packages/db/test/sec.integration.test.ts:157-160`), 19 after 0013.
 - Every existing member becomes `owner`. The dev seed's older subjects become Owners too (D4 a); they can be removed by hand.
+- Every existing member with a session row still kept gets `first_signed_in_at` from their earliest one. Sessions are purged a day after they end (0004), so a member with no kept row stays NULL ("Not signed in yet", and not promotable to Owner) until their next sign-in; they are Owners already (D4 a), so this fails closed.
 - `tinnox_app` `UPDATE membership SET role = …` now passes the privilege check and is decided by the trigger and `membership_role_known` (23001 or 23514). `INSERT INTO membership` stays 42501.
 - A removed member: `session_create` → `no_membership`; `session_by_id_hash` → no row (401); `membership_by_oidc_sub` → no row; `pairing_claim` → 42501 (404); `pairing_complete` of their uncollected claim → `not_claimable`.
 - Last-owner refusal: 23001, constraint `membership_last_owner` → API 409 `last_owner`. Organisation mismatch: 42501 → 404 (cross-organisation, correct).
 - NULL safety: every new CHECK with a nullable column means "no value" when NULL and is meant to pass; `member_invite_open` and `member_invite_fulfilled` use `IS [NOT] NULL` only.
-- Locks, held until commit: ACCESS EXCLUSIVE on `membership` (ALTER TABLE, NO FORCE, FORCE; nullable columns without defaults, so no rewrite; the CHECK and FK scan a tiny table), SHARE on `membership` and `session` for the two indexes, SHARE ROW EXCLUSIVE on `organization` and `membership` for the new foreign keys. The migrator's `lock_timeout` is 30 s (`infra/postgres/init/01-roles.sh:44`). `membership` has a handful of rows per organisation.
+- Locks, held until commit: ACCESS EXCLUSIVE on `membership` and `session` (ALTER TABLE, NO FORCE, FORCE; nullable columns without defaults, so no rewrite; the CHECK and FK scan a tiny table; the first-sign-in fill reads every `session` row once), SHARE on `membership` and `session` for the two indexes, SHARE ROW EXCLUSIVE on `organization` and `membership` for the new foreign keys. The migrator's `lock_timeout` is 30 s (`infra/postgres/init/01-roles.sh:44`). `membership` has a handful of rows per organisation.
 
 **`packages/db/src/constraints.ts`** gains, after `STAGE_B_CONSTRAINTS`:
 
@@ -1132,7 +1152,7 @@ export async function recordPermissionDenied(ctx: AppContext, request: FastifyRe
 - `GET /api/auth/login`: unchanged (kind `normal`).
 - `GET /api/auth/callback`, after the state checks (`:110-121`):
   1. `reauthStored = loginStateTake(unscoped, key 'reauth')`; `stored = reauthStored ?? loginStateTake(unscoped, key 'normal')`; `forced = reauthStored !== null`. Null: unchanged `state` failure.
-  2. `sessionCreate(tx, { …, authTime: identity.authTime === null ? null : new Date(identity.authTime * 1000) })` runs first in the existing `withResolvedOrg` (`:186-224`); the rotation (`sessionRevoke(previous)`, today `:187-189`, before the create) moves after it and still commits in every outcome. A sign-in then takes the member row before any session row, the order a member change uses (6.8); the old order deadlocks (40P01) with a removal, demotion or sign-out of the member whose idle session cookie the browser still sends. A lock timeout (55P03) from this transaction → `failureRedirect(ctx, reply, 'provider_unavailable')`.
+  2. `sessionCreate(tx, { …, authTime: identity.authTime === null ? null : new Date(identity.authTime * 1000) })` runs first in the existing `withResolvedOrg` (`:186-224`); the rotation (`sessionRevoke(previous)`, today `:187-189`, before the create) moves after it and still commits in every outcome. A sign-in then takes the member row before any session row, the order a member change uses (6.8); the old order deadlocks (40P01) with a removal, demotion or sign-out of the member whose idle session cookie the browser still sends. A lock timeout (55P03) from this transaction rolls everything back, so the route then writes its own `auditUnscoped` row (`actorType 'anonymous'`, `auth.login`, `result 'failure'`, detail `{ reason: 'member_locked' }`, as the other failures before a session) → `failureRedirect(ctx, reply, 'provider_unavailable')`.
   3. `no_membership`: unchanged (`:197-208`, `:225-228`). A removed member lands here.
   4. `reauth`: `enterOrg(orgId)`; `auditScoped` `auth.login`, `actorType 'operator'`, `actorId membershipId`, `objectType 'membership'`, `result 'denied'`, `detail { reason: forced ? 'reauth_failed' : 'reauth_required' }`. After the transaction: clear the session cookie. If `forced`: `failureRedirect(ctx, reply, 'reauth_failed')`. Otherwise: `begin = await ctx.idp.beginLogin({ reauthenticate: true })` (error → `provider_unavailable`), new `preAuth`, `loginStatePut` with the `reauth` key and the same `stored.returnTo`, set the pre-auth cookie (it replaces the clear made at `:108` in the same reply: `@fastify/cookie` keeps one Set-Cookie per name, domain and path, `node_modules/@fastify/cookie/index.js:48`), 303 to `begin.url`.
   5. `created`: unchanged (`:209-235`).
@@ -1167,9 +1187,9 @@ Shared steps of the three member writes (PATCH, remove, sign-out), after the wra
 2. `target.id === session.membershipId` → `PermissionDeniedError` reason `self`, object the target.
 3. `!canManage(role, target.role)` → reason `rank`.
 
-**GET /api/members** (`withOrg`): `SELECT id, display_name, role, first_signed_in_at, removed_at FROM membership WHERE org_id = app_org_id() ORDER BY removed_at IS NOT NULL, lower(display_name) NULLS LAST, created_at, id` → `{ items: MemberDto[] }`. No e-mail exists to leak.
+**GET /api/members** (`withOrg`): `SELECT id, display_name, role, first_signed_in_at, removed_at FROM membership WHERE org_id = app_org_id() ORDER BY removed_at IS NOT NULL, lower(display_name) NULLS LAST, created_at, id LIMIT ABSOLUTE.maxListItems` (a shortcut) → `{ items: MemberDto[] }`. No e-mail exists to leak.
 
-**GET /api/members/names** (`withOrg`): `SELECT id, display_name, removed_at IS NOT NULL AS removed, display_name_changed_at FROM membership WHERE org_id = app_org_id() ORDER BY id` → `{ items: MemberNameDto[] }` (`renamedAt` from `display_name_changed_at`).
+**GET /api/members/names** (`withOrg`): `SELECT id, display_name, removed_at IS NOT NULL AS removed, display_name_changed_at FROM membership WHERE org_id = app_org_id() ORDER BY id LIMIT ABSOLUTE.maxListItems` (a shortcut; a later member shows as "Person") → `{ items: MemberNameDto[] }` (`renamedAt` from `display_name_changed_at`).
 
 **GET /api/invites** (`withOrg`): `SELECT id, name, email, role, invited_by, created_at, expires_at FROM member_invite WHERE org_id = app_org_id() AND status = 'pending' ORDER BY created_at, id` → `{ items: InviteDto[] }`. Expired but not yet closed by TINNOX's daily run are listed; the portal says "Expired".
 
@@ -1190,7 +1210,7 @@ Shared steps of the three member writes (PATCH, remove, sign-out), after the wra
 
 **PATCH /api/members/:id** (`MemberPatchSchema`), 200 `MemberChangeResponse`, after the shared steps:
 1. Role named and different from `target.role`: not in `grantableRoles(role, 'change')` → reason `grant`. `'owner'` and `target.first_signed_in_at` null → 409 `conflict` "Only someone who has signed in at least once can be made an Owner." with `details [{ path: 'role', code: 'not_signed_in_yet', message }]`, recorded after the transaction with reason `not_signed_in` (always, 6.4).
-2. One `UPDATE membership SET … WHERE id = $1 AND org_id = app_org_id()` setting only the named, changed columns (`role`, `display_name`). Nothing changed → no UPDATE, no audit, 200 with zero counts.
+2. A new name that a pending invite holds (`lower(name)`, under the membership lock POST /api/invites also takes) → 409 `conflict` with `details [{ path: 'displayName', … }]`, before anything is written: TINNOX fulfils an invite with its own name, so taking it would leave the invite stuck. Then one `UPDATE membership SET … WHERE id = $1 AND org_id = app_org_id()` setting only the named, changed columns (`role`, `display_name`). Nothing changed → no UPDATE, no audit, 200 with zero counts.
 3. Demotion (`isDemotion`): `sessionsEnded = await sessionRevokeMembership(tx, id)`; then cancel the target's pending invites whose role is not in `grantableRoles(newRole, 'invite')`: `UPDATE member_invite SET status = 'cancelled' WHERE org_id = app_org_id() AND invited_by = $1 AND status = 'pending' AND NOT (role = ANY($2::text[])) RETURNING id, role`, one `invite.cancel` per row with `reason 'inviter_demoted'`, `actorType 'operator'`, `actorId session.membershipId` (the person whose change caused it); `closed_by` stays NULL.
 4. Audits: `membership.role_change { from, to, sessionsEnded, invitesCancelled }` when the role changed; `membership.update { fields: ['displayName'] }` when the name changed.
 5. Errors after the transaction: 23505 `memberNameTaken` → 409 `conflict` `details [{ path: 'displayName', message: 'Another person in this organisation has, or had, this name.' }]`; 23001 `lastOwner` → `recordPermissionDenied(… { keys: ['member.manage'], reason: 'last_owner', always: true, object })` then 409 `last_owner` "An organisation always keeps at least one Owner. Make someone else an Owner first." Under the lock order the trigger is a backstop; tests reach it through a fault-injecting pool (9).
@@ -1388,7 +1408,7 @@ Dialogs:
 |---|---|---|---|---|
 | Invite person | `users-invite-dialog` | `<form noValidate>`; Name (`users-invite-name`, `autoComplete="off"`, `data-autofocus`, hint "Up to 120 characters, as it should appear in TINNOX CMS. No two people here can share a name."); Work e-mail (`users-invite-email`, `type="email" inputMode="email" spellCheck={false} autoComplete="off"`, hint "TINNOX uses it once, to set up the sign-in account. It is deleted when the invite closes."); Role radio cards (`users-invite-role-{role}`) from `inviteRoleChoices`, Viewer preselected; Owner only: "To make someone an Owner, invite them as an Admin and promote them after their first sign-in." Buttons "Cancel" and "Request invite" (`users-invite-submit`, busy) | Close, reload, focus back on "Invite person"; toast "Invite for {name} saved" with detail "Waiting for TINNOX. Reference {ref}." | `validation_failed` and `conflict` with `details[].path` → field errors, first one focused; `forbidden` → the 7.1 handling; else `ErrorNotice` "The invite was not saved" |
 | Change role | `users-role-dialog` | Title "Change role for {name}"; radio cards from `roleChoices` (current marked "Current"); consequence `p` with `aria-live="polite"` (`users-role-consequence`) from `roleChangeConsequence`; primary "Make {Role}" (`users-role-save`), `danger-solid` for a demotion | Toast "{name} is now {a/an} {Role}", detail "{n} sessions ended" on a demotion | `last_owner` → `Banner tone="danger"` "An organisation always keeps at least one Owner. Make someone else an Owner first."; `conflict` `not_signed_in_yet` → the same banner style with its message; any other `conflict` (the person was removed meanwhile, 6.7 step 1) → in-dialog `Banner` with the API message, then reload both lists |
-| Correct name | `users-name-dialog` | Field "Name" (`users-name-input`); "Save name" (`users-name-save`), `aria-disabled` when unchanged; description "The new name shows here, in activity and in the audit log, for past events too. The audit log marks the person as renamed." | Toast "Name changed to “{name}”" | `conflict` with `details[0].path === 'displayName'` → field error "Another person in this organisation has, or had, this name."; any other `conflict` → in-dialog `Banner` with the API message, then reload both lists |
+| Correct name | `users-name-dialog` | Field "Name" (`users-name-input`); "Save name" (`users-name-save`), `aria-disabled` when unchanged; description "The new name shows here, in activity and in the audit log, for past events too. The audit log marks the person as renamed." when a set name is corrected, and only its first sentence ("The name shows here, …") for a first naming, which gets no mark; the field refuses a name a pending invite holds ("An invite waiting for TINNOX uses this name.") | Toast "Name changed to “{name}”" | `conflict` with `details[0].path === 'displayName'` → field error "Another person in this organisation has, or had, this name."; any other `conflict` → in-dialog `Banner` with the API message, then reload both lists |
 | Sign out everywhere | `users-sign-out-dialog` (`ConfirmDialog`, default tone) | Title "Sign {name} out everywhere?"; body "Every TINNOX CMS session {name} has open ends now, in every browser. Anything they have not saved is lost. Their next sign-in asks for their password and one-time code. Their role does not change." Confirm "Sign out everywhere" | Toast "{name} signed out everywhere", detail "{n} sessions ended" or "No session was open" | in-dialog `Banner` with the API message; a `conflict` also reloads both lists |
 | Remove | `users-remove-dialog` (`ConfirmDialog tone="danger"`, `returnFocus` via `useRowFocusReturn`) | Title "Remove {name}?"; body "{name} is signed out now and can no longer use TINNOX CMS for {organisation}. Their content and the activity history stay. {Their n pending invites are cancelled.} To bring them back later, invite them again; they get the role on the new invite." Confirm "Remove person" | Toast "{name} removed", detail "{n} sessions ended" | outcome unknown (`isOutcomeUnknown`) → "The server may or may not have removed {name}" and reload; `conflict` → in-dialog `Banner` with the API message, then reload both lists |
 | Cancel invite | `users-invite-cancel-dialog` (`ConfirmDialog tone="danger"`, `cancelLabel="Keep invite"`) | Title "Cancel the invite for {name}?"; body "TINNOX will not set up {name}. Their name and work e-mail address are deleted from the invite now. You can invite them again later." Confirm "Cancel invite" | Toast "Invite for {name} cancelled" | `conflict` → "This invite is no longer waiting. TINNOX may have just set {name} up; the lists were refreshed." and reload |
@@ -1430,12 +1450,12 @@ signOutMember(id: string): Promise<MemberSignOutResponse>;
     | `membership.remove` | Person removed | Removing a person |
     | `membership.sessions_end` | Signed out everywhere | Signing out everywhere |
     | `membership.mfa_reset` | Sign-in reset by TINNOX | Sign-in reset |
-    | `security.permission_denied` (icon `'security'`) | Refused by role | Request the role does not allow |
+    | `security.permission_denied` (icon `'security'`) | Refused by role | Request outside the person’s role (every such row is `denied`, so people read "… refused") |
 
   - `CATEGORY_ICONS` / `CATEGORY_LABELS` (`:175-201`) gain `invite` and `membership` (icon `'account'`, labels "Invites", "People").
   - `activityActorLabel(event, names)`: for `actorType 'operator'`, the member's name when known, "Unnamed person" when their name is null, "Person" when the list is unknown or lacks the id; other actor types unchanged. `ActivityNames` (`features/dashboard/useActivityNames.ts`) gains `member`.
 - Names come from one `api.listMemberNames()` per page load and per Refresh generation, in `features/audit/useAuditNames.ts` (`:13-53`, `:62-122`) and `features/dashboard/useActivityNames.ts` (`:20-35`, `:45-95`). A failed load leaves `member: null` ("show the id, never a guess").
-- `features/audit/AuditPage.tsx`: actor cell (`:275-292`) shows the name, then " (removed)" when `removed`, then " (renamed)" when `renamedAt` is after the event's `occurredAt`; the short id stays as secondary text with the full id as `title`. Category `Select` (`:367-381`) uses `auditCategoryOptionsFor(useCan('audit.read'))`. Intro (`:522-525`) and empty text (`:420-426`) without `audit.read`: "Content and screen events in this organisation: who changed what, and when." and "No content or screen events yet."
+- `features/audit/AuditPage.tsx`: actor cell (`:275-292`) shows the name, then " (removed)" when `removed`, then " (renamed)" when `renamedAt` is after the event's `occurredAt`; the short id stays as secondary text with the full id as `title`. Category `Select` (`:367-381`) uses `auditCategoryOptionsFor(useCan('audit.read'))`. Intro (`:522-525`) and empty state (`:420-426`) without `audit.read`: "Content and screen events in this organisation: who changed what, and when." and the empty-state title "No content or screen events yet" with no body.
 - `features/audit/AuditDetailDialog.tsx` (`:83-87`): "Actor" shows the name and marks; "Membership ID" stays.
 - `features/dashboard/ActivityCard.tsx`: description (`:60`) "Content and screen events in this organisation." without `audit.read`; the actor (`:147`) is the name. No marks on the dashboard.
 
@@ -1459,14 +1479,14 @@ signOutMember(id: string): Promise<MemberSignOutResponse>;
   - `realm.users` (`:252`, today an assignment that replaces the template's users) becomes `realm.users = [...realm.users, ...devUsers]` with all five dev users, so the template's provisioning service-account user survives. Setup finds each client by `clientId` (not `realm.clients[0]`, `:244`); the realm's `tinnox-provisioning` client secret is filled from `.env`.
   - The report (`:318-336`) still prints the `operator` user, plus one line: "Other development users: org-admin, editor, viewer (`npm run otp -- --as admin|editor|viewer`)."
   - CI is unaffected: `.github/workflows/ci.yml:66,109` always runs a fresh setup.
-- **`infra/keycloak/realm-template.json`:** a second client `tinnox-provisioning`, after `tinnox-portal-bff` (confidential, `serviceAccountsEnabled: true`, `standardFlowEnabled: false`, `directAccessGrantsEnabled: false`, `implicitFlowEnabled: false`, `fullScopeAllowed: true` (not copied from the portal client's `false`, `:62`, which would leave the token without the realm-management role), secret marked FILLED like the portal client's), and in `users` (`:743`) its service-account user `service-account-tinnox-provisioning` with `serviceAccountClientId: "tinnox-provisioning"` and `clientRoles: { "realm-management": ["view-users"] }` only (read; no `manage-users`, which covers the whole realm).
+- **`infra/keycloak/realm-template.json`:** a second client `tinnox-provisioning`, after `tinnox-portal-bff` (confidential, `serviceAccountsEnabled: true`, `standardFlowEnabled: false`, `directAccessGrantsEnabled: false`, `implicitFlowEnabled: false`, `fullScopeAllowed: false` as on the portal client (`:62`), `defaultClientScopes` `basic` and `kc-admin-api` (the admin API audience), secret marked FILLED like the portal client's), a top-level `clientScopeMappings` entry that gives its tokens realm-management `view-users` only, and in `users` (`:743`) its service-account user `service-account-tinnox-provisioning` with `serviceAccountClientId: "tinnox-provisioning"` and `clientRoles: { "realm-management": ["view-users"] }` only (read; no `manage-users`, which covers the whole realm).
 - **`.env.example` (`:61-66`):** the three subjects and the two provisioning variables, each with a one-line comment.
 - **`scripts/seed.ts`:** `SEED` (`:25-42`) gets a `members` list per organisation (the table above; `subjectEnv`, `role`, `name`). In the existing transaction (`:49-85`), for each member: a row for the subject exists → note "membership already present" and leave its role; also `UPDATE membership SET display_name = $name WHERE id = $id AND display_name IS NULL` when the name is free. No row → `INSERT INTO membership (org_id, oidc_sub, role, display_name)`. "Free" means no row of the organisation has `lower(display_name) = lower($name)`, removed members included; otherwise the seed uses `` `${name} (${subject.slice(0, 8)})` ``, so a re-seed after `npm run setup -- --force` (new subjects, old rows kept, `:75-78`) never fails on `membership_org_display_name_key`. The literal `'operator'` at `:73` goes. The header (`:1-13`) says one member per role in organisation 1.
 - **`scripts/otp.mjs`:** `--as <operator|second|admin|editor|viewer>` picks the user (`second` = `secondOrgOperator`); `--second` stays as an alias; usage comment `:3-5` updated.
 - **`scripts/verify-oidc-login.mjs`:** the user argument (`:19-21`) and the subject map (`:175-176`) accept the five keys. New checks, all against the local Keycloak:
   1. the ID token carries a numeric `auth_time`;
   2. with the same cookie jar (a live Keycloak session), an authorization request with `prompt=login` answers with a login form (200 and a `#password` field), not a 302 with a code. Keycloak may hide the username during a re-authentication (unverified pending runtime), so the script posts `username` only when the form has `#username`. It waits for the next 30-second step before typing the code (Keycloak refuses a code twice, `tests/support/dev-identity.ts:51-53`; this script already used the current one). The new ID token's `auth_time` is later than the first one;
-  3. the provisioning client gets a token by `client_credentials`; `GET /admin/realms/{realm}/users?username=operator&exact=true` returns one user with an `email`; `POST /admin/realms/{realm}/users` answers 403.
+  3. the provisioning client gets a token by `client_credentials`; `GET /admin/realms/{realm}/users?username=operator&exact=true` returns one user with an `email`; `POST /admin/realms/{realm}/users` answers 403; and, read as the bootstrap admin, the service account's effective `realm-management` roles (composites included) are `view-users` and its composites (`query-users`, `query-groups`) only.
 - **`tests/support/dev-identity.ts:21`:** `DevUserName = 'operator' | 'secondOrgOperator' | 'admin' | 'editor' | 'viewer'`.
 - **`package.json`** (root scripts): `"provision": "tsx scripts/provision-member.ts"`.
 
@@ -1499,7 +1519,7 @@ Rules for every command:
 | `org-create --org-name <n> --timezone <IANA> [--site-name <n>] --owner <username>=<name> [--owner …] --request-ref <r> --executed-by <s>` (one or two owners) | IdP: each account exists and is enabled; usernames distinct. `withOrg(new uuid)`, lock; as the definer, refuse a subject that already has a membership anywhere. Insert `organization`, a `site` (required: `display.site_id` is NOT NULL and no route creates sites; default name "Main site"), one `owner` membership per `--owner` with its display name. `membership.create { role: 'owner', inviteId: null, reactivated: false, requestRef, executedBy, reason: 'org_create' }` per owner. Prints the ids |
 | `pending --executed-by <s>` | As the definer: expire every `pending` invite with `expires_at <= now()` (`status = 'expired'`; the guard clears name and e-mail) and write `invite.cancel { role, reason: 'expired', executedBy }` per invite; then list the pending invites of every organisation (id, `inviteReference`, organisation name, role, name, e-mail, created, expires) |
 | `fulfil <inviteId> --username <u> --confirmed-with <ref> --executed-by <s>` (`--username` is new to the record's form; there is no subject or role argument) | IdP: one enabled account; keep subject and e-mail. As the definer: the invite's `org_id`; any membership of the subject. `enterOrg`, lock, re-read the invite `FOR UPDATE` as the migrator. Refuse (invite stays pending, nothing written) when: not pending or expired; the IdP e-mail is empty or `lower(btrim)` differs from the invite's; the inviter is removed or `grantableRoles(inviterRole, 'invite')` lacks the invite's role; the subject has a membership row in any other organisation, removed or not (`UNIQUE (oidc_sub)`, `0001_schema.sql:61`; removed rows are never deleted); the subject is already an active member here. A removed row of the same subject here is reactivated: `role` and `display_name` from the invite, `removed_at`, `removed_by` and `first_signed_in_at` NULL, `sessions_valid_after` kept. Otherwise insert `membership (org_id, oidc_sub, role, display_name)`. A 23505 on `memberNameTaken`: "Name in use in this organisation; agree a different name with the requester." Mark the invite `fulfilled` with `fulfilled_membership_id`. `membership.create { role, inviteId, reactivated, requestRef: inviteReference(id), confirmedWith, executedBy }`. Prints membership id, organisation and role, never the e-mail |
-| `set-name (--membership <id> \| --username <u>) --name <name> --request-ref <r> --executed-by <s>` | Resolve the membership (definer read), `enterOrg`, lock. `UPDATE membership SET display_name = $2 WHERE id = $1 AND org_id = app_org_id() AND removed_at IS NULL` (0 rows: refuse). `membership.update { fields: ['displayName'], requestRef, executedBy }`. Used once for every existing member (D4 a) |
+| `set-name (--membership <id> \| --username <u>) --name <name> --request-ref <r> --executed-by <s>` | Resolve the membership (definer read), `enterOrg`, lock. `UPDATE membership SET display_name = $2 WHERE id = $1 AND org_id = app_org_id() AND removed_at IS NULL` (0 rows: refuse). Same name as now: no UPDATE, no audit, prints "nothing changed" (as PATCH step 2). A name a pending invite of the organisation holds: refused, as PATCH. `membership.update { fields: ['displayName'], requestRef, executedBy }`. Used once for every existing member (D4 a) |
 | `mfa-reset --username <u> --request-ref <r> --executed-by <s> [--confirmed-with <ref>]` | Staff have already reset the account at the IdP. Resolve the active membership, `enterOrg`, lock. When another active Owner or Admin exists, `--confirmed-with` is required. `sessionsEnded` from `sec.session_revoke_membership` (also sets the cut-off). `membership.mfa_reset { requestRef, executedBy, confirmedWith?, sessionsEnded }`. Reminds staff to sign the user out at the IdP |
 | `restore-owner --request-ref <r> --executed-by <s> --approved-by <s2> --promote <membershipId>` | Lost-owner break-glass, on a written request. The target is active and has signed in at least once. `UPDATE membership SET role = 'owner'`. `membership.role_change { from, to: 'owner', sessionsEnded: 0, invitesCancelled: 0, reason: 'owner_recovery', requestRef, executedBy, approvedBy }` |
 | `restore-owner --request-ref <r> --executed-by <s> --approved-by <s2> --successor <username>=<name> --replaces <membershipId>` | Nobody active is left except the old Owner. IdP read for the successor; the subject has no membership row anywhere, removed or not (as `org-create`); `--replaces` is the active Owner and the only active member. Insert the new `owner` membership **first** (so the trigger finds an Owner), then `removed_at = now()` (`removed_by` NULL) on the old one, cancel the old Owner's pending invites (`invite.cancel reason 'inviter_removed'`), end their sessions. `membership.create { …, reason: 'owner_recovery', approvedBy }` and `membership.remove { previousRole: 'owner', sessionsEnded, invitesCancelled, reason: 'owner_recovery', requestRef, executedBy, approvedBy }`. Reminds staff to disable the old IdP account |
@@ -1779,20 +1799,20 @@ Nobody runs the e2e suite or `verify:oidc`, starts or stops the dev stack, migra
 | "Last sign-in" column; purge of removed members' names | Not security-relevant; DEC-18 input needed | `auth.login` rows; `display_name` can be overwritten |
 | Per-action activity filter (show `player.revoke`, hide `pairing.lock`) | Category filter; Editors pair anyway | Split `ACTIVITY_CATEGORIES` into actions |
 
-Every `// shortcut:` this build adds: a push refused part-way answers 403 without the results so far (`routes/push.ts`); the activity filter works per category (`routes/audit.ts`); the permission-denied throttle is in memory, per process (`auth/permission-audit.ts`); the focus refresh is throttled to 10 s (`SessionContext.tsx`); read-only is decided at mount (`useCanAtMount`); 100 pending invites per organisation (`routes/members.ts`).
+Every `// shortcut:` this build adds: a push refused part-way answers 403 without the results so far (`routes/push.ts`); the activity filter works per category (`routes/audit.ts`); the permission-denied throttle is in memory, per process (`auth/permission-audit.ts`); the focus refresh is throttled to 10 s (`SessionContext.tsx`); read-only is decided at mount (`useCanAtMount`); 100 pending invites per organisation (`routes/members.ts`). Added during the build: the members list and the names list return at most `ABSOLUTE.maxListItems` (`routes/members.ts`); the invites table is not paged, and an invite's expiry is judged at render (`features/users/InvitesCard.tsx`); a session past the idle timeout is still counted in `sessionsEnded` (`sec.session_revoke_membership`, 0013); the e-mail address patterns copy `text.ts`'s, which it does not export (`packages/contracts/src/members.ts`); the identity-provider reader knows Keycloak's admin API only (`scripts/lib/idp.ts`).
 
 ---
 
 ## 13. Risks
 
 1. **Deploy order and stale tabs.** 0013 drops the five-argument `sec.session_create`, so an API from before 0013 cannot sign anyone in after it, and the new API cannot run before it. A portal tab on the previous build parses the session strictly (`apps/portal/src/api/client.ts:305`) and shows `invalid_response` until reloaded. Mitigation: the release note.
-2. **Keycloak and `prompt=login`** (unverified pending runtime, `verify:oidc` step 2). If Keycloak ignored `prompt=login` while its SSO cookie lives, the loop guard stops after one forced attempt (`reauth_failed`), and the person can sign in only after the Keycloak session ends (idle 30 minutes, `realm-template.json:28`) or staff end it. Cognito's `auth_time` and `prompt=login` are unverified (A3).
+2. **Keycloak and `prompt=login`** (verified against Keycloak 26.8.2 by `verify:oidc` on 2026-11-20: with a live Keycloak session, `prompt=login` shows the password form, then asks for a fresh one-time code, and the new ID token has a later `auth_time`). If Keycloak ignored `prompt=login` while its SSO cookie lives, the loop guard stops after one forced attempt (`reauth_failed`), and the person can sign in only after the Keycloak session ends (idle 30 minutes, `realm-template.json:28`) or staff end it. Cognito's `auth_time` and `prompt=login` are unverified (A3).
 3. **A write that skips the check.** 28 call sites change by hand. `write-guard.test.ts` counts them per file; `roles-matrix.test.ts` refuses every write for a Viewer.
 4. **42501 means 404.** A missing column grant would make every write answer 404 silently (`errors.ts:159-163`). `migration-0013` pins the grants; every integration file writes as an Owner.
 5. **Lock waits.** `tinnox_app` has `lock_timeout = 5s`: a write waiting longer on a member change answers 503. Member changes are short.
-6. **Clock skew** between Keycloak and PostgreSQL: a genuine re-authentication can look older than the cut-off by a second and be refused once (`reauth_failed` says sign in again).
+6. **Clock skew** between Keycloak and PostgreSQL: a genuine re-authentication can look older than the cut-off by a second and be refused once (`reauth_failed` says sign in again). In the other direction, a provider clock running ahead lets a sign-in made slightly before the cut-off through without `prompt=login`. Keep the provider and database hosts on synchronised time.
 7. **Routine provisioning as `tinnox_migrator`** (T14, now used daily); two staff ids are typed, not proven.
-8. **Display names unique including removed members:** a different person with a removed member's name needs another name at `fulfil` (the script says so). The same person coming back keeps their row and name.
+8. **Display names unique including removed members:** a different person with a removed member's name needs another name at `fulfil` (the script says so). The same person coming back keeps their row and name. A pending invite holds its name too: a rename (PATCH, `provision-member set-name`, the portal's Correct name) cannot take it, so the invite can still be fulfilled.
 9. Developer machines: new users need a Keycloak container recreate and a re-seed (setup prints the command). CI is fresh every run.
 
 ---
@@ -1863,6 +1883,41 @@ Every `// shortcut:` this build adds: a push refused part-way answers 403 withou
 
 ### Release note and rollback
 
-- Release note: **stop the API, migrate, then start the new API and portal together.** Every existing person becomes an Owner; nothing changes for them on the day. **Reload open portal tabs** after the deploy: a tab on the previous build cannot read the new session and says `invalid_response`. TINNOX names each existing member once with `npm run provision -- set-name …`; until then the portal shows the role label. Developers: `npm run setup`, recreate the Keycloak container (the command setup prints), `npm run db:migrate`, `npm run db:seed -- --second-org`.
-- Operations, in order: rebuild (`npm run build`); stop the API; apply 0013 (`npm run db:migrate`; ACCESS EXCLUSIVE on `membership` until commit, a moment on a small table); start the API and the portal; on the controlled host, run `provision-member set-name` for every existing member; run `verify:oidc` against the realm in use.
+- Release note: **stop the API, migrate, then start the new API and portal together.** Every existing person becomes an Owner; nothing changes for them on the day. People with no sign-in in roughly the last day before the update show "Not signed in yet" on the Users page until they next sign in, and cannot be made Owner until then. **Reload open portal tabs** after the deploy: a tab on the previous build cannot read the new session and says `invalid_response`. TINNOX names each existing member once with `npm run provision -- set-name …`; until then the account menu shows the role label, and the Users page "Unnamed person" with an 8-character reference. Developers: `npm run setup`, recreate the Keycloak container (the command setup prints), `npm run db:migrate`, `npm run db:seed -- --second-org`.
+- Operations, in order: rebuild (`npm run build`); stop the API; apply 0013 (`npm run db:migrate`; ACCESS EXCLUSIVE on `membership` and `session` until commit, a moment on small tables); start the API and the portal; on the controlled host, run `provision-member set-name` for every existing member; run `verify:oidc` against the realm in use.
 - Rollback: rolling 0013 back is not supported. Read from the code, not run: the previous API cannot sign anyone in on the migrated database (`sec.session_create` has six arguments), its `GET /api/session` would still answer `role: 'operator'` against a contract the new portal refuses, and its seed and test fixtures insert roles the new CHECK refuses. Roll forward instead. If the role check itself misbehaves, a hot fix can widen an entry in `ROUTE_PERMISSIONS` (one line) without a migration.
+
+## As built (2026-11-20)
+
+Built as specified above. The rows below record what differs and the details the spec left open. The Spec column is the spec as first written; where the build differs, the sections above now say what was built too. Checked at integration on 2026-11-20: `npm run typecheck`, `npm run lint`, `npm test` (89 files, 1918 tests), `npm run test:component` (14 files, 61 tests), `npm run test:integration` (39 files, 491 tests, the `_test` database rebuilt from 0001 to 0013), `npm run format:check`, `npm run build` and `npm run scan:secrets` all pass.
+
+**Verified against the real stack (2026-11-20):** after `npm run setup` and a Keycloak re-import, `npm run verify:oidc` passes for the operator, the second organisation's operator and the new Admin, Editor and Viewer users (`auth_time` in the ID token; `prompt=login` with a live Keycloak session asks for the password and a fresh one-time code; the provisioning reader reads one account, cannot create one and holds `view-users` only). `npm run test:e2e` passes, 143 tests in 15 files, `14-roles.spec.ts` included.
+
+**Not verified yet:** Cognito's `auth_time` and `prompt=login` (A3); a screen-reader pass of the Users page; production-sized tables for 0013's ACCESS EXCLUSIVE locks.
+
+| Topic | Spec | As built, and why |
+|---|---|---|
+| `sec.session_revoke_membership` cut-off (section 2) | Sets `sessions_valid_after` and revokes the live sessions | The cut-off is `greatest(sessions_valid_after, statement_timestamp())`: the start of the call, not of the transaction, so a sign-in at the provider while a people route waited for its locks is refused too, and `greatest()` never moves an existing cut-off back. Sessions past their absolute expiry are not revoked or counted; one past the idle timeout still is (`// shortcut:`, section 12). `scripts/revoke-subject-sessions.sql` sets the cut-off with the same `greatest()`. |
+| First sign-in of existing members (section 2, D4 a) | Only `sec.session_create` writes `first_signed_in_at` | 0013 also sets it once for existing members, from their earliest session row still kept, with `FORCE` lifted on `session` as well as `membership`, inside the transaction. Sessions are purged a day after they end, so a member with no kept row stays "Not signed in yet" until their next sign-in, and Owner promotion is refused until then: this fails closed, and they are Owners anyway after D4 a. The audit log is not read (`tinnox_app` can write it). The SQL above, the record (`stage-c-roles-decision.md`, escalation limits and the migration's `session_create` line) and the release note say so; 0013 holds ACCESS EXCLUSIVE on `membership` and `session`. |
+| `InviteEmailSchema` (section 3) | Length 3 to 254 and a name@domain shape | Also refuses control and text-direction characters, the same sets `text.ts` uses for labels (copied, `// shortcut:`): PostgreSQL text cannot hold NUL, and Owners, Admins and TINNOX staff read the address. |
+| A pending invite's name and renames (6.7, 7.4, 8.2, risk 8) | Invites check names against members; renames check members only | A rename cannot take a pending invite's name, because TINNOX fulfils the invite with its own name: `PATCH /api/members/:id` answers 409 `conflict` with path `displayName` before writing anything, `provision-member set-name` refuses, and the portal's Correct name field says "An invite waiting for TINNOX uses this name." |
+| Sign-in on a lock timeout (6.5) | 55P03 → `provider_unavailable` | The transaction rolled back, so the callback writes an unscoped `auth.login` failure row (reason `member_locked`) on its own, then redirects with `provider_unavailable` (control-matrix B11). |
+| 503 on a lock timeout in a write (1.6, 6.3) | 503 `service_unavailable`, `retry-after: 2` | As specified, with the message "Another change is being saved. Try again in a moment." |
+| `security.permission_denied` wording (7.5) | done "Refused by role", attempt "Request the role does not allow" | attempt "Request outside the person’s role", shown as "Request outside the person’s role refused" (every such row is `denied`); done "Refused by role". |
+| Audit page without `audit.read` (7.5) | Empty text "No content or screen events yet." | The empty state's title is "No content or screen events yet", with no body. |
+| Unnamed members on the Users page (7.4) | `memberName`: "Unnamed person" | `memberLabel`: "Unnamed person" plus an 8-character reference from the membership ID (as an invite's reference) in the name cell, the row menu label, search, and the dialogs' titles, bodies and toasts. After the upgrade every existing member is unnamed, so "Unnamed person" alone named several rows; role and first sign-in would not tell them apart either. The account menu still shows the role label. |
+| Correct name dialog (7.4) | Always "… The audit log marks the person as renamed." | The "renamed" sentence only when a set name is corrected; a first naming reads "The name shows here, in activity and in the audit log, for past events too.", because the trigger marks only a change of a set name. |
+| Unknown outcomes on the Users page (7.4) | Remove only: "may or may not have removed" and reload | The Role, Name, Sign out and Remove dialogs say the change "could not be confirmed" (never that it failed) and reload both lists. Remove's notices are titled "The removal could not be confirmed" and "The list was out of date". An invite or a cancellation with an unknown outcome is titled "The invite could not be confirmed" or "The cancellation could not be confirmed" and reloads. |
+| `set-name` with the same name (8.2) | Always updates and audits | Same name as now: no UPDATE, no audit row, prints "nothing changed" (as PATCH step 2), so a repeated run after an unknown commit outcome records nothing false. |
+| `verify:oidc` step 7 (8.1) | Token, exact-username read, POST refused | Also checks, as the bootstrap admin, that the provisioning reader's effective `realm-management` roles are `view-users` and its composites only. Passes against the recreated Keycloak 26.8.2 (2026-11-20). |
+| Provisioning reader client (8.1) | `fullScopeAllowed: true` | `fullScopeAllowed: false` (Keycloak deprecates full scope); `clientScopeMappings` give its tokens realm-management `view-users` only, and the default scope `kc-admin-api` adds the admin API audience Keycloak 26.8 requires. Found by running `verify:oidc`: with the spec's client (full scope, `basic` scope only) the reader's token was refused by the admin API (401); with this client the reader finds one account by exact username with its e-mail address and subject, cannot create one, and holds `view-users` and its composites only. |
+| `csrf_failed` recovery in the portal client (7.1) | One session refresh and one retry | The client keeps the token with the member and organisation it belongs to. When the refreshed session is another member or organisation (someone else signed in in this browser), the write is never resent as them: the client drops the token, so nothing more is sent, and the portal restarts. A focus refresh that finds another member drops the token before it restarts too (`apps/portal/README.md`). |
+| Names on the dashboard (7.5) | One `listMemberNames` per page load and Refresh | As specified: the dashboard reads names again on Refresh, not on its 15-second poll; within one Refresh it reads them again only when an event names a person the list does not know yet. |
+| List sizes (6.7) | No limit stated | The members list and the names list return at most `ABSOLUTE.maxListItems` (10 000; `// shortcut:` in `routes/members.ts`). The invites table is not paged (at most 100 pending) and judges expiry at render (`InvitesCard.tsx`). All in section 12. |
+| Texts a Viewer reads (7.2, 7.3) | The listed controls and notes | Texts outside the 7.2 and 7.3 tables no longer tell a Viewer to act: a screen's push state "Changes waiting" reads "… A push sends it."; an unpaired screen reads "No player holds a credential for this screen, so it receives no content."; the app editor's contrast warning and the media failure messages (page, list rows and tiles) keep the fact and drop the instruction for a read-only role; the screen's Overview heading is "Set in TINNOX CMS"; the dashboard's no-screens text names an editor for roles without `screen.setup`. "Reload the player page …" in the schedule and layout editors stays for every role: it is about the device. |
+| Component tests (9.5) | Per-file tests in headless Chromium | Every component test file first waits for its frame (`apps/portal/src/componentTests.setup.ts`, `setupFiles` in `vitest.config.ts`): the Vitest Playwright provider can look up the previous file's frame, and a first click or key then failed with "Frame was detached". Keyboard steps type into their own field. |
+| `tinnox_definer` grants (10, AGENTS.md §1) | The script-only `member_invite` read and `UPDATE (status)` | As specified; `AGENTS.md` and `.cursor/BUGBOT.md` §1 name both 0013 grants and that the invite read is script-only. |
+| Account menu button name (7.1) | `Account menu, {name}` | `{initials}, account menu for {name}`, so the name starts with the initials the button shows (WCAG 2.5.3, label in name). Found by the end-to-end accessibility pass (axe `label-content-name-mismatch`): the seeded two-word names put initials on the button that its name did not contain. On main the one-word name "Operator" gave one initial, too short for axe to judge, so the gap was hidden. |
+| Files owned by no package (11) | Not listed | `apps/portal/src/componentTests.setup.ts`, `testFrame.test-support.ts` and `vitest.config.ts` (frame wait); `features/displays/detail/OverviewTab.tsx` and its test, `lib/apps.ts`, `lib/mediaDetailFacts.ts`, `lib/mediaLibraryList.ts`, `features/media/library/MediaParts.tsx`, `features/media/detail/MediaPendingView.test.tsx`, `lib/screenStatus.ts`, `lib/status.ts`, `lib/screenStatusPush.ts`, `features/dashboard/ScreensCard.tsx` (Viewer texts); `features/playlists/editor/playlistEditor.css` (no grab cursor on a read-only tile). |
+
+**Review round (2026-11-20).** Eight lenses, each finding checked by a second reviewer told to refute it: 41 raw findings, 35 once duplicates were combined, no Critical, High or Medium survived. The record is `docs/reviews/2026-11-20-stage-c-review/README.md`; the fixes are in the rows above.

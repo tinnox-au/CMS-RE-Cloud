@@ -1,10 +1,10 @@
 # TINNOX CMS manual test plan
 
-Version of the software: `main` at the Layouts release (stage B, slice 4; migrations 0001 to 0012; player `player-web/0.5.0`). Written 2026-11-18; revised 2026-11-19 after the first manual run (`docs/reviews/2026-11-19-manual-user-test/`).
+Version of the software: the roles and people build (stage C, CMS-13; migrations 0001 to 0013; player `player-web/0.5.0`). Written 2026-11-18; revised 2026-11-19 after the first manual run (`docs/reviews/2026-11-19-manual-user-test/`), and 2026-11-20 for roles (section 18).
 
-This plan is for a person, not a script. You follow the steps in order, compare what you see with the **Expected** lines, and tick each box that matches. Anything that does not match goes into the issue log at the end (section 20). Nothing here is deployed anywhere: everything runs on your own computer with synthetic data.
+This plan is for a person, not a script. You follow the steps in order, compare what you see with the **Expected** lines, and tick each box that matches. Anything that does not match goes into the issue log at the end (section 21). Nothing here is deployed anywhere: everything runs on your own computer with synthetic data.
 
-Allow **about 3 hours** for the whole plan. Sections 1 to 10 are the core journey and take about 90 minutes; sections 11 to 19 can be done in any order after that.
+Allow **about 3 hours** for the whole plan. Sections 1 to 10 are the core journey and take about 90 minutes; sections 11 to 20 can be done in any order after that.
 
 ## How to use this plan
 
@@ -30,7 +30,7 @@ Allow **about 3 hours** for the whole plan. Sections 1 to 10 are the core journe
 - The README "Walkthrough" section uses old names ("Displays", "Publish to display"). This plan uses the current names.
 - The player shows **no "updating" indicator** while it downloads new content. Progress is visible only in the portal (Overview tab) and in the player's diagnostics overlay.
 - **Video always plays muted.** This is by design.
-- Tabs and settings marked **Planned** (Alerts, Advanced, Users and roles, Stock, Web page, Document, Audio) do nothing. They are not in scope.
+- Tabs and settings marked **Planned** (Alerts, Advanced, Stock, Web page, Document, Audio) do nothing. They are not in scope.
 - In the development mode used here, the player has **no offline reload**: if you reload the player page while its network is off, it will not load. Keep playing without reloading. (Offline reload exists only in the production build, `npm run start:built`.)
 - Status in the portal is what the **player software** reported. It is evidence, not proof of what a physical screen shows. The portal says so in several places on purpose.
 
@@ -46,6 +46,8 @@ Allow **about 3 hours** for the whole plan. Sections 1 to 10 are the core journe
 - About 15 minutes for this section the first time.
 
 ### T1.1 First-time setup (skip if the repository has been set up on this computer before)
+
+If this computer was set up before stage C (roles), run `npm run setup`, then the Keycloak recreate command it prints, then `npm run db:migrate` and `npm run db:seed -- --second-org`. Section 18 needs the `org-admin`, `editor` and `viewer` users this adds.
 
 Run these one at a time and wait for each to finish:
 
@@ -76,7 +78,7 @@ npm run fixtures
 Expected:
 
 - [ ] Every command ends without an error message. `npm run infra:up` ends with the three containers (postgres, keycloak, media-worker) reported healthy.
-- [ ] `npm run db:migrate` lists the applied migrations and ends at `0012`.
+- [ ] `npm run db:migrate` lists the applied migrations and ends at `0013`.
 - [ ] `npm run db:seed` prints two organisations: "TINNOX Internal" with the site "Melbourne Workshop" and "Isolation Test Organisation" with the site "Isolation Test Site".
 - [ ] `npm run fixtures` writes sample files into `apps/api/test-fixtures/out/` (you will see `landscape.jpg`, `portrait.png`, `h264.mp4`, `hevc.mp4` and others there).
 
@@ -90,7 +92,7 @@ Expected:
 
 - [ ] Three coloured prefixes appear in the terminal, `api`, `portal` and `player`, and none of them prints an error. The terminal keeps running (leave it open for the whole session; Ctrl+C stops everything).
 - [ ] Open http://localhost:4000/readyz in a browser: it shows a short JSON answer in which every item reads ready or true.
-- [ ] Open http://localhost:5173 : the sign-in page appears, with the heading **Operator sign-in**, a **Sign in** control and the note "Internal engineering prototype. Synthetic data only."
+- [ ] Open http://localhost:5173 : the sign-in page appears, with the heading **Sign in to TINNOX CMS**, a **Sign in** control and the note "Internal engineering prototype. Synthetic data only."
 
 Always use `localhost` in the address bar, never `127.0.0.1`.
 
@@ -106,7 +108,7 @@ In a **second terminal** at the repository root:
 npm run otp -- --show-password
 ```
 
-It prints the username (`operator`), the password and a six-digit one-time code with the seconds it is still valid for. The code changes every 30 seconds and each code is accepted once. If it says it is valid for fewer than 10 seconds, run the command again and use the new code.
+It prints the username (`operator`, the Owner of "TINNOX Internal", named "Dev Owner"), the password and a six-digit one-time code with the seconds it is still valid for. The other development users are printed with `npm run otp -- --as admin --show-password` (and `editor`, `viewer`, `second`); section 18 uses them. The code changes every 30 seconds and each code is accepted once. If it says it is valid for fewer than 10 seconds, run the command again and use the new code.
 
 - [ ] The command prints a username, a password and a one-time code.
 
@@ -148,7 +150,7 @@ Expected:
 - [ ] The Screens card shows "No screens yet".
 - [ ] The **Changes waiting** card reads "Nothing to push yet".
 - [ ] The **Library** card reads "0 media files" and "0 playlists" with a storage meter at 0.
-- [ ] **Recent activity** lists your sign-in: "Operator signed in".
+- [ ] **Recent activity** lists your sign-in: "Person signed in", by **Dev Owner**.
 
 ---
 
@@ -722,10 +724,10 @@ Expected:
 Sign out (account menu → **Sign out**). In the second terminal:
 
 ```bash
-npm run otp -- --second --show-password
+npm run otp -- --as second --show-password
 ```
 
-Sign in as `second-operator` with that password and code.
+Sign in as `second-operator` (the Owner of the second organisation, "Second Owner") with that password and code.
 
 Expected:
 
@@ -743,7 +745,7 @@ Expected:
 
 Open **Settings**.
 
-- [ ] Groups **Organisation** (name, read-only), **Content** (Media tags "1 tag", Screen tags "1 tag", Folders "1 folder", which opens the media library; the folders themselves, `Campaign B` with its file count, are listed at the bottom of the Media tags page), **Security** (Audit log; Sign-in and MFA "Identity provider") and **Planned** (Users and roles, Working hours, Alerts, API tokens), each Planned row saying which stage it is planned for.
+- [ ] Groups **Organisation** (name, read-only), **Content** (Media tags "1 tag", Screen tags "1 tag", Folders "1 folder", which opens the media library; the folders themselves, `Campaign B` with its file count, are listed at the bottom of the Media tags page), **People** (Users, "4 people", which opens the Users page; shown to Owners and Admins only), **Security** (Audit log; Sign-in and MFA "Identity provider") and **Planned** (Working hours, Alerts, API tokens), each Planned row saying which stage it is planned for.
 
 ### T17.2 Tags page
 
@@ -760,21 +762,59 @@ Open **Media tags**.
 Open the account menu → **Audit log**.
 
 - [ ] The intro says records cannot be edited or deleted through the application. Columns: Time, Action, Result, Actor, Object, Detail. Newest first.
-- [ ] The log contains, in plain words, the journey you did: "Operator signed in", "Screen added", "Pairing code accepted for screen", "Player paired with screen", "Media uploaded", "Media checked and ready", "Playlist created", "Pushed to screen", "Schedule created", "Layout created", "Player revoked on screen", "Player unpaired itself from screen". Actors read **Operator** or **Player software**.
+- [ ] The log contains, in plain words, the journey you did: "Person signed in", "Screen added", "Pairing code accepted for screen", "Player paired with screen", "Media uploaded", "Media checked and ready", "Playlist created", "Pushed to screen", "Schedule created", "Layout created", "Player revoked on screen", "Player unpaired itself from screen". Actors read the person's name (**Dev Owner**) or **Player software**.
 - [ ] **Category → Pushes to screens** leaves only pushes. Then choose **Category → Pairing** and **Result → Refused**: the wrong pairing code from T8.2 is listed. Press **Clear filters**. The deletes refused in T6.6, T11.4 and T12.6 are not listed: a request that changes nothing writes no audit event.
 - [ ] Open a row's **Detail**: a dialog with Time, Exact time (UTC), Action, Result, Actor, Object and the recorded detail as text; no password, token or URL appears in any detail.
 - [ ] **Load older events** at the bottom ends with "This is the first recorded event."
 
 ---
 
-## 18. Layout and keyboard checks (portal)
+## 18. Roles: one pass per role
 
-### T18.1 Narrow window and dark mode
+Four people are seeded in "TINNOX Internal", one per role: `operator` (Owner, "Dev Owner"), `org-admin` (Admin, "Dev Admin"), `editor` (Editor, "Dev Editor") and `viewer` (Viewer, "Dev Viewer"). For each pass, sign out, then sign in as that user with `npm run otp -- --as <user> --show-password`, where `<user>` is `operator` (the Owner), `admin`, `editor` or `viewer`. Hidden controls are a convenience; the API refuses the same actions anyway.
+
+### T18.1 Viewer (`viewer`)
+
+- [ ] The header shows no **Push to screens** button; while screens have changes waiting it shows a chip "N screens waiting" that leads to the dashboard. The dashboard has no **Get set up** card.
+- [ ] Media has no **Add media**; Playlists, Schedules, Layouts and Apps have no create button and no delete in their row menus; Screens has no **Add screen**, no row menu and no selection.
+- [ ] Opening a playlist shows "You can view this playlist. Editors make changes." with no Save; nothing on the page can be changed. A media file, an app, a schedule and a layout say the same for their kind.
+- [ ] On a screen's page there is no **Push to this screen** and no Pair or Revoke; the Canvas, Pairing, Tags and Working hours tabs are read-only with a one-line note. Pressing Enter in the Canvas tab's Width changes nothing.
+- [ ] Opening http://localhost:5173/screens/new and http://localhost:5173/users shows **Your role doesn't allow this** with **Go to dashboard**. The account menu has no **Users**.
+- [ ] The audit log reads "Content and screen events in this organisation: who changed what, and when.", and its Category list has no "Sign-in and sign-out", "Security", "Invites" or "People".
+
+### T18.2 Editor (`editor`)
+
+- [ ] Create a playlist, add a file and push it to `Reception TV`: everything works as in sections 6 and 9.
+- [ ] **Add screen** and the Pairing tab are available (Editors set up and pair screens).
+- [ ] http://localhost:5173/users shows **Your role doesn't allow this**; the account menu has no **Users**; the audit log has no People category.
+
+### T18.3 Admin (`org-admin`)
+
+- [ ] Account menu → **Users**: the People table lists the four seeded people with their roles. The Owner's row has no actions, and a line says "Only an Owner can change or remove Admins and Owners."
+- [ ] **Invite person** offers Viewer and Editor only. Invite `Test Person`, a made-up address such as `test.person@example.com`, as a Viewer: the Pending invites card shows "Waiting for TINNOX" and a short reference.
+- [ ] Cancel that invite: the confirm offers **Keep invite** and **Cancel invite**; after **Cancel invite** the row is gone.
+- [ ] The audit log has every category, including Invites and People, and lists "Invite requested" and "Invite cancelled" by **Dev Admin**.
+
+### T18.4 Owner (`operator`)
+
+- [ ] **Users** → **Invite person** also offers Admin. Cancel the dialog.
+- [ ] In another browser (or a private window), sign in as `editor` and open a playlist. As the Owner, open the Editor's row menu → **Change role** → **Viewer**: the dialog says the person "is signed out everywhere now". Press **Make Viewer**: a toast says "Dev Editor is now a Viewer".
+- [ ] In the Editor's window, the next action shows "Your session has ended". Sign in again: Keycloak asks for the password and a fresh one-time code, although its own session is still alive. The playlist now opens read-only.
+- [ ] As the Owner, make that person an **Editor** again. In their window, reload: the **Push to screens** button is back.
+- [ ] Row menu of the Editor → **Sign out everywhere**: confirm. In the Editor's window the next action shows "Your session has ended", and signing in asks for the password and code again.
+- [ ] Open your own row: it has a "You" badge and no actions (nobody changes their own role or removes themselves).
+- [ ] At the end the four seeded people have their seeded roles again (the Editor is an Editor).
+
+---
+
+## 19. Layout and keyboard checks (portal)
+
+### T19.1 Narrow window and dark mode
 
 - [ ] Make the portal window narrow (under 900 px wide, or use the browser's device toolbar at 390 px): the sidebar becomes a drawer behind an **Open navigation** button; pages (Screens, Media, the schedule editor) show no sideways scrolling; the event rows and zone fieldsets stack.
 - [ ] Switch your operating system (or browser) to dark mode: the portal follows, text stays readable, and the status pills keep their meaning.
 
-### T18.2 Keyboard only
+### T19.2 Keyboard only
 
 With the mouse put aside, on the **Schedules** list:
 
@@ -784,7 +824,7 @@ With the mouse put aside, on the **Schedules** list:
 
 ---
 
-## 19. Shut down
+## 20. Shut down
 
 - [ ] In the first terminal press Ctrl+C: the api, portal and player stop. The containers keep running; `npm run infra:down` stops them (data is kept).
 - [ ] To start again later: `npm run dev` only.
@@ -792,7 +832,7 @@ With the mouse put aside, on the **Schedules** list:
 
 ---
 
-## 20. Results
+## 21. Results
 
 ### Summary
 
@@ -815,8 +855,9 @@ With the mouse put aside, on the **Schedules** list:
 | 15 Revoke and reset | | 10 | |
 | 16 Second organisation | | 5 | |
 | 17 Settings, tags, audit | | 11 | |
-| 18 Layout and keyboard | | 5 | |
-| 19 Shut down | | 3 | |
+| 18 Roles | | 20 | |
+| 19 Layout and keyboard | | 5 | |
+| 20 Shut down | | 3 | |
 
 Tester: ______________________  Date: ____________  Browser and version: ______________________  OS: ______________________
 

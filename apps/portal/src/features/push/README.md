@@ -23,7 +23,7 @@ const { plan, planError, pendingCount, refresh, openDialog } = usePush();
 | `planError` | `unknown` | Why the latest read failed, or `null`. `plan` is then the last good answer |
 | `pendingCount` | `number \| null` | Screens with changes waiting (never pushed counts). `null` while not known |
 | `refresh()` | `() => void` | Reads the plan again now; does nothing while the dialog is open (the dialog reads the plan itself). Call it after any save that can change what is waiting: a playlist or a schedule saved, content assigned or removed, a screen's canvas changed, media deleted |
-| `openDialog(request?)` | `(request?: PushRequest) => void` | Opens the dialog |
+| `openDialog(request?)` | `(request?: PushRequest) => void` | Opens the dialog. Does nothing without `push.publish`: the dialog never opens for a role that cannot push |
 | `openPush`, `refreshPending` | | The same two functions under their earlier names; the header button uses `openPush` |
 
 ```ts
@@ -47,6 +47,7 @@ The words for a push state come from one place, `lib/screenStatusPush.ts` (`pres
 
 ## How it behaves
 
+- Roles (stage C): the dialog opens only with `push.publish`. The plan poll (`GET /api/push`) runs for every role and feeds the waiting count. Without `push.publish` the header shows a chip "N screens waiting" (`push-waiting`) that links to the dashboard, instead of the "Push to screens" button; on a phone the chip shows only the clock and the number. If the key is lost while the dialog is open, it stays open until the person closes it, so its refusal shows; it drops its push button then. A push refused part-way by a role change is titled "Your role changed during the push": screens pushed before the change keep their new version, the others were not pushed, and there is no retry.
 - The plan is read when the shell mounts, every 30 seconds while the tab is visible, when the tab becomes visible after a longer pause, and on `refresh()`. While the dialog is open the timer rests: the dialog reads a fresh plan when it opens and after every push, so rows do not move under the operator's hands.
 - Each row names what the screen has assigned: the playlist's name (with a visually hidden "Playlist: " before it), or a calendar icon and the visible text "Schedule: {name}" for a screen with a schedule, a layout icon and "Layout: {name}" for a screen with a layout, or "Nothing assigned". Search matches the screen, the playlist, the schedule's and the layout's name. A blocked row links to what must be fixed: "Open playlist", "Open schedule" (`/schedules/:id`) or "Open layout" (`/layouts/:id`, issue paths `zones[n]`, `zones[n].playlist`, `zones[n].items[k]`, `layout`), for a scheduled screen whose issue paths name the place in the schedule (`default.playlist`, `default.items[n]`, `events[n].playlist`, `events[n].items[n]`, `schedule`) and whose messages name the playlist ("In playlist “Lunch”: …").
 - The group texts and result lines say "the assigned content", "content assigned", "assign a playlist, a schedule or a layout" and "nothing is assigned", never "the assigned playlist": a group can hold screens of both kinds.

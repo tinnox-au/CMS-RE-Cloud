@@ -31,7 +31,18 @@ listens on 127.0.0.1 only and proxies `/api` to the API, so the session cookie i
 - The CSRF token from `GET /api/session` is held in a closure in memory (`src/api/client.ts`).
   Nothing is written to `localStorage`, `sessionStorage`, IndexedDB or a cookie by the portal.
 - State-changing requests carry `X-CSRF-Token`. A `csrf_failed` answer triggers one session
-  refresh and one retry. Any `401` returns the operator to the sign-in screen.
+  refresh and one retry, only when the refreshed session is still the same member of the same
+  organisation. When someone else signed in in this browser meanwhile, the write is never sent
+  again as them: the client drops the token, so no write goes out, and the portal starts again.
+  Any `401` returns the person to the sign-in screen.
+- Roles (stage C, `docs/portal-v2/stage-c.md` section 7): the portal reads
+  `session.user.permissions`, never role names, except for the rank rule on the Users page.
+  `useCan(key)` hides a control the role lacks (hidden, not disabled); editors decide read-only
+  once, at mount (`useCanAtMount`). Hiding is a convenience; the API decides every request. A
+  `403 forbidden` shows the API's "Your role doesn't allow this." without "Try again" and
+  refreshes the session silently, so the router (and any draft) stays mounted. The session is
+  also refreshed when the window gets focus or becomes visible, at most every 10 s; a refresh
+  that finds another member or organisation restarts the portal.
 - Content reaches a screen in two steps (decision P2-05): a playlist, a schedule or a layout is
   assigned to a screen (at most one; assigning one takes the others off), then "Push
   to screens" (`POST /api/push`) builds one immutable publication per chosen screen. A
@@ -54,9 +65,10 @@ src/App.tsx     session gate and route table (docs/portal-v2/stage-a.md, section
                 page module is loaded on first visit and is its own bundle
 src/api         client (CSRF, 401, errors), typed endpoints, XHR upload
 src/hooks       useLoad: loading, polling while the tab is visible, keeping data on refresh errors
-src/session     session state
+src/session     session state; useCan and useCanAtMount (AuthenticatedSession.tsx)
 src/shell       the application frame: sidebar, page header, Page and EditorPage, account
-                menu, push button, navigation data (nav.ts), sign-in and error screens
+                menu, push button, navigation data (nav.ts), sign-in and error screens,
+                RequirePermission and ForbiddenPage ("Your role doesn't allow this")
 src/ui          the component kit; API reference in src/ui/README.md
 src/styles      tokens.css, base.css and one file per component group, imported by index.css;
                 light and dark via prefers-color-scheme; one system-first typeface with self-hosted Inter
@@ -68,7 +80,9 @@ src/features    one folder per area, each with its routed page(s), parts and one
                 a bottom band with a preview on a screen shape),
                 displays (list/, wizard/, detail/: the operator's "Screens" under /screens),
                 push (PushProvider and the push dialog), settings (settings and tags),
-                audit, planned, shared (parts several pages use: tags, folders,
+                users (people, invites, role, name, sign-out and remove dialogs under
+                /users, for member.read), audit, planned (sections not built yet; no
+                longer /users), shared (parts several pages use: tags, folders,
                 thumbnails, pickers, status pills, leave guard; see its README.md) and
                 styleguide (the component gallery, development builds only)
 src/lib         pure logic with unit tests beside it (node, no DOM): list view, selection,

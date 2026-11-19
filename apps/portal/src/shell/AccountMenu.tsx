@@ -1,4 +1,5 @@
 import { ROLE_LABELS } from '@tinnox/domain';
+import { initials } from '../lib/initials.ts';
 import { useSession } from '../session/AuthenticatedSession.tsx';
 import { Avatar, Menu, MenuHeader, MenuItem, MenuSeparator } from '../ui/index.ts';
 import { LogOut } from '../ui/icons.ts';
@@ -46,7 +47,9 @@ export function AccountMenu({ showOrganisation = false }: AccountMenuProps) {
           type="button"
           className="tx-account-button"
           data-testid="account-menu"
-          aria-label={`Account menu, ${name}`}
+          // The name starts with the initials the button shows (WCAG 2.5.3, label in name), so a
+          // speech-input user can say what they see.
+          aria-label={`${initials(name)}, account menu for ${name}`}
           aria-busy={signOut.busy || undefined}
         >
           {signOut.busy ? (

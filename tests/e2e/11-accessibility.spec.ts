@@ -3,7 +3,7 @@
  * its key dialogs, in light and dark. Fails on serious or critical problems only. This guards
  * what the pages already do; it does not replace a pass with a real screen reader.
  * Data is set up through the API: one image, one app, one playlist, one schedule, one layout,
- * one screen.
+ * one screen. The people on Users are the seeded members.
  */
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
@@ -103,6 +103,7 @@ const PAGES: readonly (readonly [string, () => string, string | RegExp])[] = [
   ['add screen', () => '/screens/new', /screen/i],
   ['settings', () => '/settings', 'Settings'],
   ['tags', () => '/settings/tags', /Tags/],
+  ['users', () => '/users', 'Users'],
   ['audit', () => '/audit', /Activity|Audit/],
 ];
 
@@ -152,6 +153,18 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.getByRole('menuitem', { name: 'Remove content' })).toBeVisible();
       await expectAccessible(page, `screen page Change menu (${scheme})`);
       await page.keyboard.press('Escape');
+    });
+
+    test('the Users page invite dialog', async () => {
+      // The operator is the seeded Owner, so the dialog offers every role it can invite.
+      const page = operator.page;
+      await open('/users', 'Users');
+      await page.getByTestId('users-invite').click();
+      await expect(page.getByTestId('users-invite-dialog')).toBeVisible();
+      await expect(page.getByTestId('users-invite-role-admin')).toBeVisible();
+      await expectAccessible(page, `invite dialog (${scheme})`);
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('users-invite-dialog')).toBeHidden();
     });
   });
 }

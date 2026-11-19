@@ -131,6 +131,7 @@ interface TagPickerProps {
   onChange: (tagIds: readonly string[]) => void; // the complete new list; nothing is saved
   label?: string; // accessible name of the group; default "Tags"
   disabled?: boolean;
+  allowCreate?: boolean; // offer "Create tag"; default true. Pass useCan('content.write') for media tags, useCan('screen.setup') for screen tags
   collapsible?: boolean; // chips plus an "Add or remove tags" button that opens the list; default false
   testId?: string; // default 'shared-tag-picker'
   className?: string;
@@ -146,7 +147,7 @@ interface TagPickerProps {
 // then: api.patchMedia(id, { tagIds: [...draft.tagIds] })  or  api.patchDisplay(id, { tagIds: [...] })
 ```
 
-The chosen tags as removable chips, then a search field over a list with ticks. Keyboard: type to search, Arrow Up and Down move through the list, Enter turns the tag on or off, Escape clears the search (the ARIA combobox pattern; focus stays in the field). When the typed name is not a tag yet, the list offers "Create tag “name”" and a row of eight colour swatches appears (radio buttons named Teal, Sky, Slate, Green, Amber, Red, Violet, Pink; the least used colour is proposed). Enter, the list row or the "Create tag" button creates it and adds it to `value`. A refusal by the server is shown under the list with its message and error code (for example `conflict` when someone took the name a moment ago) and the list is reloaded. A name over 40 characters or with control characters is refused before sending. One item carries at most 50 tags; at the limit the other tags are disabled.
+The chosen tags as removable chips, then a search field over a list with ticks. Keyboard: type to search, Arrow Up and Down move through the list, Enter turns the tag on or off, Escape clears the search (the ARIA combobox pattern; focus stays in the field). When the typed name is not a tag yet, the list offers "Create tag “name”" and a row of eight colour swatches appears (radio buttons named Teal, Sky, Slate, Green, Amber, Red, Violet, Pink; the least used colour is proposed). Enter, the list row or the "Create tag" button creates it and adds it to `value`. A refusal by the server is shown under the list with its message and error code (for example `conflict` when someone took the name a moment ago) and the list is reloaded. A name over 40 characters or with control characters is refused before sending. One item carries at most 50 tags; at the limit the other tags are disabled. With `allowCreate={false}` (a role that may tag but not create tags) there is no "Create tag" row, button or Enter path, and the field reads "Search tags".
 
 Test ids (with the default `testId`): `shared-tag-picker`, `-chosen`, `-toggle` (collapsible), `-checklist`, `-checklist-search`, `-checklist-list`, `-checklist-create` (the list row), `-checklist-colours`, `-checklist-create-button`. Each option carries `data-tag-id` and `data-state` (`all`, `some`, `none`).
 
@@ -161,6 +162,7 @@ interface TagsDialogProps {
   items: readonly TagsDialogItem[]; // one or many; read when the dialog opens
   tags: TagsResource; // its scope decides what is saved: 'media' → patchMedia, 'display' → patchDisplay
   onSaved?: (updatedIds: readonly string[]) => void; // per attempt that changed at least one item
+  allowCreate?: boolean; // as on TagPicker; default true
   testId?: string; // default 'shared-tags-dialog'
 }
 ```
@@ -175,7 +177,7 @@ const [tagTarget, setTagTarget] = useState<readonly MediaDto[] | null>(null);
   items={tagTarget ?? []} tags={tags} onSaved={() => reload()} />
 ```
 
-The same searchable list as `TagPicker`, with tag creation. One item: its tags are ticked. Several items: a tag on all of them is ticked, a tag on some shows a dash and "Some" and is left as each item has it unless it is pressed (first press: on all; second: off all). "Save tags" sends one `PATCH` per item whose tags actually change, one after another, with "Saving 2 of 5" in the footer; the dialog cannot be dismissed meanwhile. All saved: it calls `onSaved`, closes, and raises the toast "Tags saved for 3 files" (or "… screens", or the item's name). Some failed: it stays open and lists each failed item with the server's message and error code, says what was saved, and offers "Try again" for the failed ones only. It reloads `tags` after every attempt.
+The same searchable list as `TagPicker`, with tag creation. One item: its tags are ticked. Several items: a tag on all of them is ticked, a tag on some shows a dash and "Some" and is left as each item has it unless it is pressed (first press: on all; second: off all). "Save tags" sends one `PATCH` per item whose tags actually change, one after another, with "Saving 2 of 5" in the footer; the dialog cannot be dismissed meanwhile. All saved: it calls `onSaved`, closes, and raises the toast "Tags saved for 3 files" (or "… screens", or the item's name). Some failed: it stays open and lists each failed item with the server's message and error code, says what was saved, and offers "Try again" for the failed ones only. After a refusal by role (`isRoleRefusal`: 403 "Your role doesn't allow this.") there is no "Try again", because every retry would be refused the same way; only Close is left. It reloads `tags` after every attempt.
 
 Test ids: `shared-tags-dialog`, `-save`, `-retry`, `-checklist…` (as in `TagPicker`).
 
@@ -217,6 +219,7 @@ interface MoveToFolderDialogProps {
   items: readonly MoveToFolderItem[]; // one or many media items; read when the dialog opens
   folders: FoldersResource;
   onMoved?: (movedIds: readonly string[], folderId: string | null) => void; // per attempt that moved at least one
+  allowCreate?: boolean; // the "New folder" button; default true; pass useCan('content.write')
   testId?: string; // default 'shared-move-dialog'
 }
 ```
@@ -226,7 +229,7 @@ interface MoveToFolderDialogProps {
   items={moveTarget ?? []} folders={folders} onMoved={() => reload()} />
 ```
 
-A radio list: "Library root" and every folder with its file count, a search field from nine folders up, and "New folder" (the new folder becomes the choice). When all items are in one place the dialog starts on it. "Move here" sends `patchMedia(id, { folderId })` for each item that is not there already, one after another; it is soft-disabled, with a note, when nothing would move. All moved: `onMoved`, close, toast "3 files moved to Promotions". Some failed: the same failure list and "Try again" as `TagsDialog`. It reloads `folders` after every attempt. Enter on a chosen radio confirms.
+A radio list: "Library root" and every folder with its file count, a search field from nine folders up, and "New folder" (the new folder becomes the choice). When all items are in one place the dialog starts on it. "Move here" sends `patchMedia(id, { folderId })` for each item that is not there already, one after another; it is soft-disabled, with a note, when nothing would move. All moved: `onMoved`, close, toast "3 files moved to Promotions". Some failed: the same failure list and "Try again" as `TagsDialog`, and the same rule: no "Try again" after a refusal by role. It reloads `folders` after every attempt. Enter on a chosen radio confirms. `AssignToScreens` (`features/playlists/list/`) hides "Try again" after a refusal by role in the same way.
 
 Test ids: `shared-move-dialog`, `-root`, `-folder` (each folder radio), `-search`, `-new`, `-new-form…`, `-confirm`, `-retry`.
 
@@ -482,6 +485,16 @@ function elementByTestId(testId: string): () => HTMLElement | null;
 
 For delete dialogs (media, playlists, tags). The order is read when the dialog opens. When the control that opened it has gone, focus goes to the "Actions for …" button of the row after the deleted one, else the row before, else `primary()`; after a bulk delete to the first remaining row's actions button, else the select-all checkbox, else `primary()`. The choice of neighbour is `rowFocusCandidates` in `lib/rowFocus.ts` (unit-tested).
 
+## ReadOnlyNote
+
+```tsx
+import { ReadOnlyNote } from '../shared/ReadOnlyNote.tsx'; // by its file path, not through index.ts
+
+{readOnly && <ReadOnlyNote>You can view this playlist. Editors make changes.</ReadOnlyNote>}
+```
+
+One info `Banner`, first in the body of an editor (or a section of the screen page) that the signed-in role opens read-only (`docs/portal-v2/stage-c.md` section 7.3). One line: what the person can do here and who makes changes, never an instruction to act.
+
 ---
 
 ## Pure logic (src/lib, unit-tested, no DOM)
@@ -499,4 +512,4 @@ For delete dialogs (media, playlists, tags). The order is read when the dialog o
 
 ## Internal parts (not exported from index.ts)
 
-`TagChecklist` (the list behind `TagPicker` and `TagsDialog`), `NewFolderForm`, `PickRow` and `PickRowSkeletons` (the rows of the picker lists), `BulkFailures` (the failure list), `PreviewThumb` (in `MediaThumb.tsx`), `useLoadWhileOpen` (loads for a dialog, afresh per opening), `useNearViewport`, `useSettledFocus`. Import them by file path only if a page needs the same behaviour; prefer the exported parts.
+`TagChecklist` (the list behind `TagPicker` and `TagsDialog`; both pass it their `allowCreate`), `NewFolderForm`, `PickRow` and `PickRowSkeletons` (the rows of the picker lists), `BulkFailures` (the failure list), `PreviewThumb` (in `MediaThumb.tsx`), `useLoadWhileOpen` (loads for a dialog, afresh per opening), `useNearViewport`, `useSettledFocus`. Import them by file path only if a page needs the same behaviour; prefer the exported parts.

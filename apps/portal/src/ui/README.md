@@ -973,9 +973,9 @@ push.refresh();
 
 | Export | Use |
 |---|---|
-| `PRIMARY_NAV` | The sidebar, top to bottom: links and the Media group. An item is `{ kind: 'link', id, label, to, icon, planned? }` or `{ kind: 'group', id, label, icon, children }` |
+| `PRIMARY_NAV` | The sidebar, top to bottom: links and the Media group. An item is `{ kind: 'link', id, label, to, icon, planned?, permission? }` or `{ kind: 'group', id, label, icon, children }` |
 | `FOOTER_NAV` | The sidebar's bottom list: Settings |
-| `ACCOUNT_NAV` | The account menu above "Sign out": Settings, Users, Audit log |
+| `ACCOUNT_NAV` | The account menu above "Sign out": Settings, Users (only with `member.read`: `AccountMenu` skips an item whose `permission` the session lacks), Audit log (for everyone; filtered to content and screen events without `audit.read`) |
 | `activeNavId(pathname)` | The id of the sidebar link that is current. The deepest match wins, so `/media/<id>` is All media and `/settings/tags` is Settings; `null` for `/audit` and `/users` |
 | `activeGroupId(pathname)` | The group that holds the current link (`media` on every media route) |
 | `navItemName(item)` | The entry's name with "(planned)" where it applies, for tooltips |
@@ -991,11 +991,13 @@ push.refresh();
 |---|---|
 | `AppShell.tsx` | The frame above. Owns sign-out (the M0 behaviour: one attempt at a time, a failure is shown by the page frame as an alert titled "Sign-out did not complete"), the drawer, the collapsed state, scroll-to-top on navigation, and a hidden live region that names the page after a navigation |
 | `Sidebar.tsx` | The navigation. The Media group opens on every navigation to a media route. Collapsed, entries are icons with tooltips and Media opens as a menu. Under 900 px it is a modal `<dialog>` drawer: Escape, the backdrop and its close button return focus to the header's menu button; choosing a link moves focus to `main` |
-| `AccountMenu.tsx` | The avatar button and its menu: name and role, Settings, Users, Audit log, Sign out |
-| `PushButton.tsx` | The primary "Push to screens" pill with the pending count |
+| `AccountMenu.tsx` | The avatar button and its menu: name and role (the role alone for a member TINNOX has not named yet), Settings, Users (only with `member.read`), Audit log (for everyone, filtered without `audit.read`), Sign out |
+| `PushButton.tsx` | The primary "Push to screens" pill with the pending count; without `push.publish`, a chip "N screens waiting" that links to the dashboard (on a phone, only the clock and the number show) |
 | `PageHeader.tsx` | The header and `main` shared by the two frames. Pages do not use it directly |
 | `Screens.tsx` | Screens without the shell: `SignInScreen`, `SessionCheckingScreen`, `SessionErrorScreen`, `RouteError` (the router's error element), and `RouteLoading` (the placeholder while a page's code loads on first visit) |
 | `NotFoundPage.tsx` | The page for an unknown address |
+| `ForbiddenPage.tsx` | "Your role doesn't allow this": a page inside the shell, in place of one the member's role does not open, with "Go to dashboard" |
+| `RequirePermission.tsx` | `RequirePermission({ permission, children })`: the page with the key, `ForbiddenPage` without it. Guards `/users` (`member.read`) and `/screens/new` (`screen.setup`). `App.tsx` exports `routes`, so `RequirePermission.test.tsx` renders the guarded routes from the real route table. A refusal by role from the API is recognised with `isRoleRefusal` (`api/client.ts`) |
 | `Wordmark.tsx` | The text brand mark; `compact` shows the square "T" |
 | `ShellContext.ts` | `useShell()`: `drawerMode`, `navOpen`, `openNav`, `signOut`, `announcePage`. For the shell's own components |
 | `useDocumentTitle.ts`, `useMediaQuery.ts` | Small hooks used by the frames and the shell |
@@ -1012,7 +1014,7 @@ Routes are declared in `App.tsx` with the `page(path, load, render)` helper: eac
 | `/playlists` | `features/playlists/PlaylistsPage.tsx` | `PlaylistsPage` |
 | `/playlists/:id` | `features/playlists/PlaylistEditorPage.tsx` | `PlaylistEditorPage` |
 | `/screens` | `features/displays/DisplaysPage.tsx` | `DisplaysPage` |
-| `/screens/new` | `features/displays/DisplayWizardPage.tsx` | `DisplayWizardPage` |
+| `/screens/new` | `features/displays/DisplayWizardPage.tsx` | `DisplayWizardPage` (inside `RequirePermission permission="screen.setup"`) |
 | `/screens/:id` | `features/displays/DisplayDetailPage.tsx` | `DisplayDetailPage` (tab in `?tab=`) |
 | `/screens/:id/edit` | `App.tsx` | redirect to `/screens/:id?tab=canvas` |
 | `/displays`, `/displays/*` | `App.tsx` | redirect to the same path under `/screens`, keeping the query and fragment |
@@ -1025,7 +1027,8 @@ Routes are declared in `App.tsx` with the `page(path, load, render)` helper: eac
 | `/schedules/:id` | `features/schedules/ScheduleEditorPage.tsx` | `ScheduleEditorPage` (`ScheduleEditor`: details, default playlist, the ordered list of weekly events, delete) |
 | `/layouts` | `features/layouts/LayoutsPage.tsx` | `LayoutsPage` (search, create dialog, delete) |
 | `/layouts/:id` | `features/layouts/LayoutEditorPage.tsx` | `LayoutEditorPage` (`LayoutEditor`: details, band height, one fieldset per zone, preview on a screen shape, delete) |
-| `/media/audio`, `/media/documents`, `/media/web-pages`, `/users` | `features/planned/PlannedPage.tsx` | `PlannedPage({ section })` |
+| `/users` | `features/users/UsersPage.tsx` | `UsersPage` (inside `RequirePermission permission="member.read"`) |
+| `/media/audio`, `/media/documents`, `/media/web-pages` | `features/planned/PlannedPage.tsx` | `PlannedPage({ section })` |
 | (provider, no route) | `features/push/PushContext.tsx` | `PushContext`, `PushProvider`, `usePush` |
 | `/styleguide` | `features/styleguide/StyleguidePage.tsx` | default export, development builds only |
 
@@ -1036,6 +1039,8 @@ Notes for the Apps pages: an app is drawn in the portal by `features/apps/AppPre
 Notes for the Schedules pages (stage B, slice 3): a schedule is a default playlist plus up to 50 weekly events. The list follows the Apps list (no grid, bulk selection or pagination). The editor is an `EditorPage` with three cards: Details, Default playlist and Events. Events are an ordered list (`<ol>`), not a grid and not a dialog: each event is a `<fieldset>` named "Event N" (`ScheduleEventRow.tsx`) with a native `Select` for the playlist and an "Open playlist" link beside it, seven day checkboxes (shown as Mon to Sun, with the full day name for assistive technology), Start and End time fields, and Move up, Move down and Remove buttons; the fixed help text about priority, time zone and the player version sits at the top of the Events card. Adding, moving and removing an event keeps focus inside the list; a Save that fails validation focuses the error summary, whose entries ("Event 3: Choose a playlist.") are links to the controls. The pure logic is `lib/schedules.ts` (drafts, validation, the mapping of the API's dotted error paths such as `events.2.playlistId`, list search and sort). Test ids: `schedules-create`, `schedules-table`, `schedule-create-dialog`, `schedule-save`, `schedule-error-summary`, `schedule-default-playlist`, `schedule-add-event`, and per event `schedule-event-{n}` with `-playlist`, `-open`, `-day-{0..6}`, `-start`, `-end`, `-up`, `-down`, `-remove` (n counts from 0).
 
 Notes for the Layouts pages (stage B, slice 4): a layout is two to four zones, each a rectangle with its own playlist; the pages offer one preset, a main zone and a band along the bottom. The list follows the Schedules list (Name, Main zone, Band, Screens, Updated). The create dialog asks for a name, the main zone's playlist and the band's playlist. The editor is an `EditorPage` with three cards: Details; Zones (the "Band height (%)" `Stepper`, 5 to 50, `layout-band-percent`, then one `<fieldset>` per zone named "Main zone" or "Band" with the shared `PlaylistSelect`, `layout-zone-{n}-playlist`); and Preview (`LayoutPreview.tsx`: a "Preview on" select of screen shapes and a `CanvasFrame` with one outlined box per zone, placed through `cssVars`; the frame's description gives each zone's pixel size, and a warning names a zone that would be under 16 px on that shape). A layout whose zones were set outside the editor shows a note (`layout-custom-note`) and keeps its sizes; only its playlists can be changed. A Save that fails validation focuses the error summary (`layout-error-summary`), whose entries are links to their controls. The logic is in `lib/layouts.ts` (`bandZones`, `bandPercentOf`, `validateLayoutDraft`, `zoneSizes`).
+
+Notes for the Users page (stage C, `docs/portal-v2/stage-c.md` section 7.4): `/users` needs `member.read` (Owners and Admins); "Invite person", the invite "Cancel" button and the row menu also need `member.manage`. The page has a People section (search `users-search`, "Invite person" `users-invite`, count `users-count`, "Current" / "Removed (n)" `users-show` kept in `?show=removed`, refresh `users-refresh`, `DataTable` `users-table`) and a Pending invites card (`users-invites`). The two lists load separately, and both reload after every write. A member TINNOX has not named yet reads "Unnamed person" with an 8-character reference from their membership ID (`memberLabel` in `lib/users.ts`), so two unnamed rows, their menus and the confirms can be told apart. The row menu (`users-row-actions`) offers only what `memberActions` allows (the rank rule: an Admin acts on Editors and Viewers only; nobody acts on their own row); a row the rank rule protects carries the hidden text "Managed by an Owner". Dialogs: Invite person (`users-invite-dialog`, role cards `users-invite-role-{role}`), Change role (`users-role-dialog`, consequence `users-role-consequence`), Correct name (`users-name-dialog`; its description mentions the "renamed" mark only when a set name is corrected; a name that a pending invite holds is refused with "An invite waiting for TINNOX uses this name."), Sign out everywhere (`users-sign-out-dialog`), Remove (`users-remove-dialog`, consequence `users-remove-consequence`) and Cancel invite (`users-invite-cancel-dialog`). When the answer to a write is lost (`isOutcomeUnknown`), each dialog says the change "could not be confirmed" (for example "The removal could not be confirmed"), never that it failed, and reloads both lists; a removal refused because the list was out of date says "The list was out of date". The pure logic is in `lib/users.ts`.
 
 Notes for the screen pages: the feature folder and the component names keep the code's word, `display` (`features/displays/`, `DisplaysPage`); the routes, the `h1`s and every label say "screen". The selected tab of the screen page is kept in the address as `?tab=`, with `canvas` for the canvas form.
 

@@ -29,7 +29,7 @@ Owning the software means TINNOX controls the roadmap, hosting, pricing, custome
 | Persona | Surface | Needs |
 |---|---|---|
 | Customer content editor (school office, retail marketing, council communications officer) | Portal | Upload, arrange, schedule, preview, publish, see that it is playing |
-| Customer administrator | Portal | Users, sites, displays, audit of their own account, alerts, approve or revoke TINNOX support access |
+| Customer administrator | Portal | Users, sites, audit of their own account, alerts, approve or revoke TINNOX support access (setting up and pairing displays is Editor work, DEC-35) |
 | TINNOX installer | Console (mobile-friendly) | Pair a player or commission a controller on site in minutes, confirm canvas and orientation, see first content |
 | TINNOX support engineer | Console | Fleet health, triage a display that stopped updating, remote restart, request a support grant into a customer account |
 | TINNOX account manager | Console | Create customers and sites, assign devices, set plans and terms, see usage and renewals |
@@ -49,7 +49,7 @@ Scenarios (ASSUMPTION A6 set, from the brief):
 |---|---|
 | Market | Australia only (TINNOX answer Q6). Zones, currency (AUD) and tax (GST) are data, so New Zealand can be added later without code changes (PROPOSED) |
 | Tenancy | Customers (tenants) with sites and displays; TINNOX operators provision customers (no self-serve sign-up) |
-| Users and roles | Customer roles: Owner, Admin, Editor, Viewer, with optional site scoping; TINNOX roles: Operator, Support, Admin; MFA for all users |
+| Users and roles | Customer roles: Owner, Admin, Editor, Viewer, four nested roles, one per person (DEC-35); site scoping deferred; TINNOX roles: Operator, Support, Admin; MFA for all users |
 | Devices | Pairing by short code, pre-provisioning by claim token, device credentials bound to hardware, move between sites and customers with cache purge |
 | Delivery routes | (a) **TINNOX player** (route 1 in `architecture-and-hardware.md` section 5) (Linux on a Raspberry Pi CM5 industrial box, or Android device owner on an RK3588-class box) feeding the LED controller over HDMI, or driving an LCD panel. This is the primary route for walls, billboards and large pylons, for both Huidu and NovaStar senders. (b) **Huidu program push** (route 5 in `architecture-and-hardware.md` section 5) to async-only Huidu "D" cards through the card's HTTP API: playlist, zones and time windows, with sampled proof of play. Route (b) is the fallback where a player box is not economic (PROPOSED, `research/round2/R1-huidu-integration.md`) |
 | Controller vendors | Two in release 1: **Huidu** (TINNOX answer Q2) and **NovaStar** (named in the PrecisionMicro, PrecisionPro and PrecisionLuma packages, VERIFIED_FULL_PAGE, R5). Which controller each package uses is open (Q-T2). NovaStar is reached through route (a) only in release 1 (INFERRED, `research/round2/R99-critic.md` C1) |
@@ -92,7 +92,7 @@ Interactive kiosks and touch, live video and streams, synchronised playback acro
 | Delivery | display, publication, state (route-specific, section 12), progress bytes, error reason, timestamps per transition | The per-display truth shown to customers and support |
 | Heartbeat and DeviceState | device or controller, received at, player version, uptime, boot reason, storage free, SoC temperature, throttling flags, network summary, clock sync state, tzdata version, current publication, current item | Latest row denormalised onto the device or controller |
 | PlaybackLog | display, device or controller, publication, media, started at (UTC), duration, completed, `evidence_type` (`logged` or `sampled`) | Batched upload. Retention per plan from the Entitlement: 31 days, 13 months or 25 months, with a 13-month floor for Managed and government customers (PROPOSED, R6 with R99 C6) |
-| User, Role, Membership | user, customer or TINNOX, role, site scope | One user can belong to several customers (agency case) |
+| User, Role, Membership, Invite | user, customer or TINNOX; membership = role, display name, removed; invite = name, work e-mail, role while pending | One organisation per person in release 1 (several organisations per person deferred, DEC-35) |
 | SupportGrant | id, customer, scope (`view` or `edit`), type (`request`, `proactive`, `standing`, `self_grant`, `break_glass`), requested by, reason, ticket or incident number, approver (customer admin, or two TINNOX approvers for break-glass), created, expires, revoked at, standing flag, re-confirm due date | The customer's permission for content and account access (section 7.6) |
 | SupportSession | operator, customer, SupportGrant (or break-glass), reason, started, ended, actions count | One operator's working session under a grant |
 | AuditEvent | actor (user, operator under a grant, operator in device-operations scope, device, controller, system), customer, action, object, before and after summary, IP, time | Retained 24 months, searchable, for every customer. Support-session, grant and break-glass records are also kept 7 years in write-once storage (PROPOSED, `research/round2/R2-support-access-models.md`; ASSUMPTION A13; approval in Q-T6) |
@@ -110,7 +110,7 @@ Each workflow lists the goal, prerequisites, steps, inputs and validation, and r
 - REFERENCE: Yodeck offers per-user TOTP and, on its Enterprise plan, account-wide policies such as inactivity logout, single session and IP allow-listing (VERIFIED_FULL_PAGE, help centre, `research/round2/AV1-accounts-admin.md` rows 19 and 20; whether TOTP is on every plan is INFERRED). TINNOX CMS includes MFA for everyone and defers the policy set.
 
 ### 6.2 Upload media
-- Goal: add images, video or PDF to the library. Prerequisites: Editor or Admin role; free quota under the customer's plan.
+- Goal: add images, video or PDF to the library. Prerequisites: Editor role or above; free quota under the customer's plan.
 - Steps: choose files or drag in; the portal requests a resumable upload session (direct to object storage via presigned URLs, chunked); on completion the server validates the file (container, codec, dimensions, duration, size, extension matches content) and queues processing; renditions and thumbnails are produced for every player profile and canvas profile the customer uses; status moves `uploaded → processing → ready` or `failed` with a specific reason.
 - Inputs and validation: PNG, JPEG, WebP up to 50 megapixels; MP4 with H.264 or HEVC up to 2 GB and 4K; PDF up to the page limit in section 15; anything else fails with a named reason. Interrupted uploads resume from the last chunk.
 - State: media row and renditions; nothing reaches displays until published.
@@ -148,7 +148,7 @@ Each workflow lists the goal, prerequisites, steps, inputs and validation, and r
 - On the Huidu route, "Playing (sampled)" is set from a screenshot and the card's screen status. The page says that this is a sample, not a play log.
 
 ### 6.10 Manage sites, displays and users (customer admin)
-- Sites with time zone; displays with name, tags, canvas profile (change requires confirmation because renditions and layouts depend on it); invite users with role and optional site scope; view the customer's audit log including TINNOX support sessions and device-operations actions; alert preferences.
+- Sites with time zone; displays with name, tags, canvas profile (change requires confirmation because renditions and layouts depend on it), set up and paired by Editors and up; request an invite with a role (no site scope; TINNOX completes invite requests in the pilot, self-service later, CMS-20); view the customer's audit log including TINNOX support sessions and device-operations actions; alert preferences.
 - Support access: see pending TINNOX requests and approve or reject them in one click; grant access proactively (view or edit, 24 hours by default, 7 days at most); revoke any grant at once; enable the optional pre-authorised self-grant; on the Managed plan, enable standing access (section 7.6).
 
 ### 6.11 Playback report
@@ -159,7 +159,7 @@ Each workflow lists the goal, prerequisites, steps, inputs and validation, and r
 ## 7. Operations console workflows
 
 ### 7.1 Create a customer and site
-- Operator creates the customer (name, contact), its Entitlement (plan, term, included-until date), the first site (address, IANA time zone chosen from the canonical Australian list with a map hint), and the first admin user. Audit event.
+- Operator creates the customer (name, contact), its Entitlement (plan, term, included-until date), the first site (address, IANA time zone chosen from the canonical Australian list with a map hint), and the first Owner (two advised; `provision-member org-create`). Audit event.
 - Plans and contracts: the account manager can change a customer's plan and term, apply a plan in bulk, and see renewal dates on the contracts screen (section 20.7).
 
 ### 7.2 Provision a device or controller
@@ -216,21 +216,23 @@ Retention for these records is in section 10 item 8.
 | View media, playlists, layouts, schedules, delivery | yes | yes | yes | yes | fleet view only | yes (view or edit grant) | yes (with grant) |
 | Upload, edit, delete content | | yes | yes | yes | | yes with edit grant (audited) | |
 | Publish and rollback | | yes | yes | yes | | yes with edit grant (audited) | |
-| Manage displays and sites within the customer | | | yes | yes | yes | yes with edit grant (audited) | yes |
-| Invite and manage customer users | | | yes | yes | | | yes |
+| Manage displays and sites within the customer | | yes (screens, pairing, revoking; sites with `site.manage`) | yes | yes | yes | yes with edit grant (audited) | yes |
+| Invite and manage customer users | | | yes (Editors and Viewers only) | yes | | | yes |
 | Grant, approve and revoke TINNOX support access; enable self-grant or standing access | | | yes | yes | | | |
-| Transfer ownership, delete customer data | | | | yes | | | yes (with Owner request) |
+| Transfer ownership, delete customer data | | | | yes (no transfer action: an Owner promotes a successor, who then demotes or removes them, D1 a) | | | yes (with Owner request) |
 | Provision devices, commission controllers, move displays between customers | | | | | yes | | yes |
 | Device-operations scope (telemetry, screenshot, restart, firmware) | | | | | yes | yes, no grant needed (audited) | yes |
 | Request a support grant | | | | | | yes | yes |
 | Approve break-glass (second approver) | | | | | | | yes |
 | Manage plans, entitlements and licence states | | | | | yes | | yes |
 | Manage releases and channels | | | | | | | yes |
-| View customer audit log | | | yes | yes | | yes (with grant) | yes |
+| View customer audit log | filtered (content and screen events) | filtered (content and screen events) | yes (full log) | yes (full log) | | yes (with grant) | yes |
 
-Site scoping: a customer user may be restricted to one or more sites; scoped users see only those sites' displays and schedules. Service tokens carry a role and a customer, are shown once, and are revocable.
+Site scoping (deferred, DEC-35): a customer user may later be restricted to one or more sites; scoped users would see only those sites' displays and schedules. Service tokens carry a role and a customer, are shown once, and are revocable.
 
-REFERENCE: Yodeck offers a fixed role set, one role per user on every plan (one role per workspace on Enterprise), Enterprise-only workspaces and custom roles (VERIFIED_FULL_PAGE, AV1 rows 4 and 16), and no documented per-screen permission (INFERRED). Site scoping is TINNOX CMS's answer to that gap at the scale of its customers.
+Role rules (DEC-35): each role includes the one below it. Only an Owner grants, changes or removes Admins and Owners; an Admin acts on Editors and Viewers only. Nobody changes their own role, removes themselves or renames themselves. An organisation always keeps at least one Owner. Removal, demotion and "Sign out everywhere" end the person's sessions.
+
+REFERENCE: Yodeck offers a fixed role set, one role per user on every plan (one role per workspace on Enterprise), Enterprise-only workspaces and custom roles (VERIFIED_FULL_PAGE, AV1 rows 4 and 16), and no documented per-screen permission (INFERRED). Site scoping is TINNOX CMS's planned answer to that gap at the scale of its customers (deferred, DEC-35).
 
 ## 9. Scope decisions deferred
 
@@ -255,7 +257,7 @@ REFERENCE: Yodeck offers a fixed role set, one role per user on every plan (one 
 
 1. Every customer-owned row carries the customer id; database row-level security enforces it for all application roles; the application never queries without a customer context except in explicitly TINNOX-scoped console code paths.
 2. Object keys are content-addressed under a customer prefix; access is by short-lived signed URLs only; players and Huidu cards receive URLs only for objects in their current or pending publication.
-3. API responses never reveal the existence of another customer's objects (404, not 403).
+3. API responses never reveal the existence of another customer's objects (404, not 403). A refusal by role is decided before any lookup and is the same 403 for every id, so it reveals nothing either (DEC-35).
 4. Device credentials are per device, bound to a hardware identifier, rotated on demand and revoked on device move. Huidu keys are held in the secrets vault and referenced per card, never stored in application tables.
 5. Support access is a first-class object (SupportGrant, section 7.6): device-operations scope under contract; content and account scope only with a customer grant or break-glass; banner, dual audit and customer visibility for every session.
 6. Deleting a customer soft-deletes immediately, purges after a retention period and produces a purge report. A lapse or downgrade disables but never deletes (section 20).

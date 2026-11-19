@@ -26,7 +26,7 @@ npm ci                              # exact dependency versions from package-loc
 npm run setup                       # generates .env and the development identities (gitignored)
 npm run infra:up                    # PostgreSQL, Keycloak and the media worker container; waits until healthy
 npm run db:migrate                  # applies db/migrations as the migration role
-npm run db:seed -- --second-org     # "TINNOX Internal" + site "Melbourne Workshop", and a second test organisation
+npm run db:seed -- --second-org     # "TINNOX Internal" + site "Melbourne Workshop" + one member per role, and a second test organisation
 npm run verify:oidc                 # optional: proves the Keycloak sign-in (PKCE, password, one-time code)
 ```
 
@@ -52,15 +52,15 @@ Use `localhost`, not `127.0.0.1`, in the browser: the sign-in redirect, the sess
 ### Sign-in details
 
 ```sh
-npm run otp -- --show-password      # username, password and the current one-time code of the operator
-npm run otp -- --second             # the operator of the second test organisation
+npm run otp -- --show-password      # username, password and the current one-time code of the operator (the Owner)
+npm run otp -- --as admin           # another user: admin, editor, viewer, or second (the second organisation's Owner)
 ```
 
 The one-time code changes every 30 seconds, and Keycloak accepts each code once. If a code is refused, wait for the next one. The values come from `infra/.generated/dev-credentials.json`; they exist only in your local Keycloak.
 
 ### Walkthrough
 
-1. Open http://localhost:5173 and choose **Sign in**. Enter the username and password from `npm run otp -- --show-password`, then the one-time code.
+1. Open http://localhost:5173 and choose **Sign in**. Enter the username and password from `npm run otp -- --show-password`, then the one-time code. This is `operator`, the Owner of "TINNOX Internal". To see the other roles, sign out and sign in as `org-admin`, `editor` or `viewer` (`npm run otp -- --as admin --show-password` and so on): a Viewer can look but not change anything, an Editor cannot open Users, and an Admin manages Editors and Viewers only.
 2. **Displays → New display.** Give it a name and a canvas (for example 1920 × 1080, or 1080 × 1920 for portrait). Optionally set a content rectangle and the default fit (contain or cover).
 3. Open http://localhost:5174 in another window. The player shows an 8-character pairing code for 10 minutes.
 4. In the portal, open the display, enter the code under **Player pairing** and choose **Pair player**. The player changes to "registered" within a few seconds.
@@ -103,7 +103,7 @@ npm run infra:up && npm run db:migrate && npm run db:seed -- --second-org
 
 | Path | What |
 |---|---|
-| `apps/api` | Fastify API: sign-in (OIDC backend-for-frontend), displays, pairing, media, playlists, publishing, player protocol, status, audit |
+| `apps/api` | Fastify API: sign-in (OIDC backend-for-frontend), roles and members, displays, pairing, media, playlists, publishing, player protocol, status, audit |
 | `apps/media-worker` | Upload inspection in a container with no network, read-only root, non-root user, CPU/memory/PID limits |
 | `apps/portal` | Operator portal (React, Vite) |
 | `apps/player-web` | Browser player (TypeScript, service worker, IndexedDB and Cache Storage) |
@@ -123,7 +123,7 @@ You don't need to read all ~5,800 lines. Read the five documents below in order 
 
 | Step | Read | Why | Time |
 |---|---|---|---|
-| 1 | [`docs/decisions-2026-11.md`](docs/decisions-2026-11.md), all of it | **The one-page summary of the whole project.** It has 29 numbered decisions (DEC-01 to DEC-29), each marked *DECIDED by client* or *PROPOSED for TINNOX approval*, plus recommended answers on support access, hosting cost and player hardware. If you read only one document, read this one. | 30 min |
+| 1 | [`docs/decisions-2026-11.md`](docs/decisions-2026-11.md), all of it | **The one-page summary of the whole project.** It has 35 numbered decisions (DEC-01 to DEC-35), each marked *DECIDED by client* or *PROPOSED for TINNOX approval*, plus recommended answers on support access, hosting cost and player hardware. If you read only one document, read this one. | 30 min |
 | 2 | [`docs/open-questions.md`](docs/open-questions.md), sections 2.1 and 6 | **What TINNOX still has to answer (Q13 to Q26), and what happens next.** Q13 (which vendor gave API access) and Q14 (which controller each product package uses) block the controller adapter work and the Huidu hardware order. Platform work can start without them. | 15 min |
 | 3 | [`docs/tinnox-mvp-spec.md`](docs/tinnox-mvp-spec.md), sections 1 to 4 | **What release 1 does and does not include**: purpose, the eight product principles, personas and scenarios, and the in-scope and out-of-scope tables. Sections 5 to 20 are detail you can skim. | 30 min |
 | 4 | [`docs/implementation-backlog.md`](docs/implementation-backlog.md), sections 0, 2 and 3 | **How it gets built, and in what order.** It covers the first milestone ("one display, one site, honest states"), a 5-phase plan of about 22 weeks for two to three engineers, and the main risks. Section 1 lists the epics (A to N) in detail. | 20 min |
@@ -159,7 +159,7 @@ flowchart LR
 
 | Document | What it is | Size |
 |---|---|---|
-| [`decisions-2026-11.md`](docs/decisions-2026-11.md) | The decision register (DEC-01 to DEC-29), the page TINNOX approves | 94 lines |
+| [`decisions-2026-11.md`](docs/decisions-2026-11.md) | The decision register (DEC-01 to DEC-35), the page TINNOX approves | 100 lines |
 | [`open-questions.md`](docs/open-questions.md) | Blockers, questions for TINNOX (Q1 to Q26 with answers so far), assumptions (A-numbers), things that need real hardware, and next actions | 142 lines |
 | [`gaps-and-first-steps.md`](docs/gaps-and-first-steps.md) | Review of 9 November 2026: first-two-weeks checklist, launch baseline for security and Australian compliance, what is deferred until a large buyer appears, hardware list, and inconsistencies in the pack | 184 lines |
 
@@ -167,9 +167,9 @@ flowchart LR
 
 | Document | What it is | Size |
 |---|---|---|
-| [`tinnox-mvp-spec.md`](docs/tinnox-mvp-spec.md) | The release-1 product specification: scope, workflows for the customer portal and TINNOX operations console, roles, scheduling and time zones, publishing states, player behaviour, media rules, API, commercial hooks | 500 lines |
+| [`tinnox-mvp-spec.md`](docs/tinnox-mvp-spec.md) | The release-1 product specification: scope, workflows for the customer portal and TINNOX operations console, roles, scheduling and time zones, publishing states, player behaviour, media rules, API, commercial hooks | 504 lines |
 | [`architecture-and-hardware.md`](docs/architecture-and-hardware.md) | System design, the hardware questionnaire and compatibility matrix, LED integration routes, the pilot hardware, build versus Xibo versus white label, tech stack and running costs | 349 lines |
-| [`implementation-backlog.md`](docs/implementation-backlog.md) | Epics A to N with stories, priorities (P0, P1, P2) and sizes, the phase plan, and risks | 206 lines |
+| [`implementation-backlog.md`](docs/implementation-backlog.md) | Epics A to N with stories, priorities (P0, P1, P2) and sizes, the phase plan, and risks | 208 lines |
 | [`acceptance-tests.md`](docs/acceptance-tests.md) | The tests that define "done" for release 1, grouped by area (isolation, provisioning, media, scheduling, publishing, offline, updates, monitoring, Huidu, licensing) | 214 lines |
 
 ### 3. Context: background you can consult as needed
@@ -221,7 +221,7 @@ The docs use a few conventions throughout. Once you know them, the documents rea
 
 | ID | Meaning | Defined in |
 |---|---|---|
-| DEC-01 to DEC-29 | Decisions | `decisions-2026-11.md` |
+| DEC-01 to DEC-35 | Decisions | `decisions-2026-11.md` |
 | Q1 to Q12 | Questions TINNOX has already answered | `open-questions.md` section 2 |
 | Q13 to Q26 | Open questions for TINNOX. **The same questions are also called Q-T1 to Q-T14** (Q-T1 = Q13, Q-T2 = Q14, and so on). | `open-questions.md` section 2.1 |
 | A1, A2, … | Assumptions | `open-questions.md` section 4 |

@@ -52,7 +52,7 @@ export const SessionResponseSchema = z.discriminatedUnion('authenticated', [
       user: z
         .object({
           membershipId: MembershipIdSchema,
-          /** Null until TINNOX names the member; the portal then shows the role label. */
+          /** Null until TINNOX names the member; the account menu then shows the role label. */
           displayName: z.string().min(1).max(ABSOLUTE.maxNameLength).nullable(),
           role: RoleSchema,
           /** The keys the role holds now. The portal checks these, never role names. */

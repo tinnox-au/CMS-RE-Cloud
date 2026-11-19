@@ -9,6 +9,8 @@ services; nothing is mocked except where a file says so in its header.
 | `e2e/` | Browser end-to-end tests (Playwright, Chromium). Real Keycloak sign-in with TOTP, real API process, production builds of the portal and the player in separate browser contexts. | `npm run test:e2e` |
 | `support/` | `dev-identity.ts` (generated development users, TOTP codes), `png.ts` (PNG writer and reader for synthetic images and pixel checks). | |
 
+Development users (`support/dev-identity.ts`, `DevUserName`): `operator` (Owner of "TINNOX Internal"; every spec defaults to it), `secondOrgOperator` (Owner of the second organisation), and since stage C `admin` (Keycloak username `org-admin`), `editor` and `viewer`, the Admin, Editor and Viewer of "TINNOX Internal". `npm run setup` adds missing users to an existing credentials file; the Keycloak container must then be recreated (setup prints the command) and the database re-seeded.
+
 Stage B slice 2 (built-in apps) added `e2e/07-apps-player.spec.ts` (apps drawn by a
 paired player: the site's time zone, item order and index, a finished countdown, a QR
 code, a ticker on a strip canvas and on a screen rotated 90°, reduced motion, text fit,
@@ -54,6 +56,27 @@ reader is still a manual step.
 probes in `cross-org.test.ts`; the API's own schedule tests are
 `apps/api/test/schedules.integration.test.ts`, and the database's are
 `packages/db/test/stage-b-schedules.integration.test.ts`.
+
+Stage C (roles and people, `docs/portal-v2/stage-c.md` section 9) added `e2e/14-roles.spec.ts`
+(written, not run yet; covers ISO-05: each role signed in through Keycloak, what it sees and what
+the API refuses, an invite request and its cancellation, a demotion that ends a session, "Sign out
+everywhere" and the forced sign-in with a fresh one-time code, and the seeded roles restored). New integration files: `integration/roles-matrix.test.ts` (all 59 operator routes as
+each of the four roles, against an oracle written in the test), `integration/reauth.test.ts`
+(the cut-off, `auth_time` and the forced `prompt=login` round, with a stub provider),
+`integration/provision-member.test.ts` (every `provision-member` command), the shared route list
+`integration/routes.ts`, `apps/api/test/roles.integration.test.ts`,
+`apps/api/test/members.integration.test.ts` and
+`packages/db/test/migration-0013.integration.test.ts`. `session-csrf.test.ts` reads its route list
+from `integration/routes.ts`; `cross-org.test.ts` gained the people routes and the role refusal
+that is the same 403 for every id; `session-revoke-all.test.ts` gained the member cut-off.
+
+Component tests (`npm run test:component`, `apps/portal/src/**/*.test.tsx` in headless
+Chromium): every file first waits until the browser provider reaches its frame
+(`apps/portal/src/componentTests.setup.ts`, registered as `setupFiles` of the `component`
+project in `vitest.config.ts`, which runs `settleTestFrame` from
+`apps/portal/src/testFrame.test-support.ts`). The Vitest Playwright provider looks the test
+frame up by name and can lag behind the switch to the next file's frame, so on a busy machine a
+file's first click or key failed with "Frame was detached".
 
 `npm run test:integration` also runs `packages/*/test/*.integration.test.ts` and
 `apps/api/test/*.integration.test.ts`. It rebuilds the database `tinnox_test` first.

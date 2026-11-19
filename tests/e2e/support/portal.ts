@@ -6,6 +6,7 @@
  * steps. The API client in operator.ts checks what the server stored.
  */
 import { expect, type Locator, type Page } from '@playwright/test';
+import type { InviteRole, Role } from '@tinnox/contracts';
 import { PORTAL_URL } from './stack.ts';
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
@@ -464,4 +465,90 @@ export async function filterLibraryByTag(page: Page, tagName: string): Promise<v
   const chip = filter.getByRole('button', { name: tagName, exact: true });
   if ((await chip.count()) === 0) await filter.getByRole('button', { name: /^More tags/ }).click();
   await filter.getByRole('button', { name: tagName, exact: true }).click();
+}
+
+// ---------------------------------------------------------------------------
+// Users (docs/portal-v2/stage-c.md, section 7.4)
+
+/** The role names the portal shows (`ROLE_LABELS` in @tinnox/domain). */
+const ROLE_LABEL: { readonly [R in Role]: string } = {
+  owner: 'Owner',
+  admin: 'Admin',
+  editor: 'Editor',
+  viewer: 'Viewer',
+};
+
+/** "a Viewer", "an Admin", as the Users page's toasts say it. */
+function roleWithArticle(role: Role): string {
+  const label = ROLE_LABEL[role];
+  return `${/^[AEIOU]/.test(label) ? 'an' : 'a'} ${label}`;
+}
+
+/** Opens Users and waits until the people and the pending invites are listed. */
+export async function openUsers(page: Page): Promise<void> {
+  await page.goto(`${PORTAL_URL}/users`);
+  await expect(pageHeading(page, 'Users')).toBeVisible();
+  await expect(page.getByTestId('users-count')).toHaveText(/^\d+ (person|people)$/);
+  await expect(page.getByTestId('users-page').locator('[aria-busy="true"]')).toHaveCount(0);
+}
+
+/** On Users: opens a person's row menu ("Actions for <name>") and picks one item. */
+async function chooseMemberAction(page: Page, name: string, item: string): Promise<void> {
+  await page.getByRole('button', { name: `Actions for ${name}`, exact: true }).click();
+  await page.getByRole('menuitem', { name: item, exact: true }).click();
+}
+
+/**
+ * On Users: requests an invite through the "Invite person" dialog and waits for its toast.
+ * The page then reads both lists again; the new row says "Waiting for TINNOX".
+ */
+export async function invitePerson(
+  page: Page,
+  name: string,
+  email: string,
+  role: InviteRole,
+): Promise<void> {
+  await page.getByTestId('users-invite').click();
+  const dialog = page.getByTestId('users-invite-dialog');
+  await expect(dialog).toBeVisible();
+  await dialog.getByTestId('users-invite-name').fill(name);
+  await dialog.getByTestId('users-invite-email').fill(email);
+  // Each role card is a label around a visually hidden radio button.
+  await dialog.getByTestId(`users-invite-role-${role}`).click();
+  await expect(dialog.getByRole('radio', { name: ROLE_LABEL[role], exact: true })).toBeChecked();
+  await dialog.getByTestId('users-invite-submit').click();
+  await expect(dialog).toBeHidden();
+  await expect(notifications(page).getByText(`Invite for ${name} saved`)).toBeVisible();
+}
+
+/**
+ * On Users: gives a person another role through "Change role" and waits for the toast
+ * ("Dev Editor is now a Viewer"). A demotion also ends every session the person has.
+ */
+export async function changeRole(page: Page, name: string, role: Role): Promise<void> {
+  await chooseMemberAction(page, name, 'Change role');
+  const dialog = page.getByTestId('users-role-dialog');
+  await expect(dialog).toBeVisible();
+  await dialog.getByTestId(`users-role-${role}`).click();
+  const save = dialog.getByTestId('users-role-save');
+  await expect(save).toHaveText(`Make ${ROLE_LABEL[role]}`);
+  await save.click();
+  await expect(dialog).toBeHidden();
+  await expect(
+    notifications(page).getByText(`${name} is now ${roleWithArticle(role)}`),
+  ).toBeVisible();
+}
+
+/**
+ * On Users: ends every session of a person through "Sign out everywhere" and waits for the
+ * toast. Their role stays; their next sign-in asks for the password and a one-time code.
+ */
+export async function signOutEverywhere(page: Page, name: string): Promise<void> {
+  await chooseMemberAction(page, name, 'Sign out everywhere');
+  const dialog = page.getByTestId('users-sign-out-dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(`Sign ${name} out everywhere?`);
+  await dialog.getByTestId('users-sign-out-dialog-confirm').click();
+  await expect(dialog).toBeHidden();
+  await expect(notifications(page).getByText(`${name} signed out everywhere`)).toBeVisible();
 }
