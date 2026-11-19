@@ -1,8 +1,8 @@
-import { ABSOLUTE, type MemberDto } from '@tinnox/contracts';
+import { ABSOLUTE, type InviteDto, type MemberDto } from '@tinnox/contracts';
 import { useId, useRef, useState, type FormEvent } from 'react';
-import { isApiRequestError } from '../../api/client.ts';
+import { isApiRequestError, isOutcomeUnknown } from '../../api/client.ts';
 import { api } from '../../api/index.ts';
-import { memberName, memberNameProblem, memberRefusal } from '../../lib/users.ts';
+import { memberLabel, memberNameProblem, memberRefusal } from '../../lib/users.ts';
 import { Banner, Button, Dialog, ErrorNotice, Field, TextInput, useToast } from '../../ui/index.ts';
 import './users.css';
 
@@ -11,16 +11,28 @@ export interface NameDialogProps {
   readonly member: MemberDto | null;
   /** Every member as last loaded, removed ones included: a name used before is refused. */
   readonly members: readonly MemberDto[];
+  /** Pending invites as last loaded: their names are taken until TINNOX closes them. */
+  readonly invites: readonly InviteDto[];
   readonly onClose: () => void;
   /** After the server changed the name, or the lists turned out to be out of date. */
   readonly onChanged: () => void;
 }
 
+const NOT_CHANGED = 'The name was not changed';
+
+/** A refusal, or an answer that never came, said in the dialog. */
+interface Notice {
+  readonly title: string;
+  readonly message: string;
+}
+
 /**
- * Corrects a member's name. The new name shows everywhere, for past events too, and the audit
- * log marks the person as renamed. A name another member has, or had, is refused at the field.
+ * Corrects a member's name, or gives an unnamed member their first one. The new name shows
+ * everywhere, for past events too. Only a correction of a set name is marked "renamed" in the
+ * audit log (membership.display_name_changed_at, migration 0013), so the dialog says so only
+ * then. A name another member has, or had, is refused at the field.
  */
-export function NameDialog({ member, members, onClose, onChanged }: NameDialogProps) {
+export function NameDialog({ member, members, invites, onClose, onChanged }: NameDialogProps) {
   const toast = useToast();
   const formId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -29,7 +41,7 @@ export function NameDialog({ member, members, onClose, onChanged }: NameDialogPr
   const [name, setName] = useState(member?.displayName ?? '');
   const [submitted, setSubmitted] = useState(false);
   const [serverProblem, setServerProblem] = useState<string | null>(null);
-  const [refusal, setRefusal] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [wasOpen, setWasOpen] = useState(open);
@@ -40,14 +52,15 @@ export function NameDialog({ member, members, onClose, onChanged }: NameDialogPr
       setName(member.displayName ?? '');
       setSubmitted(false);
       setServerProblem(null);
-      setRefusal(null);
+      setNotice(null);
       setError(null);
       setBusy(false);
     }
   }
 
   const unchanged = current !== null && name.trim() === (current.displayName ?? '');
-  const localProblem = current === null ? null : memberNameProblem(name, members, current.id);
+  const localProblem =
+    current === null ? null : memberNameProblem(name, members, invites, current.id);
   const fieldError = serverProblem ?? (submitted ? (localProblem ?? undefined) : undefined);
 
   const submit = (event?: FormEvent) => {
@@ -61,7 +74,7 @@ export function NameDialog({ member, members, onClose, onChanged }: NameDialogPr
     const target = current;
     const next = name.trim();
     setServerProblem(null);
-    setRefusal(null);
+    setNotice(null);
     setError(null);
     setBusy(true);
     api.patchMember(target.id, { displayName: next }).then(
@@ -73,6 +86,15 @@ export function NameDialog({ member, members, onClose, onChanged }: NameDialogPr
       },
       (reason: unknown) => {
         setBusy(false);
+        // The answer may be lost after the server made the change: never say it was not made.
+        if (isOutcomeUnknown(reason)) {
+          setNotice({
+            title: 'The name change could not be confirmed',
+            message: `The server may or may not have changed the name to “${next}”. The lists were refreshed; check them before you try again.`,
+          });
+          onChanged();
+          return;
+        }
         if (
           isApiRequestError(reason) &&
           (reason.code === 'conflict' || reason.code === 'validation_failed')
@@ -85,7 +107,7 @@ export function NameDialog({ member, members, onClose, onChanged }: NameDialogPr
           }
           if (reason.code === 'conflict') {
             // Removed meanwhile, for example: the lists on the page are out of date.
-            setRefusal(words.message);
+            setNotice({ title: NOT_CHANGED, message: words.message });
             onChanged();
             return;
           }
@@ -100,8 +122,12 @@ export function NameDialog({ member, members, onClose, onChanged }: NameDialogPr
       open={open}
       onClose={onClose}
       size="sm"
-      title={current === null ? 'Correct name' : `Correct the name of ${memberName(current)}`}
-      description="The new name shows here, in activity and in the audit log, for past events too. The audit log marks the person as renamed."
+      title={current === null ? 'Correct name' : `Correct the name of ${memberLabel(current)}`}
+      description={
+        current !== null && current.displayName !== null
+          ? 'The new name shows here, in activity and in the audit log, for past events too. The audit log marks the person as renamed.'
+          : 'The name shows here, in activity and in the audit log, for past events too.'
+      }
       busy={busy}
       testId="users-name-dialog"
       footer={
@@ -123,15 +149,15 @@ export function NameDialog({ member, members, onClose, onChanged }: NameDialogPr
       }
     >
       <form id={formId} className="tx-users-form" noValidate onSubmit={submit}>
-        {refusal !== null && (
-          <Banner tone="danger" live="assertive" title="The name was not changed">
-            <p>{refusal}</p>
+        {notice !== null && (
+          <Banner tone="danger" live="assertive" title={notice.title}>
+            <p>{notice.message}</p>
           </Banner>
         )}
         {error !== null && (
           <ErrorNotice
             error={error}
-            title="The name was not changed"
+            title={NOT_CHANGED}
             onDismiss={() => {
               setError(null);
             }}

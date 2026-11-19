@@ -222,7 +222,10 @@ async function removeMember(org: TestOrg, gone: TestOrg): Promise<void> {
 }
 
 /** The provisioning connection, with `before` awaited ahead of every statement; a rejection fails it. */
-function intercepted(real: pg.Pool, before: (text: string) => Promise<void>): pg.Pool {
+function intercepted(
+  real: pg.Pool,
+  before: (text: string, values: readonly unknown[] | undefined) => Promise<void>,
+): pg.Pool {
   const bound = <T extends object>(target: T, key: string | symbol): unknown => {
     const value: unknown = Reflect.get(target, key);
     return typeof value === 'function'
@@ -238,7 +241,7 @@ function intercepted(real: pg.Pool, before: (text: string) => Promise<void>): pg
           get(inner, name) {
             if (name !== 'query') return bound(inner, name);
             return async (text: string, values?: unknown[]) => {
-              await before(text);
+              await before(text, values);
               return inner.query(text, values);
             };
           },
@@ -248,10 +251,15 @@ function intercepted(real: pg.Pool, before: (text: string) => Promise<void>): pg
   });
 }
 
-/** The provisioning connection, except that every audit insert fails (the statements before it run). */
-function failingAudit(real: pg.Pool): pg.Pool {
-  return intercepted(real, (text) =>
-    /INSERT INTO (public\.)?audit_event/.test(text)
+/**
+ * The provisioning connection, except that every audit insert fails, or only the insert of
+ * `action` (auditScoped's third parameter), so the audit rows before it are written first. The
+ * statements before the failing insert run.
+ */
+function failingAudit(real: pg.Pool, action?: string): pg.Pool {
+  return intercepted(real, (text, values) =>
+    /INSERT INTO (public\.)?audit_event/.test(text) &&
+    (action === undefined || values?.[2] === action)
       ? Promise.reject(new Error('audit insert failed (test)'))
       : Promise.resolve(),
   );
@@ -596,6 +604,16 @@ describe('provision-member set-name and mfa-reset', () => {
       name: 'Taylor Example',
     });
 
+    // A repeated run (after "outcome unknown", say) changes nothing and writes no audit row.
+    const again = await setName(pool, idp, {
+      ...args,
+      requestRef: 'REQ-7B',
+      target: { membershipId: editor.membershipId },
+      name: 'Jordan Example',
+    });
+    expect(again).toMatchObject({ membershipId: editor.membershipId });
+    expect(again.lines.join('\n')).toMatch(/nothing changed/);
+
     expect((await member(org.orgId, editor.membershipId)).display_name).toBe('Jordan Example');
     expect((await member(org.orgId, org.membershipId)).display_name).toBe('Taylor Example');
     expect(await audits(org.orgId, 'membership.update')).toEqual([
@@ -628,6 +646,22 @@ describe('provision-member set-name and mfa-reset', () => {
         }),
       ),
     ).toMatch(/removed/);
+    // A pending invite's name is taken until TINNOX fulfils or closes the invite.
+    await invite(org, {
+      name: 'Riley Waiting',
+      email: 'riley@example.com',
+      invitedBy: org.membershipId,
+    });
+    expect(
+      await refusal(() =>
+        setName(pool, idp, {
+          ...args,
+          target: { membershipId: editor.membershipId },
+          name: 'riley waiting',
+        }),
+      ),
+    ).toMatch(/invite waiting for TINNOX uses this name/);
+    expect((await member(org.orgId, editor.membershipId)).display_name).toBe('Jordan Example');
     expect(await audits(org.orgId, 'membership.update')).toHaveLength(2);
   });
 
@@ -941,6 +975,61 @@ describe('provision-member, every command', () => {
     ).rejects.toThrow(/audit insert failed/);
     expect((await session.fetch('/api/displays')).status).toBe(200);
     expect((await member(org.orgId, org.membershipId)).cut_off).toBeNull();
+
+    const unnamed = await members(org.orgId);
+    await expect(
+      setName(broken, directory(), {
+        target: { membershipId: org.membershipId },
+        name: 'Never Named',
+        requestRef: 'REQ-16',
+        executedBy: STAFF,
+      }),
+    ).rejects.toThrow(/audit insert failed/);
+    expect(await members(org.orgId)).toEqual(unnamed);
+
+    const admin = await addMember(org, 'admin', 'Harper Admin');
+    await signIn(t, admin);
+    const unpromoted = await members(org.orgId);
+    await expect(
+      restoreOwner(broken, directory(), {
+        ...APPROVAL,
+        mode: 'promote',
+        membershipId: admin.membershipId,
+      }),
+    ).rejects.toThrow(/audit insert failed/);
+    expect(await members(org.orgId)).toEqual(unpromoted);
+
+    // --successor writes the most. Whichever of its audit rows fails, even the last one, the old
+    // Owner stays, nobody is added, their invite stays pending and their session stays valid.
+    const lost = await createOrg('Provision audit failure, successor');
+    const oldSession = await signIn(t, lost);
+    const request = await invite(lost, {
+      role: 'admin',
+      name: 'Old Request',
+      email: 'old.request@example.com',
+      invitedBy: lost.membershipId,
+    });
+    const unreplaced = await members(lost.orgId);
+    const quinn = account('quinn@example.com');
+    for (const action of ['invite.cancel', 'membership.create', 'membership.remove']) {
+      await expect(
+        restoreOwner(failingAudit(pool, action), directory({ quinn }), {
+          ...APPROVAL,
+          mode: 'successor',
+          successor: { username: 'quinn', name: 'Quinn Example' },
+          replaces: lost.membershipId,
+        }),
+      ).rejects.toThrow(/audit insert failed/);
+      expect(await members(lost.orgId)).toEqual(unreplaced);
+      expect(await inviteRow(lost, request)).toMatchObject({
+        status: 'pending',
+        name: 'Old Request',
+      });
+      expect((await oldSession.fetch('/api/displays')).status).toBe(200);
+      for (const written of ['invite.cancel', 'membership.create', 'membership.remove']) {
+        expect(await audits(lost.orgId, written)).toEqual([]);
+      }
+    }
 
     const orgName = `Never audited ${randomUUID().slice(0, 8)}`;
     await expect(

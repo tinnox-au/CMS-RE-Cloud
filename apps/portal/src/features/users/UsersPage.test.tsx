@@ -8,15 +8,17 @@ import { TEST_MEMBERSHIP_ID, WithSession } from '../../session/session.test-supp
 import { ToastProvider } from '../../ui/index.ts';
 import { UsersPage } from './UsersPage.tsx';
 
-const { listMembers, listInvites, removeMember, patchMember, cancelInvite } = vi.hoisted(() => ({
-  listMembers: vi.fn<() => Promise<MemberDto[]>>(),
-  listInvites: vi.fn<() => Promise<InviteDto[]>>(),
-  removeMember: vi.fn<(id: string) => Promise<MemberChangeResponse>>(),
-  patchMember: vi.fn<(id: string, patch: unknown) => Promise<MemberChangeResponse>>(),
-  cancelInvite: vi.fn<(id: string) => Promise<void>>(),
-}));
+const { listMembers, listInvites, removeMember, patchMember, signOutMember, cancelInvite } =
+  vi.hoisted(() => ({
+    listMembers: vi.fn<() => Promise<MemberDto[]>>(),
+    listInvites: vi.fn<() => Promise<InviteDto[]>>(),
+    removeMember: vi.fn<(id: string) => Promise<MemberChangeResponse>>(),
+    patchMember: vi.fn<(id: string, patch: unknown) => Promise<MemberChangeResponse>>(),
+    signOutMember: vi.fn<(id: string) => Promise<{ sessionsEnded: number }>>(),
+    cancelInvite: vi.fn<(id: string) => Promise<void>>(),
+  }));
 vi.mock('../../api/index.ts', () => ({
-  api: { listMembers, listInvites, removeMember, patchMember, cancelInvite },
+  api: { listMembers, listInvites, removeMember, patchMember, signOutMember, cancelInvite },
 }));
 // The page frame needs the whole shell (SessionContext, push); the test reads the page body.
 vi.mock('../../shell/Page.tsx', () => ({
@@ -69,8 +71,8 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-async function renderAs(role: Role) {
-  listMembers.mockResolvedValue(people(role));
+async function renderAs(role: Role, extra: readonly MemberDto[] = []) {
+  listMembers.mockResolvedValue([...people(role), ...extra]);
   listInvites.mockResolvedValue([EDITOR_INVITE]);
   const screen = await render(
     <WithSession role={role}>
@@ -90,9 +92,9 @@ async function renderAs(role: Role) {
 type Screen = Awaited<ReturnType<typeof renderAs>>;
 
 function actionsFor(screen: Screen, who: MemberDto) {
-  return screen
-    .getByTestId(`users-row-${who.id}`)
-    .getByRole('button', { name: `Actions for ${who.displayName ?? ''}` });
+  return screen.getByTestId(`users-row-${who.id}`).getByRole('button', {
+    name: `Actions for ${who.displayName ?? `Unnamed person ${who.id.slice(0, 8).toUpperCase()}`}`,
+  });
 }
 
 /** The toasts shown so far; the stack is a closed popover, out of the accessibility tree, until the first. */
@@ -276,5 +278,121 @@ describe('UsersPage: as an Owner', () => {
     expect(alert.element().textContent).not.toContain('was not removed');
     await expect.poll(() => listMembers.mock.calls.length).toBeGreaterThan(reads);
     expect(toastText()).toBe('');
+  });
+
+  it('does not claim a role, name or sign-out change failed when the answer was lost', async () => {
+    const lost = () =>
+      new ApiRequestError({
+        status: 0,
+        code: 'network_error',
+        message: 'The server could not be reached.',
+        fromApi: false,
+      });
+    patchMember.mockRejectedValue(lost());
+    signOutMember.mockRejectedValue(lost());
+    const screen = await renderAs('owner');
+
+    const cases = [
+      {
+        item: 'Change role',
+        dialog: 'users-role-dialog',
+        act: async (dialog: ReturnType<Screen['getByTestId']>) => {
+          await dialog.getByTestId('users-role-viewer').click();
+          await dialog.getByTestId('users-role-save').click();
+        },
+        title: /The role change could not be confirmed/,
+        said: /The server may or may not have made Ada Admin a Viewer\./,
+        never: 'was not changed',
+      },
+      {
+        item: 'Correct name',
+        dialog: 'users-name-dialog',
+        act: async (dialog: ReturnType<Screen['getByTestId']>) => {
+          await dialog.getByTestId('users-name-input').fill('Ada Lovelace');
+          await dialog.getByTestId('users-name-save').click();
+        },
+        title: /The name change could not be confirmed/,
+        said: /The server may or may not have changed the name to “Ada Lovelace”\./,
+        never: 'was not changed',
+      },
+      {
+        item: 'Sign out everywhere',
+        dialog: 'users-sign-out-dialog',
+        act: async (dialog: ReturnType<Screen['getByTestId']>) => {
+          await dialog.getByRole('button', { name: 'Sign out everywhere' }).click();
+        },
+        title: /The sign-out could not be confirmed/,
+        said: /The server may or may not have signed Ada Admin out\./,
+        never: 'was not signed out',
+      },
+    ];
+    for (const step of cases) {
+      const reads = listMembers.mock.calls.length;
+      await openAction(screen, ADMIN, step.item);
+      const dialog = screen.getByTestId(step.dialog);
+      await step.act(dialog);
+      const alert = dialog.getByRole('alert');
+      await expect.element(alert).toMatchTextContent(step.title);
+      await expect.element(alert).toMatchTextContent(step.said);
+      expect(alert.element().textContent).not.toContain(step.never);
+      // The lists were read again, so the table shows what the server did.
+      await expect.poll(() => listMembers.mock.calls.length).toBeGreaterThan(reads);
+      await dialog.getByRole('button', { name: 'Cancel' }).click();
+      await expect.element(dialog).not.toBeVisible();
+    }
+    expect(toastText()).toBe('');
+  });
+
+  it('tells unnamed people apart in their rows, menus and the Remove confirm', async () => {
+    const first = member('3f9a12c4-0000-4000-8000-000000000021', '', 'owner', {
+      displayName: null,
+      firstSignedInAt: null,
+    });
+    const second = member('7c01d2e9-0000-4000-8000-000000000022', '', 'owner', {
+      displayName: null,
+      firstSignedInAt: null,
+    });
+    const screen = await renderAs('owner', [first, second]);
+
+    await expect
+      .element(screen.getByTestId(`users-row-${first.id}`))
+      .toMatchTextContent(/Unnamed person 3F9A12C4/);
+    await expect
+      .element(actionsFor(screen, first))
+      .toHaveAccessibleName('Actions for Unnamed person 3F9A12C4');
+    await expect
+      .element(actionsFor(screen, second))
+      .toHaveAccessibleName('Actions for Unnamed person 7C01D2E9');
+
+    await openAction(screen, second, 'Remove');
+    const dialog = screen.getByTestId('users-remove-dialog');
+    await expect
+      .element(dialog.getByRole('heading', { name: 'Remove Unnamed person 7C01D2E9?' }))
+      .toBeVisible();
+    await expect
+      .element(dialog.getByTestId('users-remove-consequence'))
+      .toMatchTextContent(/^Unnamed person 7C01D2E9 is signed out now/);
+  });
+
+  it('promises the "renamed" mark only when a set name is corrected', async () => {
+    const unnamed = member('3f9a12c4-0000-4000-8000-000000000021', '', 'editor', {
+      displayName: null,
+    });
+    const screen = await renderAs('owner', [unnamed]);
+    const renamed = 'The audit log marks the person as renamed.';
+
+    await openAction(screen, unnamed, 'Correct name');
+    const first = screen.getByTestId('users-name-dialog');
+    await expect
+      .element(first)
+      .toHaveAccessibleDescription(
+        'The name shows here, in activity and in the audit log, for past events too.',
+      );
+    await first.getByRole('button', { name: 'Cancel' }).click();
+    await expect.element(first).not.toBeVisible();
+
+    await openAction(screen, EDITOR, 'Correct name');
+    const correction = screen.getByTestId('users-name-dialog');
+    await expect.element(correction).toHaveAccessibleDescription(new RegExp(`${renamed}$`));
   });
 });

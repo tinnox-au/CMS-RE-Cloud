@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { api, apiClient, onForbidden, onUnauthenticated } from '../api/index.ts';
+import { api, apiClient, onForbidden, onSessionChanged, onUnauthenticated } from '../api/index.ts';
 import { takeAuthError } from '../lib/authError.ts';
 import type { AuthenticatedSession } from './AuthenticatedSession.tsx';
 
@@ -172,6 +172,9 @@ export function SessionProvider({ children }: { readonly children: ReactNode }) 
       );
     } else {
       // Another tab signed in as someone else: start again, so no page keeps the old member's data.
+      // The new member's token is dropped until the new session check stores it, so no write
+      // from the old member's page goes out as the new member before that page is gone.
+      apiClient.clearSession();
       retry();
     }
   }, [retry]);
@@ -200,10 +203,12 @@ export function SessionProvider({ children }: { readonly children: ReactNode }) 
       if (document.visibilityState === 'visible') triggerIfDue();
     };
     const stopForbidden = onForbidden(trigger);
+    const stopSessionChanged = onSessionChanged(trigger);
     window.addEventListener('focus', triggerIfDue);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       stopForbidden();
+      stopSessionChanged();
       window.removeEventListener('focus', triggerIfDue);
       document.removeEventListener('visibilitychange', onVisibility);
     };

@@ -1,11 +1,11 @@
 import type { InviteDto, MemberDto, Role } from '@tinnox/contracts';
 import { isDemotion, ROLE_LABELS } from '@tinnox/domain';
 import { useState } from 'react';
-import { isApiRequestError } from '../../api/client.ts';
+import { isApiRequestError, isOutcomeUnknown } from '../../api/client.ts';
 import { api } from '../../api/index.ts';
 import {
   invitesCancelledBy,
-  memberName,
+  memberLabel,
   memberRefusal,
   roleChangeConsequence,
   roleChoices,
@@ -15,6 +15,14 @@ import {
 import { Banner, Button, Dialog, ErrorNotice, useToast } from '../../ui/index.ts';
 import { RoleChoices } from './RoleChoices.tsx';
 import './users.css';
+
+const NOT_CHANGED = 'The role was not changed';
+
+/** A refusal, or an answer that never came, said in the dialog. */
+interface Notice {
+  readonly title: string;
+  readonly message: string;
+}
 
 export interface RoleDialogProps {
   /** The member whose role changes; null keeps the dialog closed. Read when it opens. */
@@ -40,7 +48,7 @@ export function RoleDialog({ member, actorRole, invites, onClose, onChanged }: R
   // The member as it was when the dialog opened; it stays while the dialog fades out.
   const [current, setCurrent] = useState<MemberDto | null>(member);
   const [role, setRole] = useState<Role>(member?.role ?? 'viewer');
-  const [refusal, setRefusal] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [wasOpen, setWasOpen] = useState(open);
@@ -49,13 +57,13 @@ export function RoleDialog({ member, actorRole, invites, onClose, onChanged }: R
     if (member !== null) {
       setCurrent(member);
       setRole(member.role);
-      setRefusal(null);
+      setNotice(null);
       setError(null);
       setBusy(false);
     }
   }
 
-  const name = current === null ? '' : memberName(current);
+  const name = current === null ? '' : memberLabel(current);
   const from = current?.role ?? role;
   const unchanged = role === from;
   const demotion = isDemotion(from, role);
@@ -68,7 +76,7 @@ export function RoleDialog({ member, actorRole, invites, onClose, onChanged }: R
     const target = current;
     const to = role;
     setBusy(true);
-    setRefusal(null);
+    setNotice(null);
     setError(null);
     api.patchMember(target.id, { role: to }).then(
       (answer) => {
@@ -81,13 +89,22 @@ export function RoleDialog({ member, actorRole, invites, onClose, onChanged }: R
       },
       (reason: unknown) => {
         setBusy(false);
+        // The answer may be lost after the server made the change: never say it was not made.
+        if (isOutcomeUnknown(reason)) {
+          setNotice({
+            title: 'The role change could not be confirmed',
+            message: `The server may or may not have made ${name} ${roleWithArticle(to)}. The lists were refreshed; check them before you try again.`,
+          });
+          onChanged();
+          return;
+        }
         if (isApiRequestError(reason) && reason.code === 'last_owner') {
-          setRefusal(memberRefusal(reason).message);
+          setNotice({ title: NOT_CHANGED, message: memberRefusal(reason).message });
           return;
         }
         if (isApiRequestError(reason) && reason.code === 'conflict') {
           const words = memberRefusal(reason);
-          setRefusal(words.message);
+          setNotice({ title: NOT_CHANGED, message: words.message });
           // Not an Owner yet is about this choice; anything else (removed meanwhile) means
           // the lists on the page are out of date.
           if (words.field !== 'role') onChanged();
@@ -125,15 +142,15 @@ export function RoleDialog({ member, actorRole, invites, onClose, onChanged }: R
     >
       {current !== null && (
         <div className="tx-users-form">
-          {refusal !== null && (
-            <Banner tone="danger" live="assertive" title="The role was not changed">
-              <p>{refusal}</p>
+          {notice !== null && (
+            <Banner tone="danger" live="assertive" title={notice.title}>
+              <p>{notice.message}</p>
             </Banner>
           )}
           {error !== null && (
             <ErrorNotice
               error={error}
-              title="The role was not changed"
+              title={NOT_CHANGED}
               onDismiss={() => {
                 setError(null);
               }}
@@ -144,7 +161,7 @@ export function RoleDialog({ member, actorRole, invites, onClose, onChanged }: R
             value={role}
             onChange={(next) => {
               setRole(next);
-              setRefusal(null);
+              setNotice(null);
             }}
             disabled={busy}
             testIdPrefix="users-role-"

@@ -323,7 +323,7 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
           media={<MediaThumb media={media} size="sm" />}
           meta={
             media.status === 'failed' ? (
-              <MediaFailureNote media={media} />
+              <MediaFailureNote media={media} readOnly={!canWrite} />
             ) : summaryLine(media) === '' ? undefined : (
               <span className="tx-media-library__summary">{summaryLine(media)}</span>
             )
@@ -736,7 +736,7 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
                         <span className="tx-media-library__tile-caption">{tileCaption(media)}</span>
                         {media.status !== 'ready' && <MediaStatusPill media={media} />}
                       </span>
-                      <MediaFailureNote media={media} compact />
+                      <MediaFailureNote media={media} compact readOnly={!canWrite} />
                     </span>
                   }
                   actions={canSelect ? rowMenu(media) : undefined}

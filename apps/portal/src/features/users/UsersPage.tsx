@@ -12,6 +12,7 @@ import {
   invitesCancelledBy,
   managedByOwner,
   memberActions,
+  memberLabel,
   memberName,
   peopleCountLabel,
   removeConsequence,
@@ -125,7 +126,7 @@ export function UsersPage() {
   const shownMembers = show === 'removed' ? removed : current;
 
   const list = applyListView(shownMembers, {
-    search: { query, texts: (member) => [memberName(member), ROLE_LABELS[member.role]] },
+    search: { query, texts: (member) => [memberLabel(member), ROLE_LABELS[member.role]] },
     sort,
     accessors: SORT_ACCESSORS,
     page,
@@ -161,13 +162,13 @@ export function UsersPage() {
     sortable: true,
     grow: true,
     cell: (member) => {
-      const name = memberName(member);
+      const name = memberLabel(member);
       const own = member.id.toLowerCase() === actor.id.toLowerCase();
       return (
         <>
           <NameCell
             name={name}
-            media={<Avatar name={name} />}
+            media={<Avatar name={memberName(member)} />}
             meta={own ? <span className="tx-users-you">You</span> : undefined}
           />
           {canChange && managedByOwner(actor, member) && (
@@ -219,7 +220,7 @@ export function UsersPage() {
   const rowActions = (member: MemberDto) => {
     const actions = memberActions(actor, member);
     if (actions.length === 0) return null;
-    const name = memberName(member);
+    const name = memberLabel(member);
     return (
       <Menu
         placement="bottom-end"
@@ -476,6 +477,7 @@ export function UsersPage() {
       <NameDialog
         member={nameTarget}
         members={members}
+        invites={invites}
         onClose={() => {
           setNameTarget(null);
         }}
@@ -557,22 +559,32 @@ interface MemberConfirmProps {
 /** "Sign out everywhere": ends every session the person has open. Their role stays. */
 function SignOutDialog({ member, onClose, onChanged, onDone }: MemberConfirmProps) {
   const state = useConfirmState(member);
-  const name = state.shown === null ? '' : memberName(state.shown);
+  const name = state.shown === null ? '' : memberLabel(state.shown);
 
   const confirm = () => {
     if (state.busy || state.shown === null) return;
     const target = state.shown;
     state.setBusy(true);
     state.setError(null);
+    state.setNotice(null);
     api.signOutMember(target.id).then(
       (answer) => {
         state.setBusy(false);
         onChanged();
         onClose();
-        onDone(memberName(target), answer.sessionsEnded);
+        onDone(memberLabel(target), answer.sessionsEnded);
       },
       (reason: unknown) => {
         state.setBusy(false);
+        // The answer may be lost after the server ended the sessions: never say it did not.
+        if (isOutcomeUnknown(reason)) {
+          state.setNotice({
+            title: 'The sign-out could not be confirmed',
+            message: `The server may or may not have signed ${memberLabel(target)} out. The lists were refreshed; check them before you try again.`,
+          });
+          onChanged();
+          return;
+        }
         state.setError(reason);
         if (isApiRequestError(reason) && reason.code === 'conflict') onChanged();
       },
@@ -594,6 +606,11 @@ function SignOutDialog({ member, onClose, onChanged, onDone }: MemberConfirmProp
         saved is lost. Their next sign-in asks for their password and one-time code. Their role does
         not change.
       </p>
+      {state.notice !== null && (
+        <Banner tone="danger" live="assertive" title={state.notice.title}>
+          <p>{state.notice.message}</p>
+        </Banner>
+      )}
       {state.error !== null && (
         <ErrorNotice error={state.error} title={`${name} was not signed out`} />
       )}
@@ -619,7 +636,7 @@ function RemoveDialog({
   const state = useConfirmState(member);
   const open = member !== null;
   const returnFocus = useRowFocusReturn(open, member === null ? [] : [member.id], rowFocus);
-  const name = state.shown === null ? '' : memberName(state.shown);
+  const name = state.shown === null ? '' : memberLabel(state.shown);
   // Follows the lists while open; kept while the dialog fades out, so its text does not
   // change when the lists are read again after the removal.
   const liveCount = state.shown === null ? 0 : invitesCancelledBy(invites, state.shown.id, null);
@@ -638,7 +655,7 @@ function RemoveDialog({
         state.setBusy(false);
         onChanged();
         onClose();
-        onDone(memberName(target), answer.sessionsEnded);
+        onDone(memberLabel(target), answer.sessionsEnded);
       },
       (reason: unknown) => {
         state.setBusy(false);
@@ -646,7 +663,7 @@ function RemoveDialog({
         if (isOutcomeUnknown(reason)) {
           state.setNotice({
             title: 'The removal could not be confirmed',
-            message: `The server may or may not have removed ${memberName(target)}. The lists were refreshed; check them before you try again.`,
+            message: `The server may or may not have removed ${memberLabel(target)}. The lists were refreshed; check them before you try again.`,
           });
           onChanged();
           return;

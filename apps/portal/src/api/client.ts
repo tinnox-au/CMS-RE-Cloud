@@ -145,6 +145,11 @@ export interface ApiClientDeps {
   readonly onUnauthenticated: () => void;
   /** Called when the API refuses a request by role (403 `forbidden`); the session reloads. */
   readonly onForbidden?: () => void;
+  /**
+   * Called when a request made for one member met another member's session (someone signed in
+   * as another person in this browser); the session reloads and the portal starts again.
+   */
+  readonly onSessionChanged?: () => void;
 }
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -180,12 +185,27 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
 
+/** The CSRF token of the current session and the member and organisation it belongs to. */
+interface Credential {
+  readonly csrfToken: string;
+  /** `<organization id>/<membership id>`. */
+  readonly member: string;
+}
+
+function credentialOf(session: SessionResponse): Credential | null {
+  if (!session.authenticated) return null;
+  return {
+    csrfToken: session.csrfToken,
+    member: `${session.organization.id.toLowerCase()}/${session.user.membershipId.toLowerCase()}`,
+  };
+}
+
 export function createApiClient(deps: ApiClientDeps): ApiClient {
   // The CSRF token lives only in this closure: never in web storage, a cookie or the URL.
-  let csrfToken: string | null = null;
+  let credential: Credential | null = null;
 
   function notifyUnauthenticated(): void {
-    csrfToken = null;
+    credential = null;
     deps.onUnauthenticated();
   }
 
@@ -202,11 +222,15 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
     }
   }
 
-  async function send(options: RequestOptions): Promise<{ status: number; text: string }> {
+  /** Sends one request; a state-changing one carries the CSRF token of `sentWith`. */
+  async function send(
+    options: RequestOptions,
+    sentWith: Credential | null,
+  ): Promise<{ status: number; text: string }> {
     const method = options.method ?? 'GET';
     const headers: Record<string, string> = { accept: 'application/json', ...options.headers };
     if (STATE_CHANGING.has(method)) {
-      if (csrfToken === null) {
+      if (sentWith === null) {
         throw new ApiRequestError({
           status: 0,
           code: 'no_session',
@@ -214,7 +238,7 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
           fromApi: false,
         });
       }
-      headers[HEADERS.csrf] = csrfToken;
+      headers[HEADERS.csrf] = sentWith.csrfToken;
     }
     const init: RequestInit = {
       method,
@@ -263,8 +287,10 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
   async function sendWithRecovery(
     options: RequestOptions,
   ): Promise<{ status: number; text: string }> {
+    // The member the request is made for: the one whose token it carries.
+    const sentWith = credential;
     try {
-      return await send(options);
+      return await send(options, sentWith);
     } catch (error) {
       if (!isApiRequestError(error)) throw error;
       // A rejected CSRF token means the request was not carried out. The token may simply be
@@ -275,8 +301,17 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
           notifyUnauthenticated();
           throw error;
         }
+        const now = credentialOf(session);
+        if (sentWith === null || now?.member !== sentWith.member) {
+          // Someone signed in as another person, or in another organisation, in this browser.
+          // The request was meant for the member it was made for, so it is never sent again
+          // as the new one; no write goes out until the portal has started again.
+          credential = null;
+          deps.onSessionChanged?.();
+          throw error;
+        }
         try {
-          return await send(options);
+          return await send(options, now);
         } catch (retryError) {
           if (isApiRequestError(retryError)) noticeRefusal(retryError, options.path);
           throw retryError;
@@ -330,17 +365,17 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
     try {
       const options: RequestOptions =
         signal === undefined ? { path: ROUTES.session } : { path: ROUTES.session, signal };
-      const { status, text } = await send(options);
+      const { status, text } = await send(options, null);
       session = parseBody(text, SessionResponseSchema, status);
     } catch (error) {
       // Some deployments answer 401 instead of `{ authenticated: false }`; both mean signed out.
       if (isApiRequestError(error) && error.status === 401) {
-        csrfToken = null;
+        credential = null;
         return { authenticated: false };
       }
       throw error;
     }
-    csrfToken = session.authenticated ? session.csrfToken : null;
+    credential = credentialOf(session);
     return session;
   }
 
@@ -348,9 +383,9 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
     request,
     requestNoContent,
     loadSession,
-    getCsrfToken: () => csrfToken,
+    getCsrfToken: () => credential?.csrfToken ?? null,
     clearSession: () => {
-      csrfToken = null;
+      credential = null;
     },
     notifyUnauthenticated,
     notifyForbidden,

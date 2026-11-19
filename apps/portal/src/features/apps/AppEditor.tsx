@@ -129,7 +129,11 @@ export function AppEditor({ initial }: AppEditorProps) {
   const invalid = appErrorFields(errors);
   const { content } = draft;
   const nowMs = Date.now();
-  const contrast = contrastWarning(content.settings.textColour, content.settings.backgroundColour);
+  const contrast = contrastWarning(
+    content.settings.textColour,
+    content.settings.backgroundColour,
+    readOnly,
+  );
 
   /** A field changed: its message goes (a Text message also clears the heading's). */
   const change = (field: string, next: AppDraft) => {

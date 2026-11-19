@@ -8,7 +8,8 @@
 // deleted again. Stage C (CMS-13): the ID token carries auth_time; prompt=login makes a browser
 // that is still signed in at Keycloak enter the password and a fresh one-time code again (the
 // re-sign-in after a removal, demotion or "sign out everywhere"); the tinnox-provisioning client
-// reads accounts and cannot create one. Prints no secret.
+// reads accounts, cannot create one and holds no realm-management role but view-users. Prints no
+// secret.
 // Usage: node scripts/verify-oidc-login.mjs [operator|secondOrgOperator|admin|editor|viewer]
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -381,5 +382,31 @@ if (provisionCreate.status === 201) {
   await admin(`/users/${strayId}`, { method: 'DELETE' });
 }
 check(provisionCreate.status === 403, 'the provisioning client cannot create an account');
+// The 403 proves only that manage-users is missing. Read the service account's effective
+// realm-management roles (composites, groups and realm roles included) as the local admin: a
+// role added later, such as view-clients, fails here.
+const onlyId = async (path) => {
+  const response = await admin(path);
+  const rows = response.status === 200 ? await response.json() : [];
+  return rows.length === 1 ? rows[0].id : 'none';
+};
+const provisionClient = await onlyId(
+  `/clients?${new URLSearchParams({ clientId: process.env.PROVISION_IDP_CLIENT_ID ?? '' })}`,
+);
+const realmManagement = await onlyId(
+  `/clients?${new URLSearchParams({ clientId: 'realm-management' })}`,
+);
+const serviceAccount = await admin(`/clients/${provisionClient}/service-account-user`);
+const serviceAccountId = serviceAccount.status === 200 ? (await serviceAccount.json()).id : 'none';
+const effective = await admin(
+  `/users/${serviceAccountId}/role-mappings/clients/${realmManagement}/composite`,
+);
+const readerRoles = effective.status === 200 ? (await effective.json()).map((r) => r.name) : [];
+// view-users and its composites (query-users, query-groups); nothing else.
+const READER_ROLES = new Set(['view-users', 'query-users', 'query-groups']);
+check(
+  readerRoles.includes('view-users') && readerRoles.every((name) => READER_ROLES.has(name)),
+  `the provisioning client holds view-users only in realm-management (has: ${readerRoles.sort().join(', ') || 'none'})`,
+);
 
 console.log('\nAll identity-provider checks passed.');

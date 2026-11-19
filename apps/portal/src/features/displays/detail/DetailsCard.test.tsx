@@ -61,8 +61,9 @@ describe('DetailsCard: as a Viewer', () => {
     const name = screen.getByTestId('screen-detail-name');
     await expect.element(name).toHaveAttribute('readonly');
 
-    (name.element() as HTMLElement).focus();
-    await userEvent.keyboard('{Enter}');
+    // Scoped to the field: `userEvent.keyboard` first finds the test frame by name, which can
+    // still be the previous file's frame as it goes away ("Frame was detached").
+    await userEvent.type(name, '{Enter}');
     // Give a request that wrongly starts the time to be made.
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(patchDisplay).not.toHaveBeenCalled();

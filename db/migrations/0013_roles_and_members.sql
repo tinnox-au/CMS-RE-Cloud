@@ -1,7 +1,7 @@
 -- 0013: roles and members (CMS-13, DEC-35; docs/portal-v2/stage-c.md). 0001 to 0012 are unchanged.
 --
 --   1. membership: four roles; today's 'operator' rows become 'owner' (D4 a); display name,
---      removal, first sign-in and the session cut-off.
+--      removal, first sign-in (filled from the session rows still kept) and the session cut-off.
 --   2. membership_guard: an organisation keeps an active Owner; a removal is final.
 --   3. membership_display_name_stamp: records when a set name is changed.
 --   4. member_invite: invite requests that TINNOX completes, and member_invite_guard.
@@ -23,8 +23,8 @@
 -- sessions_valid_after or display_name_changed_at. tinnox_definer gets UPDATE on the two
 -- columns its sec.* functions write, and a script-only read of member_invite (section 5).
 --
--- Locks and deploy order. Takes ACCESS EXCLUSIVE on membership until commit, which waits for
--- every API request (sec.session_by_id_hash joins membership). It drops the five-argument
+-- Locks and deploy order. Takes ACCESS EXCLUSIVE on membership and session until commit, which
+-- waits for every API request (sec.session_by_id_hash reads both). It drops the five-argument
 -- sec.session_create, so an API from before 0013 cannot sign anyone in afterwards: stop the
 -- API, migrate, then start the new API and portal together.
 
@@ -42,7 +42,8 @@ ALTER TABLE public.membership
   ADD COLUMN removed_at timestamptz,
   -- The member who removed this one; NULL when TINNOX's script removed them.
   ADD COLUMN removed_by uuid,
-  -- Written by sec.session_create only; reactivation by provision-member fulfil clears it.
+  -- Written by sec.session_create only, after the one-time fill below; reactivation by
+  -- provision-member fulfil clears it.
   ADD COLUMN first_signed_in_at timestamptz,
   -- Written by sec.session_revoke_membership only: sessions created, and sign-ins
   -- authenticated, before it are refused.
@@ -63,12 +64,24 @@ CREATE UNIQUE INDEX membership_org_display_name_key ON public.membership (org_id
 -- sec.session_revoke_membership ends a member's live sessions by membership_id.
 CREATE INDEX session_membership_idx ON public.session (membership_id) WHERE revoked_at IS NULL;
 
--- Row-level security is forced, so even the owner sees no membership rows without an
--- organisation context, and this statement spans every organisation. FORCE is lifted for this
--- one statement and restored at once, inside this transaction, as 0005:179-201 does: no other
--- session ever sees the table without it, and tinnox_app stays subject to the policy.
+-- Row-level security is forced, so even the owner sees no membership or session rows without an
+-- organisation context, and these two statements span every organisation. FORCE is lifted for
+-- them and restored at once, inside this transaction, as 0005:179-201 does: no other session
+-- ever sees the tables without it, and tinnox_app stays subject to the policy.
 ALTER TABLE public.membership NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.session NO FORCE ROW LEVEL SECURITY;
 UPDATE public.membership SET role = 'owner' WHERE role = 'operator';
+-- A member who signed in before 0013 has signed in: first_signed_in_at becomes their earliest
+-- session row. Only sec.session_create ever wrote one, after a verified sign-in. Sessions are
+-- purged a day after they end (0004), so a member whose last sign-in is older stays NULL until
+-- the next one. The audit log is not read: tinnox_app can write it, and no permission decision
+-- reads it (stage-c-roles-decision.md, "Known residuals"; control-matrix.md:31).
+UPDATE public.membership m
+SET first_signed_in_at = s.first_at
+FROM (SELECT membership_id, org_id, min(created_at) AS first_at
+      FROM public.session GROUP BY membership_id, org_id) s
+WHERE m.id = s.membership_id AND m.org_id = s.org_id;
+ALTER TABLE public.session FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.membership FORCE ROW LEVEL SECURITY;
 
 -- Validated against every row now: a row the mapping missed fails the migration.
@@ -584,7 +597,8 @@ RESET ROLE;
 -- -------------------------------------------------------------------- 7. checks
 
 -- Same guard as 0001: fail if any table in public is without forced row-level security.
--- It covers member_invite and membership, whose FORCE was lifted for the mapping.
+-- It covers member_invite, and membership and session, whose FORCE was lifted for the mapping
+-- and the first sign-in fill.
 DO $$
 DECLARE
   missing text;

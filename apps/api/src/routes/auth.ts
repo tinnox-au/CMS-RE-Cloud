@@ -266,9 +266,19 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
           return session;
         });
       } catch (error) {
-        // A member change held the member row past lock_timeout: nothing was committed.
+        // A member change held the member row past lock_timeout: nothing was committed, the
+        // transaction's audit row included, so the failed sign-in is recorded on its own.
         if (pgErrorCode(error) === '55P03') {
           request.log.warn({ pgCode: '55P03' }, 'sign-in waited too long for the member row');
+          await auditUnscoped(unscoped, {
+            actorType: 'anonymous',
+            actorId: null,
+            action: 'auth.login',
+            objectType: null,
+            objectId: null,
+            result: 'failure',
+            detail: { reason: 'member_locked' },
+          });
           return failureRedirect(ctx, reply, 'provider_unavailable');
         }
         throw error;

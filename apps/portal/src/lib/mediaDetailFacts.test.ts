@@ -1,8 +1,13 @@
-import type { MediaUsageResponse } from '@tinnox/contracts';
+import {
+  MEDIA_ERROR_CODES,
+  MEDIA_ERROR_MESSAGES,
+  type MediaUsageResponse,
+} from '@tinnox/contracts';
 import { describe, expect, it } from 'vitest';
 import {
   codecLabel,
   deleteConsequence,
+  MEDIA_ERROR_FACTS,
   mediaFailureText,
   mediaFormatLabel,
   mediaKindFact,
@@ -64,6 +69,23 @@ describe('media facts', () => {
       code: null,
       detail: null,
     });
+  });
+
+  it('tells a read-only role what went wrong, not what to do about it', () => {
+    expect(
+      mediaFailureText({ errorCode: 'unsupported_codec', errorDetail: 'codec hevc' }, true),
+    ).toEqual({
+      message: 'The video codec is not supported.',
+      code: 'unsupported_codec',
+      detail: 'codec hevc',
+    });
+    for (const code of MEDIA_ERROR_CODES) {
+      const fact = MEDIA_ERROR_FACTS[code];
+      // The fact is the shared message's first sentence, so the two never drift apart.
+      expect(MEDIA_ERROR_MESSAGES[code].startsWith(fact), code).toBe(true);
+      expect(fact, code).toMatch(/^[^.]+\.$/);
+      expect(fact, code).not.toMatch(/\b(re-?encode|resize|export|try again|upload (a|it))\b/i);
+    }
   });
 });
 

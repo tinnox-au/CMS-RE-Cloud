@@ -77,8 +77,9 @@ describe('ContentCard: the Change menu while "Remove content" is saved', () => {
   it('opens from the keyboard while nothing is being saved', async () => {
     const screen = await renderCard();
     const change = screen.getByTestId('screen-detail-change-content');
-    (change.element() as HTMLElement).focus();
-    await userEvent.keyboard('{ArrowDown}');
+    // Scoped to the button: `userEvent.keyboard` first finds the test frame by name, which can
+    // still be the previous file's frame as it goes away ("Frame was detached").
+    await userEvent.type(change, '{ArrowDown}');
     await expect.element(screen.getByRole('menuitem', { name: 'Remove content' })).toBeVisible();
   });
 
@@ -100,13 +101,12 @@ describe('ContentCard: the Change menu while "Remove content" is saved', () => {
 
     // Each key on its own: Enter in an open menu would choose an item and close it again.
     for (const key of ['{ArrowDown}', '{ArrowUp}']) {
-      (change.element() as HTMLElement).focus();
-      await userEvent.keyboard(key);
+      await userEvent.type(change, key);
       // Give a menu that wrongly opens the time to render before looking.
       await new Promise((resolve) => setTimeout(resolve, 100));
       expect(screen.getByRole('menuitem').elements(), key).toHaveLength(0);
     }
-    await userEvent.keyboard('{Enter}');
+    await userEvent.type(change, '{Enter}');
     await change.click({ force: true });
     expect(screen.getByRole('menuitem').elements()).toHaveLength(0);
     expect(patchDisplay).toHaveBeenCalledTimes(1);

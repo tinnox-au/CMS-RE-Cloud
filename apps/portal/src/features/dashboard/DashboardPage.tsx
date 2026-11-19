@@ -123,7 +123,7 @@ export function DashboardPage() {
         {/* Setting up starts with adding a screen: without screen.setup the card is not shown. */}
         {canSetup && setup !== null && !setup.complete && <SetupCard progress={setup} />}
 
-        <ScreensCard overview={overview} />
+        <ScreensCard overview={overview} canSetup={canSetup} />
 
         <div className="tx-dashboard-grid">
           <PushCard />

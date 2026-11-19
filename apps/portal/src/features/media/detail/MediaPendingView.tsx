@@ -29,14 +29,15 @@ const READ_ONLY_STATE_TEXT = {
  * the state in words (for a failure the reason and the error code as text), and Delete as
  * the only action. A file being checked is read again every two seconds by the page.
  * Without `content.write` the page says it is read-only and keeps the facts of the state text
- * but not what to do next; Delete shows only for a role that holds `media.delete`.
+ * and of the reason but not what to do next; Delete shows only for a role that holds
+ * `media.delete`.
  */
 export function MediaPendingView({ media, notice }: MediaPendingViewProps) {
   const remove = useMediaDelete({ media, usage: null });
   const readOnly = !useCanAtMount('content.write');
   const canDelete = useCan('media.delete');
   const text = pendingStateText(media.status);
-  const failure = media.status === 'failed' ? mediaFailureText(media) : null;
+  const failure = media.status === 'failed' ? mediaFailureText(media, readOnly) : null;
   const titleId = useId();
 
   return (

@@ -27,7 +27,7 @@ export interface OverviewTabProps {
   readonly contentKind: ContentKind | null;
 }
 
-/** The M0 live status facts: what the operator set, and what the player software reported. */
+/** The M0 live status facts: what was set in TINNOX CMS, and what the player software reported. */
 export function OverviewTab({ status, onReload, contentKind }: OverviewTabProps) {
   if (status.status === 'loading') {
     return (
@@ -102,7 +102,7 @@ function StatusFacts({
 
       <section className="tx-screen-detail-section" aria-labelledby="screen-detail-set-title">
         <h3 id="screen-detail-set-title" className="tx-screen-detail-caption">
-          Set by the operator
+          Set in TINNOX CMS
         </h3>
         <Facts>
           <Fact label="Desired publication" testId="status-desired">

@@ -822,14 +822,40 @@ export async function setName(
     if (member === undefined) throw new RefusedError('no membership matches');
     await enterOrg(member.org_id);
     await lockOrgMembership(tx);
-    const updated = await named(
-      tx.query(
-        `UPDATE membership SET display_name = $2
-         WHERE id = $1 AND org_id = app_org_id() AND removed_at IS NULL`,
-        [member.id, args.name],
-      ),
+    const current = (
+      await tx.query<{ display_name: string | null }>(
+        `SELECT display_name FROM membership
+         WHERE id = $1 AND org_id = app_org_id() AND removed_at IS NULL FOR NO KEY UPDATE`,
+        [member.id],
+      )
+    ).rows[0];
+    if (current === undefined) throw new RefusedError('the member was removed');
+    // As PATCH /api/members/:id: the same name again (a repeated run) writes no row and no audit.
+    if (current.display_name === args.name) {
+      return {
+        membershipId: member.id,
+        lines: [`Membership ${member.id} already has this name; nothing changed.`],
+      };
+    }
+    // As PATCH /api/members/:id: a pending invite keeps its name until it is fulfilled with it,
+    // so taking the name would leave the invite stuck. Checked under the membership lock.
+    const invited = await tx.query(
+      `SELECT 1 FROM member_invite
+       WHERE org_id = app_org_id() AND status = 'pending' AND lower(name) = lower($1)
+       LIMIT 1`,
+      [args.name],
     );
-    if (updated.rowCount !== 1) throw new RefusedError('the member was removed');
+    if (invited.rows.length > 0) {
+      throw new RefusedError(
+        'an invite waiting for TINNOX uses this name; fulfil or cancel it first, or agree a different name',
+      );
+    }
+    await named(
+      tx.query('UPDATE membership SET display_name = $2 WHERE id = $1 AND org_id = app_org_id()', [
+        member.id,
+        args.name,
+      ]),
+    );
     await audit(tx, 'membership.update', 'membership', member.id, {
       fields: ['displayName'],
       requestRef: args.requestRef,

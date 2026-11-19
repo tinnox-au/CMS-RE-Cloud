@@ -127,6 +127,16 @@ const COUNTER_TEXT: { readonly [K in ScreenStatusGroup]: CounterText } = {
 };
 
 /**
+ * The Screens card while the organisation has no screen: what to do for a role that sets up
+ * screens (`screen.setup`), who does it for one that cannot.
+ */
+export function screensEmptyText(canSetup: boolean): string {
+  return canSetup
+    ? 'Add a screen and pair its player. What the player reports then shows here.'
+    : 'An editor adds screens and pairs their players. What the players report then shows here.';
+}
+
+/**
  * The four counters of the Screens card, from `displays.bySummary` of `GET /api/overview`.
  * Every delivery summary falls into exactly one counter, so the four add up to the number
  * of screens.

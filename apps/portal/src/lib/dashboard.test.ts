@@ -20,6 +20,7 @@ import {
   pushOverview,
   readPlanOnArrival,
   screenCounters,
+  screensEmptyText,
   SCREENS_STATUS_PARAMS,
   screensNeedingAttention,
   screensPath,
@@ -145,6 +146,17 @@ describe('screensPath', () => {
       '/screens?status=attention',
       '/screens?status=unpaired',
     ]);
+  });
+});
+
+describe('screensEmptyText', () => {
+  it('says what to do to a role that sets up screens, and who does it to one that cannot', () => {
+    expect(screensEmptyText(true)).toBe(
+      'Add a screen and pair its player. What the player reports then shows here.',
+    );
+    expect(screensEmptyText(false)).toBe(
+      'An editor adds screens and pairs their players. What the players report then shows here.',
+    );
   });
 });
 

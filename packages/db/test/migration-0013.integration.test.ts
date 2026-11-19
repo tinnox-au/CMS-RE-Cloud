@@ -2,7 +2,8 @@
  * Migration 0013, roles and members (CMS-13, docs/portal-v2/stage-c.md section 9.3).
  *
  * This file rebuilds the test database at migration 0012, leaves members as the code before
- * 0013 created them (no role named, so the default 'operator'), then applies 0013 with the real
+ * 0013 created them (no role named, so the default 'operator') with the session rows their
+ * sign-ins wrote, then applies 0013 with the real
  * migration runner and checks the upgrade, then what the migration enforces: the four roles,
  * names, the last active Owner, final removals, the session cut-off, removed members in the
  * sec.* functions, and invite requests.
@@ -90,6 +91,16 @@ let upgrade: MigrationResult;
 let legacyA: Legacy;
 /** One member, as the code before 0013 created it. */
 let legacyB: Legacy;
+/** The sign-ins of the legacy members before 0013. legacyA's second member never signed in. */
+let legacySignIns: {
+  /** legacyA's first member: a session that ended days ago, then one that is still live. */
+  readonly a0First: Date;
+  readonly a0Live: Buffer;
+  /** legacyB's member: one live session. */
+  readonly b0First: Date;
+};
+
+const HOUR_MS = 3_600_000;
 
 function clients(): { migrator: pg.Client; pool: Pool } {
   if (migrator === undefined || pool === undefined) throw new Error('beforeAll did not finish');
@@ -136,6 +147,37 @@ async function legacyOrg(name: string, members: number): Promise<Legacy> {
     }
   });
   return { orgId, memberIds };
+}
+
+/**
+ * A session row as sec.session_create wrote it before 0013 (the definer is the only writer).
+ * A live one was last seen now and lasts 8 hours; an ended one was revoked an hour after it began.
+ */
+async function legacySession(
+  legacy: Legacy,
+  memberId: string,
+  createdAt: Date,
+  state: 'live' | 'ended',
+): Promise<Buffer> {
+  const idHash = sha256(`legacy-cookie-${randomUUID()}`);
+  await asDefinerRows(
+    `INSERT INTO public.session (id_hash, membership_id, org_id, oidc_sub, csrf_token, created_at,
+                                 last_seen_at, expires_at, revoked_at)
+     VALUES ($1, $2, $3, $4, $5, $6::timestamptz,
+             CASE WHEN $7::boolean THEN now() ELSE $6::timestamptz END,
+             $6::timestamptz + interval '8 hours',
+             CASE WHEN $7::boolean THEN NULL ELSE $6::timestamptz + interval '1 hour' END)`,
+    [
+      idHash,
+      memberId,
+      legacy.orgId,
+      `legacy-${memberId}`,
+      'c'.repeat(43),
+      createdAt,
+      state === 'live',
+    ],
+  );
+  return idHash;
 }
 
 async function addMember(
@@ -200,6 +242,16 @@ beforeAll(async () => {
   db = poolAsTx(pool);
   legacyA = await legacyOrg('Legacy A', 2);
   legacyB = await legacyOrg('Legacy B', 1);
+  const [a0] = legacyA.memberIds;
+  const [b0] = legacyB.memberIds;
+  if (a0 === undefined || b0 === undefined) throw new Error('legacy members missing');
+  const now = Date.now();
+  const a0First = new Date(now - 72 * HOUR_MS);
+  const b0First = new Date(now - 2 * HOUR_MS);
+  await legacySession(legacyA, a0, a0First, 'ended');
+  const a0Live = await legacySession(legacyA, a0, new Date(now - HOUR_MS), 'live');
+  await legacySession(legacyB, b0, b0First, 'live');
+  legacySignIns = { a0First, a0Live, b0First };
 
   upgrade = await runMigrations({ connectionString: migratorUrl(), directory: MIGRATIONS });
 });
@@ -232,15 +284,45 @@ describe('migration 0013 on a database that already holds members', () => {
     expect(new Set(rows.map((r) => r.org_id))).toEqual(new Set([legacyA.orgId, legacyB.orgId]));
   });
 
-  it('forces row-level security on membership again: the owner without a context sees no rows', async () => {
-    const { migrator: client } = clients();
-    const { rows } = await client.query<{ enabled: boolean; forced: boolean }>(
-      `SELECT relrowsecurity AS enabled, relforcerowsecurity AS forced FROM pg_class
-       WHERE oid = 'public.membership'::regclass`,
+  it('records a first sign-in for every member with a session row, from the earliest one', async () => {
+    const [a0, a1] = legacyA.memberIds;
+    const [b0] = legacyB.memberIds;
+    const rows = await asDefinerRows<{ id: string; first_signed_in_at: Date | null }>(
+      'SELECT id, first_signed_in_at FROM public.membership WHERE id = ANY($1::uuid[])',
+      [[...legacyA.memberIds, ...legacyB.memberIds]],
     );
-    expect(rows).toEqual([{ enabled: true, forced: true }]);
+    expect(new Map(rows.map((r) => [r.id, r.first_signed_in_at]))).toEqual(
+      new Map([
+        [a0, legacySignIns.a0First],
+        [a1, null],
+        [b0, legacySignIns.b0First],
+      ]),
+    );
+  });
+
+  it('keeps a session from before the upgrade live, now as an Owner', async () => {
+    expect(await sessionByIdHash(db, legacySignIns.a0Live, 1800)).toMatchObject({
+      membershipId: legacyA.memberIds[0],
+      orgId: legacyA.orgId,
+      role: 'owner',
+    });
+  });
+
+  it('forces row-level security on membership and session again: the owner without a context sees no rows', async () => {
+    const { migrator: client } = clients();
+    const { rows } = await client.query<{ name: string; enabled: boolean; forced: boolean }>(
+      `SELECT relname AS name, relrowsecurity AS enabled, relforcerowsecurity AS forced
+       FROM pg_class WHERE oid IN ('public.membership'::regclass, 'public.session'::regclass)
+       ORDER BY 1`,
+    );
+    expect(rows).toEqual([
+      { name: 'membership', enabled: true, forced: true },
+      { name: 'session', enabled: true, forced: true },
+    ]);
     const seen = await client.query<{ n: string }>('SELECT count(*) AS n FROM membership');
     expect(seen.rows[0]?.n).toBe('0');
+    const sessions = await client.query<{ n: string }>('SELECT count(*) AS n FROM session');
+    expect(sessions.rows[0]?.n).toBe('0');
   });
 });
 

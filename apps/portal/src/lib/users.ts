@@ -2,6 +2,7 @@ import {
   ABSOLUTE,
   INVITE_ROLES,
   InviteEmailSchema,
+  inviteReference,
   MemberNameSchema,
   ROLES,
   type InviteDto,
@@ -35,6 +36,26 @@ export const UNNAMED_PERSON = 'Unnamed person';
 /** The member's name as recorded by TINNOX, or "Unnamed person" until TINNOX names them. */
 export function memberName(member: { readonly displayName: string | null }): string {
   return member.displayName ?? UNNAMED_PERSON;
+}
+
+/**
+ * A short reference to a member: the first 8 characters of their membership ID, as an invite's
+ * reference is made. The audit log shows the whole ID, so staff and customers can match them.
+ */
+export function memberReference(id: string): string {
+  return inviteReference(id);
+}
+
+/**
+ * The member's name where people must be told apart (a row, its menu, a confirm): their name,
+ * or "Unnamed person 3F9A12C4" with their reference until TINNOX names them. After the upgrade
+ * every existing member is unnamed, so "Unnamed person" alone would name several rows.
+ */
+export function memberLabel(member: {
+  readonly id: string;
+  readonly displayName: string | null;
+}): string {
+  return member.displayName ?? `${UNNAMED_PERSON} ${memberReference(member.id)}`;
 }
 
 /** "a Viewer", "an Admin". */
@@ -190,11 +211,13 @@ export function inviteNameProblem(
 
 /**
  * What is wrong with a corrected name, or null. No other member may have, or have had, it
- * (removed members keep their name in the activity history).
+ * (removed members keep their name in the activity history), and no pending invite may use it:
+ * TINNOX fulfils an invite with its name, so taking it would leave the invite stuck (as the API).
  */
 export function memberNameProblem(
   name: string,
   members: readonly MemberDto[],
+  invites: readonly InviteDto[],
   selfId: string,
 ): string | null {
   const problem = nameFormatProblem(name);
@@ -205,7 +228,10 @@ export function memberNameProblem(
       member.displayName !== null &&
       sameName(member.displayName, name),
   );
-  return clash ? 'Another person in this organisation has, or had, this name.' : null;
+  if (clash) return 'Another person in this organisation has, or had, this name.';
+  return invites.some((invite) => sameName(invite.name, name))
+    ? 'An invite waiting for TINNOX uses this name.'
+    : null;
 }
 
 /** What is wrong with a work e-mail address as typed, or null. The same check as the API's. */
@@ -313,5 +339,5 @@ export function inviteRequestedLabel(
 ): string {
   const date = formatDate(invite.createdAt, timeZone);
   const inviter = members?.find((member) => sameId(member.id, invite.invitedBy));
-  return inviter === undefined ? date : `by ${memberName(inviter)} · ${date}`;
+  return inviter === undefined ? date : `by ${memberLabel(inviter)} · ${date}`;
 }

@@ -83,8 +83,9 @@ describe('CanvasTab: as a Viewer', () => {
     const width = screen.getByTestId('screen-detail-canvas-width');
     await expect.element(width).toHaveAttribute('readonly');
 
-    (width.element() as HTMLElement).focus();
-    await userEvent.keyboard('{Enter}');
+    // Scoped to the field: `userEvent.keyboard` first finds the test frame by name, which can
+    // still be the previous file's frame as it goes away ("Frame was detached").
+    await userEvent.type(width, '{Enter}');
     // The handler itself refuses too, however the form gets submitted.
     (screen.getByTestId('screen-detail-canvas-form').element() as HTMLFormElement).requestSubmit();
     // Give a request that wrongly starts the time to be made.

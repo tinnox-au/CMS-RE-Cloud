@@ -32,7 +32,7 @@ const SUMMARY_TEXT: { readonly [K in DeliverySummary]: SummaryText } = {
   unpaired: {
     headline: 'No player paired',
     tone: 'neutral',
-    explanation: 'No player holds a credential for this screen. Pair one to deliver content.',
+    explanation: 'No player holds a credential for this screen, so it receives no content.',
   },
   nothing_published: {
     headline: 'Nothing published',

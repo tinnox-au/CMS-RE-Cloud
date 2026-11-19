@@ -12,6 +12,7 @@ import {
   inviteRoleChoices,
   managedByOwner,
   memberActions,
+  memberLabel,
   memberName,
   memberNameProblem,
   memberRefusal,
@@ -214,6 +215,21 @@ describe('names and addresses', () => {
     expect(memberName({ displayName: 'Dana Lee' })).toBe('Dana Lee');
   });
 
+  it('tells unnamed members apart by their reference where it matters', () => {
+    const a = '3f9a12c4-0000-4000-8000-000000000001';
+    const b = '7c01d2e9-0000-4000-8000-000000000002';
+    expect(memberLabel({ id: a, displayName: null })).toBe('Unnamed person 3F9A12C4');
+    expect(memberLabel({ id: b, displayName: null })).toBe('Unnamed person 7C01D2E9');
+    expect(memberLabel({ id: a, displayName: 'Dana Lee' })).toBe('Dana Lee');
+    expect(
+      inviteRequestedLabel(
+        { invitedBy: a, createdAt: T },
+        [{ id: a, displayName: null, role: 'owner', firstSignedInAt: null, removedAt: null }],
+        'Australia/Sydney',
+      ),
+    ).toBe('by Unnamed person 3F9A12C4 · 14 Nov 2026');
+  });
+
   it('checks an invite name like the API', () => {
     expect(inviteNameProblem('  ', members, invites)).toBe('Enter a name.');
     expect(inviteNameProblem('x'.repeat(121), members, invites)).toBe(
@@ -233,11 +249,15 @@ describe('names and addresses', () => {
   });
 
   it('checks a corrected name against every other member, removed ones included', () => {
-    expect(memberNameProblem('Sam Old', members, ID(2))).toBe(
+    expect(memberNameProblem('Sam Old', members, [], ID(2))).toBe(
       'Another person in this organisation has, or had, this name.',
     );
-    expect(memberNameProblem('dana lee', members, ID(2))).toBeNull();
-    expect(memberNameProblem('', members, ID(2))).toBe('Enter a name.');
+    expect(memberNameProblem('dana lee', members, [], ID(2))).toBeNull();
+    expect(memberNameProblem('', members, [], ID(2))).toBe('Enter a name.');
+    // A pending invite keeps its name until TINNOX closes it.
+    expect(memberNameProblem(' ari park ', members, invites, ID(2))).toBe(
+      'An invite waiting for TINNOX uses this name.',
+    );
   });
 
   it('checks a work e-mail address with the contract’s own rules', () => {

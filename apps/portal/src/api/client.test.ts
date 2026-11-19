@@ -15,17 +15,20 @@ import { mediaFromUploadResponse } from './upload.ts';
 const ORG = '11111111-1111-4111-8111-111111111111';
 const MEMBER = '22222222-2222-4222-8222-222222222222';
 
+const OTHER_ORG = '33333333-3333-4333-8333-333333333333';
+const OTHER_MEMBER = '44444444-4444-4444-8444-444444444444';
+
 /** The shape of `sessionFor('owner')` (session/session.test-support.tsx), as the API sends it. */
-function sessionBody(csrfToken: string) {
+function sessionBody(csrfToken: string, as: { member?: string; org?: string } = {}) {
   return {
     authenticated: true,
     user: {
-      membershipId: MEMBER,
+      membershipId: as.member ?? MEMBER,
       displayName: 'Test person',
       role: 'owner',
       permissions: permissionsOf('owner'),
     },
-    organization: { id: ORG, name: 'Test Organisation' },
+    organization: { id: as.org ?? ORG, name: 'Test Organisation' },
     csrfToken,
     expiresAt: '2026-11-14T10:00:00.000Z',
     limits: DEFAULT_LIMITS,
@@ -52,13 +55,14 @@ function harness(responder: (call: Call, index: number) => Response | Promise<Re
   const calls: Call[] = [];
   const onUnauthenticated = vi.fn();
   const onForbidden = vi.fn();
+  const onSessionChanged = vi.fn();
   const fetch: FetchLike = async (path, init) => {
     const call = { path, init };
     calls.push(call);
     return responder(call, calls.length - 1);
   };
-  const client = createApiClient({ fetch, onUnauthenticated, onForbidden });
-  return { client, calls, onUnauthenticated, onForbidden };
+  const client = createApiClient({ fetch, onUnauthenticated, onForbidden, onSessionChanged });
+  return { client, calls, onUnauthenticated, onForbidden, onSessionChanged };
 }
 
 function header(call: Call | undefined, name: string): string | undefined {
@@ -168,6 +172,61 @@ describe('api client: session and CSRF', () => {
     expect(header(posts[1], HEADERS.csrf)).toBe(TOKEN_B);
     // The retry is the same intent, so it must carry the same idempotency key.
     expect(header(posts[1], HEADERS.idempotencyKey)).toBe('key-0123456789abcdef');
+  });
+
+  it('never resends after csrf_failed when the session now belongs to another member', async () => {
+    for (const other of [{ member: OTHER_MEMBER }, { member: OTHER_MEMBER, org: OTHER_ORG }]) {
+      let sessions = 0;
+      const { client, calls, onSessionChanged, onUnauthenticated } = harness((call) => {
+        if (call.path === ROUTES.session) {
+          sessions += 1;
+          return json(200, sessions === 1 ? sessionBody(TOKEN_A) : sessionBody(TOKEN_B, other));
+        }
+        // The browser's cookie is the other member's now, so only their token would pass.
+        return header(call, HEADERS.csrf) === TOKEN_B
+          ? json(201, { id: ORG })
+          : json(403, apiErrorBody('csrf_failed', 'CSRF token mismatch'));
+      });
+      await client.loadSession();
+      const error = await rejection(
+        client.requestNoContent({ method: 'POST', path: ROUTES.invites, body: { name: 'x' } }),
+      );
+      expect(error.code).toBe('csrf_failed');
+      expect(calls.filter((call) => call.init.method === 'POST')).toHaveLength(1);
+      expect(onSessionChanged).toHaveBeenCalledTimes(1);
+      expect(onUnauthenticated).not.toHaveBeenCalled();
+      // No write goes out as the other member until the portal has started again.
+      expect(client.getCsrfToken()).toBeNull();
+    }
+  });
+
+  it('judges by the member the request was made for, even when the session reloaded meanwhile', async () => {
+    let sessions = 0;
+    let answerPost: (response: Response) => void = () => undefined;
+    const { client, calls, onSessionChanged } = harness((call) => {
+      if (call.path === ROUTES.session) {
+        sessions += 1;
+        return json(
+          200,
+          sessions === 1 ? sessionBody(TOKEN_A) : sessionBody(TOKEN_B, { member: OTHER_MEMBER }),
+        );
+      }
+      return new Promise<Response>((resolve) => {
+        answerPost = resolve;
+      });
+    });
+    await client.loadSession();
+    const pending = rejection(
+      client.requestNoContent({ method: 'POST', path: ROUTES.invites, body: { name: 'x' } }),
+    );
+    // A focus refresh stores the other member's token while the POST, sent with the first
+    // member's token, is still on its way.
+    await client.loadSession();
+    expect(client.getCsrfToken()).toBe(TOKEN_B);
+    answerPost(json(403, apiErrorBody('csrf_failed', 'CSRF token mismatch')));
+    expect((await pending).code).toBe('csrf_failed');
+    expect(calls.filter((call) => call.init.method === 'POST')).toHaveLength(1);
+    expect(onSessionChanged).toHaveBeenCalledTimes(1);
   });
 
   it('does not loop when the CSRF token keeps being rejected', async () => {

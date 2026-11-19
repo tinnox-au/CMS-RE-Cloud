@@ -70,8 +70,9 @@ describe('MediaDetailForm: read-only', () => {
     await expect.element(screen.getByTestId('media-detail-duration')).not.toBeInTheDocument();
     await expect.element(screen.getByTestId('media-detail-duration-static')).toBeVisible();
 
-    (name.element() as HTMLElement).focus();
-    await userEvent.keyboard('{Enter}');
+    // Scoped to the field: `userEvent.keyboard` first finds the test frame by name, which can
+    // still be the previous file's frame as it goes away ("Frame was detached").
+    await userEvent.type(name, '{Enter}');
     expect(onSubmit).not.toHaveBeenCalled();
     // Without onDelete there is no Delete section.
     await expect.element(screen.getByTestId('media-detail-delete')).not.toBeInTheDocument();
@@ -80,8 +81,7 @@ describe('MediaDetailForm: read-only', () => {
   it('saves on Enter in the name field when it is not read-only', async () => {
     const onSubmit = vi.fn();
     const screen = await renderForm(false, onSubmit);
-    (screen.getByTestId('media-detail-name').element() as HTMLElement).focus();
-    await userEvent.keyboard('{Enter}');
+    await userEvent.type(screen.getByTestId('media-detail-name'), '{Enter}');
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 });

@@ -315,6 +315,18 @@ export function registerMemberRoutes(app: FastifyInstance, ctx: AppContext): voi
           if (to === null && name === null) {
             return { member: toMemberDto(target.row), sessionsEnded: 0, invitesCancelled: 0 };
           }
+          if (name !== null) {
+            // A pending invite keeps its name until TINNOX fulfils it with that name, and the
+            // invite cannot be renamed: taking the name would leave it unfulfillable. Checked
+            // under the membership lock, which POST /api/invites also takes.
+            const invited = await tx.query(
+              `SELECT 1 FROM member_invite
+               WHERE org_id = app_org_id() AND status = 'pending' AND lower(name) = lower($1)
+               LIMIT 1`,
+              [name],
+            );
+            if (invited.rows.length > 0) throw memberNameTaken();
+          }
 
           // Only the named, changed columns; fixed text, every value a parameter.
           const values: unknown[] = [target.row.id];

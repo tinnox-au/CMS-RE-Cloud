@@ -6,13 +6,17 @@ import { ApiRequestError } from '../api/client.ts';
 import { SESSION_REFRESH_MIN_MS, SessionProvider, useSessionState } from './SessionContext.tsx';
 import { sessionFor } from './session.test-support.tsx';
 
-const { loadSession, forbiddenListeners } = vi.hoisted(() => ({
-  loadSession: vi.fn<(signal: AbortSignal) => Promise<SessionResponse>>(),
-  forbiddenListeners: new Set<() => void>(),
-}));
+const { loadSession, clearSession, forbiddenListeners, sessionChangedListeners } = vi.hoisted(
+  () => ({
+    loadSession: vi.fn<(signal: AbortSignal) => Promise<SessionResponse>>(),
+    clearSession: vi.fn(),
+    forbiddenListeners: new Set<() => void>(),
+    sessionChangedListeners: new Set<() => void>(),
+  }),
+);
 vi.mock('../api/index.ts', () => ({
   api: { logout: vi.fn() },
-  apiClient: { loadSession, clearSession: vi.fn() },
+  apiClient: { loadSession, clearSession },
   onUnauthenticated: () => () => undefined,
   onForbidden: (listener: () => void) => {
     forbiddenListeners.add(listener);
@@ -20,11 +24,22 @@ vi.mock('../api/index.ts', () => ({
       forbiddenListeners.delete(listener);
     };
   },
+  onSessionChanged: (listener: () => void) => {
+    sessionChangedListeners.add(listener);
+    return () => {
+      sessionChangedListeners.delete(listener);
+    };
+  },
 }));
 
 /** What the API client does after a 403 `forbidden`. */
 function notifyForbidden() {
   for (const listener of forbiddenListeners) listener();
+}
+
+/** What the API client does when a request met another member's session. */
+function notifySessionChanged() {
+  for (const listener of sessionChangedListeners) listener();
 }
 
 function Probe() {
@@ -186,6 +201,7 @@ describe('SessionProvider: the silent refresh', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(START);
     loadSession.mockReset();
+    clearSession.mockReset();
     mounts = 0;
   });
 
@@ -289,6 +305,22 @@ describe('SessionProvider: the silent refresh', () => {
     // retry(): the session check ran again and the signed-in tree was mounted afresh.
     expect(loadSession).toHaveBeenCalledTimes(3);
     expect(mounts).toBe(2);
+    // The new member's token was dropped before the old member's tree went away.
+    expect(clearSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts again when the API client says a request met another member', async () => {
+    const screen = await signedIn(
+      () => Promise.resolve(OTHER_MEMBER),
+      () => Promise.resolve(OTHER_MEMBER),
+    );
+    notifySessionChanged();
+    await expect
+      .element(screen.getByTestId('member'))
+      .toHaveTextContent(`editor:${OTHER_MEMBER.user.membershipId}`);
+    expect(loadSession).toHaveBeenCalledTimes(3);
+    expect(mounts).toBe(2);
+    expect(clearSession).toHaveBeenCalledTimes(1);
   });
 
   it('says the session has ended when the answer is unauthenticated', async () => {

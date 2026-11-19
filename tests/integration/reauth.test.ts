@@ -47,6 +47,26 @@ async function queryAsDefiner<R extends pg.QueryResultRow>(
   }
 }
 
+/** How many sign-ins with no organisation were recorded with `reason` (database administrator only). */
+async function unscopedLoginFailures(reason: string): Promise<number> {
+  const url = new URL(process.env['TEST_DATABASE_MIGRATOR_URL'] ?? '');
+  url.username = 'postgres';
+  url.password = encodeURIComponent(process.env['POSTGRES_SUPERUSER_PASSWORD'] ?? '');
+  const client = new pg.Client({ connectionString: url.toString() });
+  await client.connect();
+  try {
+    const { rows } = await client.query<{ n: string }>(
+      `SELECT count(*) AS n FROM public.audit_event
+       WHERE org_id IS NULL AND action = 'auth.login' AND actor_type = 'anonymous'
+         AND result = 'failure' AND detail->>'reason' = $1`,
+      [reason],
+    );
+    return Number(rows[0]?.n ?? 0);
+  } finally {
+    await client.end();
+  }
+}
+
 /** The value of a cookie the response sets, or null ('' when it is cleared). */
 function setCookie(response: Response, name: string): string | null {
   for (const line of response.headers.getSetCookie()) {
@@ -253,6 +273,35 @@ describe('signing in again after the sessions were ended', () => {
     } finally {
       idp.sub = sub;
     }
+  });
+
+  it('records a sign-in that waited past lock_timeout for the member row', async () => {
+    const locked = await addMember(org, 'editor');
+    const sub = idp.sub;
+    idp.sub = locked.oidcSub;
+    idp.authTime = nowSeconds();
+    const before = await unscopedLoginFailures('member_locked');
+    // A member change that holds the member row longer than tinnox_app's 5 s lock_timeout.
+    const change = new pg.Client({ connectionString: process.env['TEST_DATABASE_MIGRATOR_URL'] });
+    await change.connect();
+    try {
+      const login = await startLogin();
+      await change.query('BEGIN');
+      await change.query("SELECT set_config('app.org_id', $1, true)", [org.orgId]);
+      await change.query('UPDATE membership SET role = role WHERE id = $1', [locked.membershipId]);
+      const response = await callback(login);
+      expect(response.status).toBe(303);
+      expect(response.headers.get('location')).toBe(
+        `${PORTAL_ORIGIN}/?authError=provider_unavailable`,
+      );
+      expect(setCookie(response, t.config.sessionCookieName) ?? '').toBe('');
+    } finally {
+      await change.query('ROLLBACK');
+      await change.end();
+      idp.sub = sub;
+    }
+    expect(await unscopedLoginFailures('member_locked')).toBe(before + 1);
+    expect(await liveSessions(locked.membershipId)).toBe(0);
   });
 
   it('locks the member row before the old session, so a revocation meanwhile cannot deadlock', async () => {

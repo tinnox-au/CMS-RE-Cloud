@@ -654,6 +654,40 @@ describe('people routes', () => {
     expect(body.error.details?.[0]?.path).toBe('displayName');
   });
 
+  it('refuses a name a pending invite holds, so TINNOX can still complete the invite', async () => {
+    const target = await member('editor', 'Paz Present');
+    // An Owner's Admin invite: the Admin who renames cannot cancel it.
+    const pending = await invite(asOwner, 'Pia Pending', 'pia@example.com', 'admin');
+    const taken = await asAdmin.fetch(
+      `/api/members/${target.membershipId}`,
+      patch({ displayName: 'PIA PENDING', role: 'viewer' }),
+    );
+    const body = (await taken.json()) as ErrorBody;
+    expect(taken.status, JSON.stringify(body)).toBe(409);
+    expect(body.error.code).toBe('conflict');
+    expect(body.error.details?.[0]?.path).toBe('displayName');
+    // Nothing changed and nothing was recorded.
+    const listed = MemberListResponseSchema.parse(
+      await (await asOwner.fetch('/api/members')).json(),
+    );
+    expect(listed.items.find((m) => m.id === target.membershipId)).toMatchObject({
+      displayName: 'Paz Present',
+      role: 'editor',
+    });
+    expect((await events('membership')).filter((e) => e.objectId === target.membershipId)).toEqual(
+      [],
+    );
+    expect(await inviteRow(pending)).toMatchObject({ status: 'pending', name: 'Pia Pending' });
+
+    // Once the invite is closed, the name is free.
+    expect((await asOwner.fetch(`/api/invites/${pending}/cancel`, post())).status).toBe(204);
+    const freed = await asAdmin.fetch(
+      `/api/members/${target.membershipId}`,
+      patch({ displayName: 'Pia Pending' }),
+    );
+    expect(freed.status).toBe(200);
+  });
+
   it('removes a member, ends their sessions and cancels the invites they sent', async () => {
     const leaver = await member('admin', 'Ari Admin');
     const asLeaver = await signIn(t, leaver);
