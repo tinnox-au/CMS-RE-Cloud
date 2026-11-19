@@ -151,3 +151,4 @@ from: CMS-13
 
 **Notes**
 - 19 Nov: Needs the production sign-in service (A3), an e-mail service and a payment provider. Reverses DEC-27 (no self-serve sign-up in release 1) for a later release. See DEC-35.
+- 19 Nov: Placeholder only (Michael, 19 Nov: no clear info yet). Unknown: pricing and plans, payment provider, trial or not, what a new sign-up gets.
