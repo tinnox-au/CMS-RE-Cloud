@@ -8,6 +8,7 @@
  * The provider is replaceable: only this file knows about it, behind the
  * IdentityProvider interface.
  */
+import { LOGOUT_REDIRECT_MAX_LENGTH } from '@tinnox/contracts';
 import * as oidc from 'openid-client';
 import type { AppConfig } from '../config.ts';
 
@@ -45,7 +46,10 @@ export interface IdentityProvider {
     query: URLSearchParams,
     expected: { state: string; nonce: string; codeVerifier: string },
   ): Promise<VerifiedIdentity>;
-  /** Provider end-session URL for RP-initiated logout, or null when the provider has none. */
+  /**
+   * Provider end-session URL for RP-initiated logout. Null when the provider has none, when
+   * discovery fails, or when no URL fits the portal's limit (LOGOUT_REDIRECT_MAX_LENGTH).
+   */
   endSessionUrl(idToken: string | null): Promise<string | null>;
   /** True when provider metadata has been loaded. */
   check(): Promise<boolean>;
@@ -165,14 +169,21 @@ export function createIdentityProvider(config: AppConfig): IdentityProvider {
         return null;
       }
       if (cfg.serverMetadata().end_session_endpoint === undefined) return null;
-      const url = oidc.buildEndSessionUrl(cfg, {
-        post_logout_redirect_uri: config.oidc.postLogoutRedirectUri,
-        // Returned on the redirect back, so the portal can say "You have signed out."
-        // (SessionContext.tsx). A fixed marker, not a secret: it is not checked as a CSRF state.
-        state: SIGNED_OUT_STATE,
-        ...(idToken === null ? { client_id: config.oidc.clientId } : { id_token_hint: idToken }),
-      });
-      return url.href;
+      const build = (hint: string | null): string =>
+        oidc.buildEndSessionUrl(cfg, {
+          post_logout_redirect_uri: config.oidc.postLogoutRedirectUri,
+          // Returned on the redirect back, so the portal can say "You have signed out."
+          // (SessionContext.tsx). A fixed marker, not a secret: it is not checked as a CSRF state.
+          state: SIGNED_OUT_STATE,
+          ...(hint === null ? { client_id: config.oidc.clientId } : { id_token_hint: hint }),
+        }).href;
+      // The portal refuses a longer answer (LogoutResponseSchema), so a large ID token is left
+      // out: Keycloak then asks the user to confirm the logout but still ends its session.
+      let href = build(idToken);
+      if (href.length > LOGOUT_REDIRECT_MAX_LENGTH && idToken !== null) href = build(null);
+      // Still too long only with an absurd issuer or redirect URI: the portal then shows its
+      // own signed-out notice instead of failing.
+      return href.length <= LOGOUT_REDIRECT_MAX_LENGTH ? href : null;
     },
 
     async check(): Promise<boolean> {

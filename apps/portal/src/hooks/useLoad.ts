@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { isAbort } from '../api/client.ts';
 import { createReadOrder } from '../lib/readOrder.ts';
 
+/** Back-off before re-reading when a refresh failed before a function `poll` knew its rhythm. */
+export const REFRESH_RETRY_MS = 5_000;
+/** The back-off doubles while those re-reads keep failing, up to this. */
+export const REFRESH_RETRY_MAX_MS = 60_000;
+
 export type LoadState<T> =
   | { readonly status: 'loading' }
   | { readonly status: 'error'; readonly error: unknown }
@@ -29,7 +34,10 @@ export interface LoadResult<T> {
  * Loads data when mounted and whenever `load` changes (wrap it in useCallback).
  * With `poll` it repeats after each completed attempt while the tab is visible; `poll`
  * may be a function of the latest data, for example "only while something is processing".
- * A failed refresh never discards data that was already shown; it is flagged instead.
+ * A failed refresh never discards data that was already shown; it is flagged instead. If it
+ * was the first read after `reload()` or a new `load` and `poll` is a function, the hook
+ * retries after `REFRESH_RETRY_MS` (doubling up to `REFRESH_RETRY_MAX_MS` while re-reads keep
+ * failing) and the next answer decides the rhythm again.
  *
  * A new `load` (another filter, a status read forced after pairing) also keeps the current
  * data on screen until its answer arrives, and a failure is flagged as `refreshError`. That
@@ -46,6 +54,8 @@ export function useLoad<T>(
   const pollRef = useRef(poll);
   // setData invalidates reads already in flight, so a slower answer cannot undo a save.
   const order = useRef(createReadOrder()).current;
+  // True once data is shown (state 'ready'); it stays shown for the life of the hook.
+  const shown = useRef(false);
 
   useEffect(() => {
     pollRef.current = poll;
@@ -56,6 +66,8 @@ export function useLoad<T>(
     let timer: number | undefined;
     let disposed = false;
     let interval: number | null = null;
+    // Set while re-reading after a failed refresh, so failures in a row back off.
+    let retrying = false;
 
     const schedule = () => {
       if (disposed || interval === null) return;
@@ -81,6 +93,8 @@ export function useLoad<T>(
         }
         const current = pollRef.current;
         interval = typeof current === 'function' ? current(data) : current;
+        retrying = false;
+        shown.current = true;
         setState({ status: 'ready', data, refreshError: null, fetchedAt: performance.now() });
       } catch (error) {
         if (disposed || isAbort(error)) return;
@@ -89,8 +103,16 @@ export function useLoad<T>(
           return;
         }
         // Keep the previous rhythm after a failed attempt; a fixed interval applies at once.
+        // A failed refresh before a function poll knew its rhythm retries, so a reload that
+        // failed does not end the polling; a failed first load waits for the Retry button.
         const current = pollRef.current;
         if (typeof current !== 'function') interval = current;
+        else if (retrying && interval !== null) {
+          interval = Math.min(interval * 2, REFRESH_RETRY_MAX_MS);
+        } else if (interval === null && shown.current) {
+          interval = REFRESH_RETRY_MS;
+          retrying = true;
+        }
         setState((previous) =>
           previous.status === 'ready'
             ? { ...previous, refreshError: error }
@@ -115,6 +137,7 @@ export function useLoad<T>(
   const setData = useCallback(
     (data: T) => {
       order.invalidate();
+      shown.current = true;
       setState({ status: 'ready', data, refreshError: null, fetchedAt: performance.now() });
     },
     [order],

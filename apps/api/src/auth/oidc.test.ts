@@ -1,3 +1,4 @@
+import { LOGOUT_REDIRECT_MAX_LENGTH } from '@tinnox/contracts';
 import * as oidc from 'openid-client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppConfig } from '../config.ts';
@@ -54,6 +55,38 @@ describe('endSessionUrl', () => {
     expect(url.searchParams.get('client_id')).toBe('tinnox-portal');
     expect(url.searchParams.has('id_token_hint')).toBe(false);
     expect(url.searchParams.get('state')).toBe('signed_out');
+  });
+
+  it('keeps id_token_hint while the URL fits the portal limit', async () => {
+    const provider = providerWith({ end_session_endpoint: END_SESSION });
+    const base = (await provider.endSessionUrl(''))?.length ?? 0;
+    const token = 'x'.repeat(LOGOUT_REDIRECT_MAX_LENGTH - base);
+    const href = (await provider.endSessionUrl(token)) ?? '';
+    expect(href.length).toBe(LOGOUT_REDIRECT_MAX_LENGTH);
+    expect(new URL(href).searchParams.get('id_token_hint')?.length).toBe(token.length);
+    // One character more and the hint is left out.
+    const over = new URL((await provider.endSessionUrl(`${token}x`)) ?? '');
+    expect(over.searchParams.has('id_token_hint')).toBe(false);
+  });
+
+  it('drops id_token_hint when the token would push the URL past the portal limit', async () => {
+    const href = await providerWith({ end_session_endpoint: END_SESSION }).endSessionUrl(
+      'x'.repeat(1900),
+    );
+    expect(href).not.toBeNull();
+    expect(href?.length).toBeLessThanOrEqual(LOGOUT_REDIRECT_MAX_LENGTH);
+    const url = new URL(href ?? '');
+    expect(url.searchParams.has('id_token_hint')).toBe(false);
+    expect(url.searchParams.get('client_id')).toBe('tinnox-portal');
+    expect(url.searchParams.get('state')).toBe('signed_out');
+    expect(url.searchParams.get('post_logout_redirect_uri')).toBe('http://localhost:5173/');
+  });
+
+  it('answers null when even the URL without a token is past the portal limit', async () => {
+    const endpoint = `${END_SESSION}?pad=${'p'.repeat(LOGOUT_REDIRECT_MAX_LENGTH)}`;
+    expect(
+      await providerWith({ end_session_endpoint: endpoint }).endSessionUrl('id.tok'),
+    ).toBeNull();
   });
 
   it('answers null when the provider has no end-session endpoint', async () => {

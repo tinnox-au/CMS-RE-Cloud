@@ -756,8 +756,9 @@ test('the audit trail records the journey without secrets', async () => {
   await expect
     .poll(async () => (await operator.api.session()).authenticated, { timeout: 30_000 })
     .toBe(false);
-  // Keycloak's end-session step sends the browser back with state=signed_out (T2.3).
+  // Keycloak's end-session step sends the browser back with state=signed_out (T2.3). Only
+  // that redirect lands on the post-logout URI `/`: without it the address stays on /audit.
   await expect(page.getByText('You have signed out.')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('heading', { name: 'Operator sign-in' })).toBeVisible();
-  expect(new URL(page.url()).searchParams.has('state')).toBe(false);
+  expect(page.url()).toBe(`${PORTAL_URL}/`);
 });

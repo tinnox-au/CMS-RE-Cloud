@@ -171,7 +171,7 @@ Use **Choose files** (or drag and drop) and pick these four files together: `lan
 Expected:
 
 - [ ] Each file gets its own row. The rows move through *Waiting*, a percentage, "Uploaded, being checked" and end at **Ready**.
-- [ ] Once every check has finished, the summary at the bottom of the dialog reads "4 of 4 ready" (while checks run it also says how many are being checked). If you close the dialog while files are still sending, a toast "4 files uploaded" appears when they are sent (toasts appear at the edge of the window and close by themselves after a few seconds).
+- [ ] Once every check has finished, the summary at the bottom of the dialog reads "4 of 4 ready" (while checks run it also says how many are being checked). If you close the dialog while files are still waiting or sending, a toast such as "3 files uploaded" appears once they are sent, counting only the files that were still waiting or sending when you closed it; if every file was already sent, no toast appears (toasts appear at the edge of the window and close by themselves after a few seconds).
 - [ ] After **Done**, the four files are listed with Status **Ready**, Kind image or video, and dimensions in the Details column (the videos also show a length).
 - [ ] Images and videos each show a thumbnail.
 
@@ -179,7 +179,7 @@ Expected:
 
 Upload these together: `hevc.mp4`, `vp9.mp4`, `h264-yuv444.mp4`, `too-wide.png`, `jpeg-signature-then-garbage.jpg`, `text-renamed.jpg`, `html-renamed.png`.
 
-Expected (the server takes five of them in and its check refuses each one, so the row ends at **Failed** with a reason in plain words and a code in small text; the two renamed files are refused as they arrive and are never stored):
+Expected (the server takes five of them in and its check refuses each one, so the row ends at **Failed** with a reason in plain words and a code in small text; the two renamed files are refused as they arrive, and the server discards what it received, so they never reach the library):
 
 - [ ] `hevc.mp4` and `vp9.mp4`: "The video codec is not supported. Re-encode the video as H.264 in an MP4 container." (`unsupported_codec`)
 - [ ] `h264-yuv444.mp4`: a message about re-encoding as H.264 with 8-bit 4:2:0 colour (`unsupported_pixel_format`)
@@ -644,7 +644,7 @@ Expected:
 ### T13.1 A blocked screen
 
 1. On `Tiny strip`, assign the playlist `Empty playlist` (Content card → **Assign playlist**).
-2. Open **Push to screens** from the header.
+2. Open **Screens** and press **Push to screens** in the header (the screen page has no header push button).
 
 Expected:
 
@@ -761,7 +761,7 @@ Open the account menu → **Audit log**.
 
 - [ ] The intro says records cannot be edited or deleted through the application. Columns: Time, Action, Result, Actor, Object, Detail. Newest first.
 - [ ] The log contains, in plain words, the journey you did: "Operator signed in", "Screen added", "Pairing code accepted for screen", "Player paired with screen", "Media uploaded", "Media checked and ready", "Playlist created", "Pushed to screen", "Schedule created", "Layout created", "Player revoked on screen", "Player unpaired itself from screen". Actors read **Operator** or **Player software**.
-- [ ] **Category → Pushes to screens** leaves only pushes. **Result → Refused** shows the wrong pairing code from T8.2 (under Pairing). The deletes refused in T6.6, T11.4 and T12.6 are not listed: a request that changes nothing writes no audit event.
+- [ ] **Category → Pushes to screens** leaves only pushes. Then choose **Category → Pairing** and **Result → Refused**: the wrong pairing code from T8.2 is listed. Press **Clear filters**. The deletes refused in T6.6, T11.4 and T12.6 are not listed: a request that changes nothing writes no audit event.
 - [ ] Open a row's **Detail**: a dialog with Time, Exact time (UTC), Action, Result, Actor, Object and the recorded detail as text; no password, token or URL appears in any detail.
 - [ ] **Load older events** at the bottom ends with "This is the first recorded event."
 
