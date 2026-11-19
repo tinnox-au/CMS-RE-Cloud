@@ -3,7 +3,7 @@ contract: status/v2
 repo: tinnox-au/tinnox-cms
 initiative: TINNOX CMS
 key: CMS
-next_id: 12
+next_id: 13
 phase: Not written yet: one sentence on what this project is and where it stands
 gate: -
 seeded: 17 Nov 2026 by status init
@@ -35,7 +35,9 @@ None.
 
 ## In progress
 
-None.
+| Id | Card | Agreed | PR | Since |
+|---|---|---|---|---|
+| CMS-12 | Fix the confirmed PR 29 review findings (logout URL fallback, upload poll retry, sign-out e2e check, plan and control wording) | Michael 19 Nov | - | 19 Nov |
 
 ## In review
 
