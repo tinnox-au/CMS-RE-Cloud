@@ -1,11 +1,3 @@
 {
-  "exceptions": [
-    {
-      "id": "GHSA-fc5q-39xc-vjpf",
-      "package": "picomatch",
-      "reason": "ReDoS through single-branch repeated extglobs; 4.0.7 is the latest release and no fixed version exists (checked 2026-11-18). Reached only through development tooling (vite, vitest, tinyglobby, fdir); npm audit --omit=dev is clean.",
-      "owner": "Michael Fu",
-      "reviewBy": "2026-12-18"
-    }
-  ]
+  "exceptions": []
 }
