@@ -39,11 +39,12 @@ None.
 | Id | Card | Agreed | PR | Since |
 |---|---|---|---|---|
 | CMS-19 | Re-run manual tests T11.1, T11.3, T12.1 and T12.3 after PR 29 (schedule and layout create and play) | Michael 19 Nov | - | 19 Nov |
-| CMS-13 | Roles and user management (stage C): owner, admin, editor, viewer; invite and remove people; a permission matrix to decide first | Michael 19 Nov | - | 19 Nov |
 
 ## In progress
 
-None.
+| Id | Card | Agreed | PR | Since |
+|---|---|---|---|---|
+| CMS-13 | Roles and user management (stage C): owner, admin, editor, viewer; invite and remove people; a permission matrix to decide first | Michael 19 Nov | - | 19 Nov |
 
 ## In review
 
