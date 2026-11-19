@@ -39,14 +39,13 @@ None.
 
 ## In review
 
-| Id | Card | Agreed | PR | Since |
-|---|---|---|---|---|
-| CMS-12 | Fix the confirmed PR 29 review findings (logout URL fallback, upload poll retry, sign-out e2e check, plan and control wording) | Michael 19 Nov | #30 | 19 Nov |
+None.
 
 ## Done, last 14 days
 
 | Id | Date | Outcome | PR |
 |---|---|---|---|
+| CMS-12 | 19 Nov | Fix the confirmed PR 29 review findings (logout URL fallback, upload poll retry, sign-out e2e check, plan and control wording) | #30 |
 | CMS-11 | 19 Nov | Fix the gaps from the 2026-11-19 manual user test (sign-out notice, upload summary, Apps note, test plan corrections) | #29 |
 | CMS-9 | 19 Nov | Review picomatch audit exception GHSA-fc5q-39xc-vjpf: upgrade if fixed, else renew or remove (CI fails once its date passes) | #29 |
 | CMS-10 | 18 Nov | Upgrade typescript-eslint to 8.73.0, clearing the moderate minimatch advisory GHSA-g3hv-75wg-m249 | #23 |
@@ -117,3 +116,8 @@ Advisory withdrawn by GitHub 18 Nov; exception removed in PR 29, merged 19 Nov w
 
 **Evidence**
 PR 29 merged to main 19 Nov with CI green; locally unit, component, integration and all 132 e2e tests passed; T11.1, T11.3, T12.1, T12.3 still need a manual re-run
+
+### CMS-12
+
+**Evidence**
+PR 30 merged to main after lint, unit, build, audit, integration and secret-scan checks passed; full e2e suite passed locally (132 tests)
