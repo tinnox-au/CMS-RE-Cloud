@@ -148,3 +148,6 @@ from: CMS-11
 
 ### CMS-20
 from: CMS-13
+
+**Notes**
+- 19 Nov: Needs the production sign-in service (A3), an e-mail service and a payment provider. Reverses DEC-27 (no self-serve sign-up in release 1) for a later release. See DEC-35.
