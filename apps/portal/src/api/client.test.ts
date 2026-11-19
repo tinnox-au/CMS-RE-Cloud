@@ -1,21 +1,30 @@
 import { DEFAULT_LIMITS, DisplayListResponseSchema, HEADERS, ROUTES } from '@tinnox/contracts';
+import { permissionsOf } from '@tinnox/domain';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ApiRequestError,
   createApiClient,
   errorFromResponse,
   isOutcomeUnknown,
+  isRoleRefusal,
   parseRetryAfter,
   type FetchLike,
 } from './client.ts';
 import { mediaFromUploadResponse } from './upload.ts';
 
 const ORG = '11111111-1111-4111-8111-111111111111';
+const MEMBER = '22222222-2222-4222-8222-222222222222';
 
+/** The shape of `sessionFor('owner')` (session/session.test-support.tsx), as the API sends it. */
 function sessionBody(csrfToken: string) {
   return {
     authenticated: true,
-    user: { displayName: 'Test Operator', role: 'operator' },
+    user: {
+      membershipId: MEMBER,
+      displayName: 'Test person',
+      role: 'owner',
+      permissions: permissionsOf('owner'),
+    },
     organization: { id: ORG, name: 'Test Organisation' },
     csrfToken,
     expiresAt: '2026-11-14T10:00:00.000Z',
@@ -42,13 +51,14 @@ interface Call {
 function harness(responder: (call: Call, index: number) => Response | Promise<Response>) {
   const calls: Call[] = [];
   const onUnauthenticated = vi.fn();
+  const onForbidden = vi.fn();
   const fetch: FetchLike = async (path, init) => {
     const call = { path, init };
     calls.push(call);
     return responder(call, calls.length - 1);
   };
-  const client = createApiClient({ fetch, onUnauthenticated });
-  return { client, calls, onUnauthenticated };
+  const client = createApiClient({ fetch, onUnauthenticated, onForbidden });
+  return { client, calls, onUnauthenticated, onForbidden };
 }
 
 function header(call: Call | undefined, name: string): string | undefined {
@@ -189,6 +199,94 @@ describe('api client: session and CSRF', () => {
     await rejection(client.requestNoContent({ method: 'POST', path: ROUTES.authLogout }));
     expect(onUnauthenticated).toHaveBeenCalledTimes(1);
     expect(client.getCsrfToken()).toBeNull();
+  });
+});
+
+describe('api client: refusals by role', () => {
+  const ROLE_MESSAGE = "Your role doesn't allow this.";
+
+  it('calls onForbidden once for a 403 forbidden from the API, then rethrows', async () => {
+    const { client, onForbidden, onUnauthenticated } = harness((call) =>
+      call.path === ROUTES.session
+        ? json(200, sessionBody(TOKEN_A))
+        : json(403, apiErrorBody('forbidden', ROLE_MESSAGE)),
+    );
+    await client.loadSession();
+    const error = await rejection(
+      client.requestNoContent({ method: 'POST', path: ROUTES.playlists, body: { name: 'x' } }),
+    );
+    expect(error.code).toBe('forbidden');
+    expect(error.message).toBe(ROLE_MESSAGE);
+    expect(isRoleRefusal(error)).toBe(true);
+    expect(onForbidden).toHaveBeenCalledTimes(1);
+    expect(onUnauthenticated).not.toHaveBeenCalled();
+    // The session stays: the token is kept for the next request.
+    expect(client.getCsrfToken()).toBe(TOKEN_A);
+  });
+
+  it('does not call it for csrf_failed, origin_not_allowed or a 403 without an API envelope', async () => {
+    for (const answer of [
+      () => json(403, apiErrorBody('csrf_failed', 'CSRF token mismatch')),
+      () => json(403, apiErrorBody('origin_not_allowed', 'Origin not allowed')),
+      () => new Response('<html>Forbidden</html>', { status: 403 }),
+    ]) {
+      const { client, onForbidden } = harness((call) =>
+        call.path === ROUTES.session ? json(200, sessionBody(TOKEN_A)) : answer(),
+      );
+      await client.loadSession();
+      const error = await rejection(
+        client.requestNoContent({ method: 'POST', path: ROUTES.authLogout }),
+      );
+      expect(error.status).toBe(403);
+      expect(isRoleRefusal(error)).toBe(false);
+      expect(onForbidden).not.toHaveBeenCalled();
+    }
+  });
+
+  it('handles the answer to the retry after csrf_failed like any other answer', async () => {
+    let sessions = 0;
+    let posts = 0;
+    const { client, onForbidden } = harness((call) => {
+      if (call.path === ROUTES.session) {
+        sessions += 1;
+        return json(200, sessionBody(sessions === 1 ? TOKEN_A : TOKEN_B));
+      }
+      posts += 1;
+      return posts === 1
+        ? json(403, apiErrorBody('csrf_failed', 'CSRF token mismatch'))
+        : json(403, apiErrorBody('forbidden', ROLE_MESSAGE));
+    });
+    await client.loadSession();
+    const error = await rejection(
+      client.requestNoContent({ method: 'POST', path: ROUTES.playlists, body: { name: 'x' } }),
+    );
+    expect(error.code).toBe('forbidden');
+    expect(onForbidden).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns to sign-in when the retry after csrf_failed answers 401', async () => {
+    let sessions = 0;
+    let posts = 0;
+    const { client, onUnauthenticated } = harness((call) => {
+      if (call.path === ROUTES.session) {
+        sessions += 1;
+        return json(200, sessionBody(sessions === 1 ? TOKEN_A : TOKEN_B));
+      }
+      posts += 1;
+      return posts === 1
+        ? json(403, apiErrorBody('csrf_failed', 'CSRF token mismatch'))
+        : json(401, apiErrorBody('unauthenticated', 'Session expired'));
+    });
+    await client.loadSession();
+    await rejection(client.requestNoContent({ method: 'POST', path: ROUTES.authLogout }));
+    expect(onUnauthenticated).toHaveBeenCalledTimes(1);
+    expect(client.getCsrfToken()).toBeNull();
+  });
+
+  it('lets uploads report a refusal through notifyForbidden', () => {
+    const { client, onForbidden } = harness(() => json(200, {}));
+    client.notifyForbidden();
+    expect(onForbidden).toHaveBeenCalledTimes(1);
   });
 });
 

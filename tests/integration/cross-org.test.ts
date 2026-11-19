@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  addMember,
   appClient,
   createDisplay,
   createLayout,
@@ -44,6 +45,7 @@ describe('organisation isolation through the API', () => {
     appId: string;
     scheduleId: string;
     layoutId: string;
+    inviteId: string;
     player: PairedPlayer;
   }
   let a: World;
@@ -59,7 +61,7 @@ describe('organisation isolation through the API', () => {
    * media in a folder, a playlist published and so assigned to the display, and a tag
    * of each scope put on the media item and on the display, an app, a schedule
    * with one event on the playlist and a layout with the playlist in both zones (both
-   * assigned to no display).
+   * assigned to no display), and a pending invite.
    */
   async function world(operator: Operator, org: TestOrg): Promise<World> {
     const display = await createDisplay(operator, org, 'Isolation display');
@@ -107,6 +109,12 @@ describe('organisation isolation through the API', () => {
       'Isolation split',
       layoutZones(published.playlistId, published.playlistId),
     );
+    const inviteId = await created(
+      await operator.fetch('/api/invites', {
+        method: 'POST',
+        json: { name: 'Isolation invitee', email: 'isolation@example.com', role: 'viewer' },
+      }),
+    );
     return {
       displayId: display.id,
       mediaId: media.id,
@@ -118,6 +126,7 @@ describe('organisation isolation through the API', () => {
       appId,
       scheduleId: schedule.id,
       layoutId: layout.id,
+      inviteId,
       player,
     };
   }
@@ -211,6 +220,9 @@ describe('organisation isolation through the API', () => {
       '/api/overview',
       '/api/audit?limit=200',
       '/api/audit?limit=200&category=tag',
+      '/api/members',
+      '/api/members/names',
+      '/api/invites',
     ]) {
       const response = await bob.fetch(path);
       expect(response.status, path).toBe(200);
@@ -229,6 +241,7 @@ describe('organisation isolation through the API', () => {
         a.appId,
         a.scheduleId,
         a.layoutId,
+        a.inviteId,
         a.player.registrationId,
       ]) {
         expect(text, `${path} leaks ${id}`).not.toContain(id);
@@ -247,6 +260,9 @@ describe('organisation isolation through the API', () => {
         '/api/apps',
         '/api/schedules',
         '/api/layouts',
+        '/api/members',
+        '/api/members/names',
+        '/api/invites',
       ]) {
         expect((await json<{ items: unknown[] }>(path)).items, path).toHaveLength(1);
       }
@@ -266,6 +282,73 @@ describe('organisation isolation through the API', () => {
     for (const event of audit.items) {
       expect([orgB.membershipId, b.player.registrationId, null]).toContain(event.actorId);
     }
+  });
+
+  // After the audit check above: the Viewer's refusals are audited with the Viewer's id.
+  it('refuses a role the same way for its own, another organisation’s and an unknown id', async () => {
+    const viewer = await signIn(t, await addMember(orgB, 'viewer'));
+    const answers = [];
+    for (const id of [b.displayId, a.displayId, randomUUID()]) {
+      const response = await viewer.fetch(`/api/displays/${id}`, {
+        method: 'PATCH',
+        json: { name: 'taken' },
+      });
+      expect(response.status, id).toBe(403);
+      answers.push(((await response.json()) as { error: { code: string; message: string } }).error);
+    }
+    expect(answers).toEqual(
+      Array.from({ length: 3 }, () => ({
+        code: 'forbidden',
+        message: "Your role doesn't allow this.",
+        requestId: expect.any(String) as unknown,
+      })),
+    );
+    expect(
+      ((await (await bob.fetch(`/api/displays/${b.displayId}`)).json()) as { name: string }).name,
+    ).toBe('Isolation display');
+  });
+
+  it('answers a change to another organisation’s member or invite like an unknown id', async () => {
+    const unknown = randomUUID();
+    const changes = (
+      memberId: string,
+      inviteId: string,
+    ): [string, RequestInit & { json?: unknown }][] => [
+      [`/api/members/${memberId}`, { method: 'PATCH', json: { displayName: 'Taken' } }],
+      [`/api/members/${memberId}`, { method: 'PATCH', json: { role: 'viewer' } }],
+      [`/api/members/${memberId}/remove`, { method: 'POST' }],
+      [`/api/members/${memberId}/sign-out`, { method: 'POST' }],
+      [`/api/invites/${inviteId}/cancel`, { method: 'POST' }],
+    ];
+    const foreign = changes(orgA.membershipId, a.inviteId);
+    const missing = changes(unknown, unknown);
+    for (let i = 0; i < foreign.length; i += 1) {
+      const [path, init] = foreign[i] ?? ['', {}];
+      const [unknownPath, unknownInit] = missing[i] ?? ['', {}];
+      const real = await bob.fetch(path, init);
+      const none = await bob.fetch(unknownPath, unknownInit);
+      expect(real.status, path).toBe(404);
+      expect(none.status, unknownPath).toBe(404);
+      const realBody = (await real.json()) as { error: { code: string; message: string } };
+      const noneBody = (await none.json()) as { error: { code: string; message: string } };
+      expect(realBody.error.code).toBe(noneBody.error.code);
+      expect(realBody.error.message).toBe(noneBody.error.message);
+    }
+    // Alice is still a signed-in Owner with her name unchanged, and A's invite is still waiting.
+    const members = (await (await alice.fetch('/api/members')).json()) as { items: unknown[] };
+    expect(members.items).toEqual([
+      {
+        id: orgA.membershipId,
+        displayName: null,
+        role: 'owner',
+        firstSignedInAt: expect.any(String) as unknown,
+        removedAt: null,
+      },
+    ]);
+    const invites = (await (await alice.fetch('/api/invites')).json()) as {
+      items: { id: string }[];
+    };
+    expect(invites.items.map((item) => item.id)).toEqual([a.inviteId]);
   });
 
   it('refuses every mutation of another organisation’s object and leaves it unchanged', async () => {
@@ -647,6 +730,7 @@ describe('organisation isolation through the API', () => {
       'display_delivery',
       'heartbeat_log',
       'audit_event',
+      'member_invite',
     ];
     // Both organisations have a row in every tenant table, heartbeat log included.
     expect((await sendHeartbeat(t, b.player, heartbeatBody(b.displayId, Date.now()))).status).toBe(

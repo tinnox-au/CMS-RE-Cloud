@@ -9,6 +9,7 @@ import {
   type ActivityObject,
 } from '../../lib/activity.ts';
 import { formatTimestamp } from '../../lib/format.ts';
+import { useCan } from '../../session/AuthenticatedSession.tsx';
 import {
   ButtonLink,
   Card,
@@ -41,11 +42,14 @@ interface ActivityCardProps {
 }
 
 /**
- * The last ten audit events in plain words, newest first, each with its time and a link to
- * the object where that object still exists and has a page.
+ * The last ten audit events in plain words, newest first, each with its time, who acted (the
+ * person's name where the member list knows it) and a link to the object where that object
+ * still exists and has a page. Without the full log (`audit.read`) the API returns content and
+ * screen events only.
  */
 export function ActivityCard({ activity, names, onRetry }: ActivityCardProps) {
   const now = useWallClock(15_000);
+  const fullLog = useCan('audit.read');
   return (
     <Card
       as="section"
@@ -57,7 +61,11 @@ export function ActivityCard({ activity, names, onRetry }: ActivityCardProps) {
         id="dashboard-activity-title"
         title="Recent activity"
         size="title"
-        description={`The last ${ACTIVITY_LIMIT} events in this organisation.`}
+        description={
+          fullLog
+            ? `The last ${ACTIVITY_LIMIT} events in this organisation.`
+            : 'Content and screen events in this organisation.'
+        }
         actions={
           <ButtonLink
             to="/audit"

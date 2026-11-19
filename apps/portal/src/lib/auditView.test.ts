@@ -3,7 +3,9 @@ import {
   AUDIT_CATEGORIES,
   AUDIT_RESULTS,
   type AuditEventDto,
+  type MemberNameDto,
 } from '@tinnox/contracts';
+import { ACTIVITY_CATEGORIES } from '@tinnox/domain';
 import { describe, expect, it } from 'vitest';
 import {
   AUDIT_CATEGORY_LABELS,
@@ -13,8 +15,11 @@ import {
   auditActionLabel,
   auditAllTargets,
   auditSubject,
+  auditActor,
   auditActorIdLabel,
   auditActorLabel,
+  auditActorText,
+  auditCategoryOptionsFor,
   auditCountLabel,
   auditDetailJson,
   auditDetailPairs,
@@ -64,6 +69,8 @@ function event(partial: Partial<AuditEventDto>): AuditEventDto {
   };
 }
 
+const actionLabel = (action: string) => auditActionLabel(event({ action }));
+
 describe('audit filters', () => {
   it('accepts only the categories and results the API accepts', () => {
     expect(parseAuditCategory('media')).toBe('media');
@@ -85,6 +92,29 @@ describe('audit filters', () => {
     const labels = AUDIT_CATEGORY_OPTIONS.map((option) => option.label);
     expect(new Set(labels).size).toBe(labels.length);
     expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b, 'en-AU')));
+  });
+
+  it('offers a member without the full log only the activity categories', () => {
+    const activity = auditCategoryOptionsFor(false).map((option) => option.value);
+    expect([...activity].sort()).toEqual([...ACTIVITY_CATEGORIES].sort());
+    expect(activity).toHaveLength(11);
+    for (const hidden of ['auth', 'security', 'invite', 'membership']) {
+      expect(activity).not.toContain(hidden);
+    }
+    expect(auditCategoryOptionsFor(true)).toEqual(AUDIT_CATEGORY_OPTIONS);
+    // A bookmarked category outside the member's view reads as "no filter".
+    expect(parseAuditCategory('auth', false)).toBeNull();
+    expect(parseAuditCategory('membership', false)).toBeNull();
+    expect(parseAuditCategory('media', false)).toBe('media');
+    expect(parseAuditCategory('auth', true)).toBe('auth');
+    expect(parseAuditCategory('membership')).toBe('membership');
+  });
+
+  it('names the people and invite categories', () => {
+    expect(AUDIT_CATEGORY_LABELS.invite).toBe('Invites');
+    expect(AUDIT_CATEGORY_LABELS.membership).toBe('People');
+    expect(actionLabel('membership.suspend')).toBe('Person: suspend');
+    expect(actionLabel('invite.resend')).toBe('Invite: resend');
   });
 
   it('names the screens category with the word an operator reads', () => {
@@ -248,7 +278,7 @@ describe('audit time', () => {
 
 describe('audit actor and object', () => {
   it('names the actor types', () => {
-    expect(auditActorLabel('operator')).toBe('Operator');
+    expect(auditActorLabel('operator')).toBe('Person');
     expect(auditActorLabel('player')).toBe('Player software');
     expect(auditActorLabel('system')).toBe('System');
     expect(auditActorLabel('anonymous')).toBe('Not signed in');
@@ -260,7 +290,9 @@ describe('audit actor and object', () => {
   it('names object types, known or not', () => {
     expect(auditObjectTypeLabel('display')).toBe('Screen');
     expect(auditObjectTypeLabel('player_registration')).toBe('Player');
-    expect(auditObjectTypeLabel('membership')).toBe('Operator account');
+    expect(auditObjectTypeLabel('membership')).toBe('Person');
+    expect(auditObjectTypeLabel('invite')).toBe('Invite');
+    expect(auditObjectTypeLabel('route')).toBe('Request');
     expect(auditObjectTypeLabel('billing_account')).toBe('Billing account');
     expect(auditObjectTypeLabel('hasOwnProperty')).toBe('HasOwnProperty');
     expect(auditObjectTypeLabel(null)).toBeNull();
@@ -612,7 +644,100 @@ describe('audit subject', () => {
         }),
       ),
     ).toBeNull();
-    expect(auditSubject(event({ objectType: 'membership', action: 'auth.login' }))).toBeNull();
+    // A sign-in is about the member who signed in: a person, named from the member list.
+    expect(auditSubject(event({ objectType: 'membership', action: 'auth.login' }))).toEqual({
+      kind: 'membership',
+      id: ID(1),
+    });
+    expect(auditSubject(event({ objectType: 'membership', objectId: 'x' }))).toBeNull();
+  });
+});
+
+describe('audit actor names', () => {
+  const DANA = ID(900);
+  const member = (
+    id: string,
+    displayName: string | null,
+    change: Partial<MemberNameDto> = {},
+  ): [string, MemberNameDto] => [
+    id,
+    { id, displayName, removed: false, renamedAt: null, ...change },
+  ];
+  const names: AuditNames = {
+    ...NO_AUDIT_NAMES,
+    member: new Map([
+      member(DANA, 'Dana Lee'),
+      member(ID(901), 'Sam Old', { removed: true }),
+      member(ID(902), 'Mia Chen', { renamedAt: '2026-11-16T03:31:14.251Z' }),
+      member(ID(903), null),
+    ]),
+  };
+
+  it('names the actor from the member list, and guesses nothing', () => {
+    expect(auditActor(event({}), names)).toEqual({
+      name: 'Dana Lee',
+      removed: false,
+      renamed: false,
+    });
+    expect(auditActor(event({ actorId: ID(903) }), names).name).toBe('Unnamed person');
+    expect(auditActor(event({ actorId: ID(904) }), names).name).toBe('Person');
+    expect(auditActor(event({}), NO_AUDIT_NAMES).name).toBe('Person');
+    expect(auditActor(event({ actorType: 'system', actorId: null }), names).name).toBe('System');
+  });
+
+  it('marks a removed person, and a rename after the event', () => {
+    const removed = auditActor(event({ actorId: ID(901) }), names);
+    expect(auditActorText(removed)).toBe('Sam Old (removed)');
+    // Renamed a millisecond after the event: the event happened under the old name.
+    const before = auditActor(event({ actorId: ID(902) }), names);
+    expect(before.renamed).toBe(true);
+    expect(auditActorText(before)).toBe('Mia Chen (renamed)');
+    const after = auditActor(
+      event({ actorId: ID(902), occurredAt: '2026-11-16T03:31:14.252Z' }),
+      names,
+    );
+    expect(after.renamed).toBe(false);
+    expect(auditActorText({ name: 'X', removed: true, renamed: true })).toBe(
+      'X (removed) (renamed)',
+    );
+  });
+
+  it('names a person an event is about, without a link', () => {
+    const changed = event({
+      action: 'membership.role_change',
+      objectType: 'membership',
+      objectId: ID(903),
+    });
+    expect(auditSubject(changed)).toEqual({ kind: 'membership', id: ID(903) });
+    expect(auditTargetLabel('membership')).toBe('Person');
+    expect(auditTargetPath({ kind: 'membership', id: ID(903) })).toBeNull();
+    expect(resolveAuditTarget({ kind: 'membership', id: ID(903) }, names)).toEqual({
+      state: 'found',
+      name: 'Unnamed person',
+      path: null,
+    });
+    expect(resolveAuditTarget({ kind: 'membership', id: DANA }, names)).toEqual({
+      state: 'found',
+      name: 'Dana Lee',
+      path: null,
+    });
+    // Members are never deleted: an id the list lacks is unknown, not gone.
+    expect(resolveAuditTarget({ kind: 'membership', id: ID(999) }, names)).toEqual({
+      state: 'unknown',
+      path: null,
+    });
+    expect(resolveAuditTarget({ kind: 'membership', id: DANA }, NO_AUDIT_NAMES)).toEqual({
+      state: 'unknown',
+      path: null,
+    });
+  });
+
+  it('finds an event by the actor’s name', () => {
+    const texts = auditSearchTexts(event({}), names);
+    expect(matchesSearch(texts, 'dana')).toBe(true);
+    expect(matchesSearch(auditSearchTexts(event({ actorId: ID(901) }), names), 'removed')).toBe(
+      true,
+    );
   });
 });
 
@@ -651,7 +776,8 @@ describe('audit search and row labels', () => {
     const texts = auditSearchTexts(pushed, names);
     expect(matchesSearch(texts, 'reception')).toBe(true);
     expect(matchesSearch(texts, 'display.update')).toBe(true);
-    expect(matchesSearch(texts, 'operator')).toBe(true);
+    expect(matchesSearch(texts, 'person')).toBe(true);
+    expect(matchesSearch(texts, 'operator')).toBe(false);
     expect(matchesSearch(texts, 'fields')).toBe(true);
     expect(matchesSearch(texts, auditActionLabel(pushed))).toBe(true);
     expect(matchesSearch(texts, 'clip')).toBe(false);

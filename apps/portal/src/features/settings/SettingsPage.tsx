@@ -1,8 +1,9 @@
-import type { FolderDto, TagDto } from '@tinnox/contracts';
+import type { FolderDto, MemberDto, TagDto } from '@tinnox/contracts';
 import { useCallback, useId, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/index.ts';
 import { useLoad, type LoadState } from '../../hooks/useLoad.ts';
+import { countOf } from '../../lib/bulkOutcome.ts';
 import {
   folderCountLabel,
   PLANNED_SETTINGS,
@@ -13,7 +14,7 @@ import {
   tagsPath,
   type PlannedSettingId,
 } from '../../lib/settingsView.ts';
-import { useSession } from '../../session/SessionContext.tsx';
+import { useCan, useSession } from '../../session/AuthenticatedSession.tsx';
 import { Page } from '../../shell/Page.tsx';
 import {
   Bell,
@@ -127,11 +128,43 @@ function countValue<T>(state: LoadState<T>, label: (data: T) => string): ReactNo
 }
 
 const PLANNED_ICONS: { readonly [K in PlannedSettingId]: IconComponent } = {
-  users: Users,
   'working-hours': Clock,
   alerts: Bell,
   'api-tokens': KeyRound,
 };
+
+/**
+ * "People": the Users row with the number of active members. Rendered only with `member.read`.
+ * A failed count is reported like the tag and folder counts, before the group (not inside its
+ * list).
+ */
+function PeopleGroup() {
+  const loadMembers = useCallback((signal: AbortSignal) => api.listMembers(signal), []);
+  const members = useLoad<MemberDto[]>(loadMembers);
+  return (
+    <>
+      {members.state.status === 'error' && (
+        <ErrorNotice
+          error={members.state.error}
+          title="The number of people could not be loaded"
+          onRetry={members.reload}
+        />
+      )}
+      <SettingsGroup title="People">
+        <SettingsRow
+          icon={Users}
+          title="Users"
+          description="People in this organisation, their roles and invites waiting for TINNOX."
+          value={countValue(members.state, (list) =>
+            countOf(list.filter((member) => member.removedAt === null).length, 'person', 'people'),
+          )}
+          to="/users"
+          testId="settings-row-users"
+        />
+      </SettingsGroup>
+    </>
+  );
+}
 
 /**
  * Settings (docs/portal-v2/stage-a.md, section 3.10): rows in groups, each with an icon, a
@@ -140,6 +173,8 @@ const PLANNED_ICONS: { readonly [K in PlannedSettingId]: IconComponent } = {
  */
 export function SettingsPage() {
   const session = useSession();
+  const canReadPeople = useCan('member.read');
+  const fullLog = useCan('audit.read');
   const loadTags = useCallback((signal: AbortSignal) => api.listTags(undefined, signal), []);
   const loadFolders = useCallback((signal: AbortSignal) => api.listFolders(signal), []);
   const tags = useLoad<TagDto[]>(loadTags);
@@ -211,11 +246,17 @@ export function SettingsPage() {
           />
         </SettingsGroup>
 
+        {canReadPeople && <PeopleGroup />}
+
         <SettingsGroup title="Security">
           <SettingsRow
             icon={ScrollText}
             title="Audit log"
-            description="Security and operational events for this organisation, newest first."
+            description={
+              fullLog
+                ? 'Security and operational events for this organisation, newest first.'
+                : 'Content and screen events in this organisation.'
+            }
             to="/audit"
             testId="settings-row-audit"
           />

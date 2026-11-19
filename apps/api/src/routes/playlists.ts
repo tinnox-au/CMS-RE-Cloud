@@ -32,9 +32,10 @@ import {
 import { auditScoped, STAGE_A_CONSTRAINTS, violatedConstraint, withOrg, type Tx } from '@tinnox/db';
 import { isAppDraftItem, validatePlaylist } from '@tinnox/domain';
 import type { FastifyInstance } from 'fastify';
+import { withOrgAllowed, withOrgDecisionAllowed } from '../auth/permissions.ts';
 import { operatorOf } from '../auth/session.ts';
 import { perMinute, type AppContext } from '../context.ts';
-import { accept, bigintToNumber, iso, refuse, withOrgDecision } from '../db-helpers.ts';
+import { accept, bigintToNumber, iso, refuse } from '../db-helpers.ts';
 import { HttpError, notFound, parseInput, pgErrorCode } from '../errors.ts';
 import {
   auditRejectedPublication,
@@ -229,7 +230,7 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
   app.post(ROUTES.playlists, async (request, reply): Promise<PlaylistDto> => {
     const session = operatorOf(request);
     const input = parseInput(PlaylistCreateSchema, request.body, 'playlist');
-    const dto = await withOrg(pool, session.orgId, async (tx) => {
+    const dto = await withOrgAllowed(ctx, request, async (tx) => {
       const inserted = await tx.query<{ id: string }>(
         'INSERT INTO playlist (org_id, name) VALUES (app_org_id(), $1) RETURNING id',
         [input.name],
@@ -271,7 +272,7 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     const input = parseInput(PlaylistReplaceSchema, request.body, 'playlist');
     try {
-      return await withOrg(pool, session.orgId, async (tx) => {
+      return await withOrgAllowed(ctx, request, async (tx) => {
         const locked = await tx.query(
           `SELECT 1 FROM playlist
            WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL FOR UPDATE`,
@@ -370,7 +371,7 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
     async (request, reply): Promise<PlaylistDuplicateResponse> => {
       const session = operatorOf(request);
       const { id } = parseInput(IdParamSchema, request.params, 'address');
-      const dto = await withOrg(pool, session.orgId, async (tx) => {
+      const dto = await withOrgAllowed(ctx, request, async (tx) => {
         // Held until commit, so the items copied below are the items of one moment.
         const source = await tx.query<{
           name: string;
@@ -438,7 +439,7 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
     const inUse = (message: string, details?: { path: string; message: string }[]): HttpError =>
       new HttpError(409, 'playlist_in_use', message, details === undefined ? {} : { details });
     try {
-      await withOrg(pool, session.orgId, async (tx) => {
+      await withOrgAllowed(ctx, request, async (tx) => {
         const locked = await tx.query(
           `SELECT 1 FROM playlist
            WHERE id = $1 AND org_id = app_org_id() AND deleted_at IS NULL FOR UPDATE`,
@@ -544,10 +545,11 @@ export function registerPlaylistRoutes(app: FastifyInstance, ctx: AppContext): v
       const displayId = body.displayId.toLowerCase();
 
       const attempt = (): Promise<{ response: PublishResponse; created: boolean }> =>
-        withOrgDecision<{ response: PublishResponse; created: boolean }>(
-          pool,
-          session.orgId,
+        withOrgDecisionAllowed<{ response: PublishResponse; created: boolean }>(
+          ctx,
+          request,
           async (tx) => {
+            // After the role check, which every attempt repeats first.
             await lockPublishKey(tx, displayId, key);
             const previous = await findPublicationByKey(tx, displayId, key);
             if (previous !== null) {

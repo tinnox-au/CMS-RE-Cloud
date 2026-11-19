@@ -13,6 +13,7 @@ import {
   contentStepPlaylistMeta,
   contentStepPlaylists,
 } from '../../../lib/screenWizard.ts';
+import { useCan } from '../../../session/AuthenticatedSession.tsx';
 import { ArrowLeft, Check, ListVideo, SearchX, Send } from '../../../ui/icons.ts';
 import {
   Banner,
@@ -42,7 +43,8 @@ export interface ContentStepProps {
 /**
  * Step 3: assign a playlist to the screen, or skip. Assigning changes nothing on the screen
  * (P2-05): the step says so and offers the push dialog for this screen. "Finish" opens the
- * screen's page.
+ * screen's page. Assigning needs `screen.assign` and "Push now" `push.publish`; the page
+ * itself needs `screen.setup`, which goes with both today, so this is only a safeguard.
  */
 export function ContentStep({
   display,
@@ -52,6 +54,8 @@ export function ContentStep({
   onFinish,
 }: ContentStepProps) {
   const push = usePush();
+  const canAssign = useCan('screen.assign');
+  const canPush = useCan('push.publish');
   const load = useCallback((signal: AbortSignal) => api.listPlaylists(signal), []);
   const { state, reload } = useLoad(load);
   const assignedId = display.assignedPlaylist?.id ?? null;
@@ -81,7 +85,8 @@ export function ContentStep({
   );
 
   const assign = () => {
-    if (busy || chosen === null || action !== 'assign') return;
+    // Enter on a playlist row comes here too, so the role is checked here, not only by hiding.
+    if (!canAssign || busy || chosen === null || action !== 'assign') return;
     setBusy(true);
     setError(null);
     api
@@ -114,7 +119,7 @@ export function ContentStep({
             icon={pushBlock === null ? Check : undefined}
             title={`Assigned: ${display.assignedPlaylist.name}`}
             actions={
-              pushBlock !== null ? (
+              pushBlock === null && !canPush ? undefined : pushBlock !== null ? (
                 <ButtonLink
                   size="sm"
                   to={`/playlists/${display.assignedPlaylist.id}`}
@@ -289,33 +294,39 @@ export function ContentStep({
             <Button onClick={onFinish} data-testid="screen-wizard-skip-finish">
               {assignedId === null ? 'Skip and finish' : 'Finish'}
             </Button>
-            <Button
-              variant="primary"
-              size="lg"
-              busy={busy}
-              onClick={assign}
-              data-testid="screen-wizard-assign"
-            >
-              Assign playlist
-            </Button>
+            {canAssign && (
+              <Button
+                variant="primary"
+                size="lg"
+                busy={busy}
+                onClick={assign}
+                data-testid="screen-wizard-assign"
+              >
+                Assign playlist
+              </Button>
+            )}
           </>
         ) : assignedId === null && !(state.status === 'ready' && playlists.length === 0) ? (
           <>
             <Button onClick={onFinish} data-testid="screen-wizard-skip-finish">
               Skip and finish
             </Button>
-            <Button
-              variant="primary"
-              size="lg"
-              aria-disabled
-              data-testid="screen-wizard-assign"
-              aria-describedby={`${groupName}-hint`}
-            >
-              Assign playlist
-            </Button>
-            <span id={`${groupName}-hint`} className="tx-visually-hidden">
-              Choose a playlist first.
-            </span>
+            {canAssign && (
+              <>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  aria-disabled
+                  data-testid="screen-wizard-assign"
+                  aria-describedby={`${groupName}-hint`}
+                >
+                  Assign playlist
+                </Button>
+                <span id={`${groupName}-hint`} className="tx-visually-hidden">
+                  Choose a playlist first.
+                </span>
+              </>
+            )}
           </>
         ) : (
           <Button

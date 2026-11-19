@@ -30,6 +30,7 @@ import {
 import { duplicatedToast } from '../../lib/playlistsListActions.ts';
 import type { RowDeleteMode } from '../../lib/rowFocus.ts';
 import { pruneSelection, selectedRows, setMany } from '../../lib/selection.ts';
+import { useCan } from '../../session/AuthenticatedSession.tsx';
 import { Page } from '../../shell/Page.tsx';
 import { LayoutGrid, List, ListVideo, Plus, RefreshCw, SearchX, Trash } from '../../ui/icons.ts';
 import {
@@ -106,6 +107,11 @@ const NONE_SELECTED: ReadonlySet<string> = new Set();
 export function PlaylistsPage() {
   const toast = useToast();
   const navigate = useNavigate();
+  const canCreate = useCan('content.write');
+  const canDelete = useCan('content.delete');
+  const canAssign = useCan('screen.assign');
+  // Open alone is the name's link: no menu without another action.
+  const hasRowMenu = canAssign || canCreate || canDelete;
   const { state, reload } = useLoad(loadPlaylists);
 
   const [view, setView] = useState<View>('list');
@@ -191,12 +197,16 @@ export function PlaylistsPage() {
   const rowMenu = (playlist: PlaylistSummaryDto) => (
     <PlaylistRowMenu
       playlist={playlist}
-      onAssign={setAssignTarget}
-      onDuplicate={duplicate}
-      onDelete={(target) => {
-        setDeleteMode('row');
-        setDeleteTargets([target]);
-      }}
+      onAssign={canAssign ? setAssignTarget : undefined}
+      onDuplicate={canCreate ? duplicate : undefined}
+      onDelete={
+        canDelete
+          ? (target) => {
+              setDeleteMode('row');
+              setDeleteTargets([target]);
+            }
+          : undefined
+      }
       duplicating={duplicating.has(playlist.id)}
     />
   );
@@ -409,9 +419,14 @@ export function PlaylistsPage() {
               onRetry={refresh}
             />
           )}
-          <EmptyState icon={ListVideo} title="No playlists yet" action={newButton('lg')}>
-            A playlist is an ordered set of images and videos. Create one, add media to it, then
-            assign it to a screen and push.
+          <EmptyState
+            icon={ListVideo}
+            title="No playlists yet"
+            action={canCreate ? newButton('lg') : undefined}
+          >
+            {canCreate
+              ? 'A playlist is an ordered set of images and videos. Create one, add media to it, then assign it to a screen and push.'
+              : 'An editor creates playlists.'}
           </EmptyState>
         </div>
         {dialogs}
@@ -434,7 +449,7 @@ export function PlaylistsPage() {
               data-testid="playlists-search"
             />
           </div>
-          <div className="tx-filter-row__end">{newButton('md')}</div>
+          {canCreate && <div className="tx-filter-row__end">{newButton('md')}</div>}
         </div>
 
         {actionError !== null && (
@@ -519,12 +534,16 @@ export function PlaylistsPage() {
               setSort(next);
               setPage(1);
             }}
-            selection={{
-              selected,
-              onChange: setChosen,
-              rowLabel: (playlist) => playlist.name,
-            }}
-            rowActions={rowMenu}
+            selection={
+              canDelete
+                ? {
+                    selected,
+                    onChange: setChosen,
+                    rowLabel: (playlist) => playlist.name,
+                  }
+                : undefined
+            }
+            rowActions={hasRowMenu ? rowMenu : undefined}
             rowTestId={(playlist) => `playlists-row-${playlist.id}`}
             loading={loading || refreshing}
             empty={noMatch}
@@ -559,14 +578,18 @@ export function PlaylistsPage() {
                       </StatusPill>
                     </span>
                   }
-                  actions={rowMenu(playlist)}
-                  selection={{
-                    selected: selected.has(playlist.id),
-                    label: playlist.name,
-                    onChange: (on) => {
-                      setChosen(setMany(selected, [playlist.id], on));
-                    },
-                  }}
+                  actions={hasRowMenu ? rowMenu(playlist) : undefined}
+                  selection={
+                    canDelete
+                      ? {
+                          selected: selected.has(playlist.id),
+                          label: playlist.name,
+                          onChange: (on) => {
+                            setChosen(setMany(selected, [playlist.id], on));
+                          },
+                        }
+                      : undefined
+                  }
                   testId={`playlists-tile-${playlist.id}`}
                 />
               ))}
@@ -575,26 +598,28 @@ export function PlaylistsPage() {
           </>
         )}
 
-        <SelectionBar
-          count={selected.size}
-          label="Selected playlists"
-          onClear={() => {
-            setChosen(NONE_SELECTED);
-          }}
-        >
-          <Button
-            variant="danger"
-            size="sm"
-            icon={Trash}
-            onClick={() => {
-              setDeleteMode('bulk');
-              setDeleteTargets(selectedRows(list.matched, selected, (playlist) => playlist.id));
+        {canDelete && (
+          <SelectionBar
+            count={selected.size}
+            label="Selected playlists"
+            onClear={() => {
+              setChosen(NONE_SELECTED);
             }}
-            data-testid="playlists-bulk-delete"
           >
-            Delete
-          </Button>
-        </SelectionBar>
+            <Button
+              variant="danger"
+              size="sm"
+              icon={Trash}
+              onClick={() => {
+                setDeleteMode('bulk');
+                setDeleteTargets(selectedRows(list.matched, selected, (playlist) => playlist.id));
+              }}
+              data-testid="playlists-bulk-delete"
+            >
+              Delete
+            </Button>
+          </SelectionBar>
+        )}
       </div>
       {dialogs}
     </Page>

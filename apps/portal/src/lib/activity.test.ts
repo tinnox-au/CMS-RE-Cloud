@@ -3,9 +3,11 @@ import {
   AUDIT_ACTOR_TYPES,
   AUDIT_RESULTS,
   type AuditEventDto,
+  type MemberNameDto,
 } from '@tinnox/contracts';
 import { describe, expect, it } from 'vitest';
 import {
+  activityActorKindLabel,
   activityActorLabel,
   activityHref,
   activityKindsToLoad,
@@ -99,6 +101,35 @@ describe('describeActivity', () => {
           expect(text, action).not.toMatch(/online|offline|display/);
         }
       }
+    }
+  });
+
+  it('has the words of section 7.5 for people, invites and refusals by role', () => {
+    const words: readonly [string, string, string][] = [
+      ['auth.login', 'Person signed in', 'Sign-in refused'],
+      ['auth.logout', 'Person signed out', 'Sign-out failed'],
+      ['invite.create', 'Invite requested', 'Invite request refused'],
+      ['invite.cancel', 'Invite cancelled', 'Invite cancellation refused'],
+      ['membership.create', 'Person added by TINNOX', 'Adding a person failed'],
+      ['membership.role_change', 'Role changed', 'Role change refused'],
+      ['membership.update', 'Name corrected', 'Name correction refused'],
+      ['membership.remove', 'Person removed', 'Removing a person refused'],
+      ['membership.sessions_end', 'Signed out everywhere', 'Signing out everywhere refused'],
+      ['membership.mfa_reset', 'Sign-in reset by TINNOX', 'Sign-in reset failed'],
+      [
+        'security.permission_denied',
+        'Refused by role',
+        'Request outside the person’s role refused',
+      ],
+    ];
+    for (const [action, done, attempt] of words) {
+      const result = attempt.endsWith('failed') ? 'failure' : 'denied';
+      const ok = describeActivity(event({ action, objectType: 'membership' }));
+      expect(ok.text, action).toBe(done);
+      expect(ok.icon, action).toBe(action.startsWith('security.') ? 'security' : 'account');
+      expect(describeActivity(event({ action, result, objectType: 'membership' })).text).toBe(
+        attempt,
+      );
     }
   });
 
@@ -568,6 +599,12 @@ describe('describeActivity', () => {
     expect(
       describeActivity(event({ action: 'billing.invoice_sent', objectType: null })),
     ).toMatchObject({ text: 'Billing: invoice sent', known: false, icon: 'other', subject: null });
+    expect(
+      describeActivity(event({ action: 'membership.suspend', objectType: 'membership' })),
+    ).toMatchObject({ text: 'People: suspend', known: false, icon: 'account' });
+    expect(describeActivity(event({ action: 'invite.resend', objectType: 'invite' })).text).toBe(
+      'Invites: resend',
+    );
     expect(describeActivity(event({ action: 'maintenance', objectType: null })).text).toBe(
       'Maintenance',
     );
@@ -600,7 +637,7 @@ describe('presentActivity', () => {
     expect(item).toMatchObject({
       resultLabel: null,
       tone: 'neutral',
-      actor: 'Operator',
+      actor: 'Person',
       subjectGone: false,
     });
   });
@@ -655,10 +692,36 @@ describe('presentActivity', () => {
     });
   });
 
-  it('names every kind of actor', () => {
-    const labels = AUDIT_ACTOR_TYPES.map(activityActorLabel);
+  it('names every kind of actor, a customer’s person as "Person"', () => {
+    const labels = AUDIT_ACTOR_TYPES.map(activityActorKindLabel);
     expect(new Set(labels).size).toBe(AUDIT_ACTOR_TYPES.length);
     for (const label of labels) expect(label.length).toBeGreaterThan(3);
+    expect(activityActorKindLabel('operator')).toBe('Person');
+    expect(labels.join(' ').toLowerCase()).not.toContain('operator');
+  });
+
+  it('names the person who acted from the member list, and guesses nothing', () => {
+    const member = (id: string, displayName: string | null): [string, MemberNameDto] => [
+      id,
+      { id, displayName, removed: false, renamedAt: null },
+    ];
+    const names: ActivityNames = {
+      ...NAMES,
+      member: new Map([member(ID(9), 'Dana Lee'), member(ID(10), null)]),
+    };
+    expect(presentActivity(event(), names).actor).toBe('Dana Lee');
+    // The audit trail may write the id in upper case; the list is keyed in lower case.
+    expect(activityActorLabel({ actorType: 'operator', actorId: ID(9).toUpperCase() }, names)).toBe(
+      'Dana Lee',
+    );
+    expect(presentActivity(event({ actorId: ID(10) }), names).actor).toBe('Unnamed person');
+    expect(presentActivity(event({ actorId: ID(11) }), names).actor).toBe('Person');
+    expect(presentActivity(event(), NAMES).actor).toBe('Person');
+    expect(activityActorLabel({ actorType: 'operator', actorId: null }, names)).toBe('Person');
+    expect(activityActorLabel({ actorType: 'system', actorId: ID(9) }, names)).toBe('System');
+    expect(activityActorLabel({ actorType: 'player', actorId: ID(9) }, names)).toBe(
+      'Player software',
+    );
   });
 
   it('keeps the raw action for an event it does not know', () => {

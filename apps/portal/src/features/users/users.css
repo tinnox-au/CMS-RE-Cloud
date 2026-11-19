@@ -1,0 +1,149 @@
+/*
+ * Users (docs/portal-v2/stage-c.md, section 7.4). Tokens only; class prefix `tx-users`.
+ */
+
+.tx-users {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-6);
+}
+
+.tx-users__section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-4);
+}
+
+.tx-users__note {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* "You" beside the signed-in member's own name: the quiet capsule. */
+.tx-users-you {
+  justify-self: start;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  color: var(--ink-2);
+  font: 600 11px/14px var(--font-body);
+  letter-spacing: 0;
+}
+
+/* The invite's status: the pill, then the reference staff and customers quote. */
+.tx-users-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-2);
+}
+
+.tx-users-status__ref {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-users-invites__header {
+  padding: var(--s-6) var(--s-6) var(--s-2);
+}
+
+.tx-users-invites__state {
+  padding: 0 var(--s-6) var(--s-6);
+}
+
+/* ---------- Dialogs: the role as radio cards (as the app types, apps.css) ---------- */
+
+.tx-users-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-4);
+}
+
+.tx-users-roles {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.tx-users-roles > legend {
+  margin-block-end: var(--s-2);
+  padding: 0;
+}
+
+.tx-users-roles__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-2);
+}
+
+.tx-users-role {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: start;
+  gap: 2px var(--s-3);
+  padding: var(--s-3);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.tx-users-role:hover {
+  background: var(--surface-3);
+}
+
+.tx-users-role:has(:checked) {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.tx-users-role:has(:focus-visible) {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--focus);
+}
+
+.tx-users-role:has(:checked:focus-visible) {
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--focus);
+}
+
+.tx-users-role:has(:disabled) {
+  background: var(--surface-2);
+  cursor: default;
+}
+
+.tx-users-role__label {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.tx-users-role:has(:disabled) .tx-users-role__label {
+  color: var(--ink-3);
+}
+
+.tx-users-role__current {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+}
+
+.tx-users-role__text,
+.tx-users-role__reason {
+  grid-column: 1 / -1;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.tx-users-role__reason {
+  font-weight: 600;
+}
+
+.tx-users-consequence {
+  color: var(--ink);
+}

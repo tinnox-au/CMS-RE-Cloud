@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { isAbort } from '../../api/client.ts';
 import { api } from '../../api/index.ts';
+import { useCan } from '../../session/AuthenticatedSession.tsx';
 import { PushDialog } from './PushDialog.tsx';
 
 /** What a caller may ask the push dialog to start with. */
@@ -56,7 +57,10 @@ export interface PushContextValue {
    * dialog reads the plan itself (its own refresh button, and after a push).
    */
   readonly refresh: () => void;
-  /** Opens the push dialog, for every screen or for the screens the request names. */
+  /**
+   * Opens the push dialog, for every screen or for the screens the request names. Does
+   * nothing without `push.publish`.
+   */
   readonly openDialog: (request?: PushRequest) => void;
   /** The same function as `openDialog`, under the name the shell's button uses. */
   readonly openPush: (request?: PushRequest) => void;
@@ -120,6 +124,7 @@ export function PushProvider({ children }: { readonly children: ReactNode }) {
   const inFlight = useRef<AbortController | null>(null);
   const startedAt = useRef(0);
   const dialogOpen = useRef(false);
+  const canPush = useCan('push.publish');
 
   /** Reads the plan. The latest request wins; the promise settles when this one is over. */
   const load = useCallback((): Promise<void> => {
@@ -171,14 +176,16 @@ export function PushProvider({ children }: { readonly children: ReactNode }) {
 
   const openDialog = useCallback(
     (request: PushRequest = {}) => {
-      if (dialogOpen.current) return;
+      // A dialog already open stays open if the key is lost meanwhile: its refusal shows, and
+      // close() still clears dialogOpen. The plan poll runs for everyone (the waiting count).
+      if (!canPush || dialogOpen.current) return;
       dialogOpen.current = true;
       // The dialog waits for a plan read at or after this moment.
       void load();
       setOpening((previous) => ({ id: previous.id + 1, minSeq: seq.current, request }));
       setOpen(true);
     },
-    [load],
+    [canPush, load],
   );
 
   const close = useCallback(() => {

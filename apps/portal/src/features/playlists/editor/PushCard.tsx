@@ -12,6 +12,7 @@ import {
   pushSummary,
   rowsForPlaylist,
 } from '../../../lib/playlistEditor.ts';
+import { useCan } from '../../../session/AuthenticatedSession.tsx';
 import { Plus, Send } from '../../../ui/icons.ts';
 import {
   Button,
@@ -39,11 +40,14 @@ export interface PushCardProps {
  * assigned and what it was last given (`GET /api/push`, read through `usePush`). "Assign to
  * screens" assigns it to more screens, several at once, as the list's row menu does; "Push now" opens the push dialog on this playlist's
  * screens. Push is held while the draft has unsaved changes: only the saved playlist can be
- * pushed.
+ * pushed. Each button shows only for a role that holds its key (`screen.assign`,
+ * `push.publish`); without both, the card is the list alone.
  */
 export function PushCard({ playlist, dirty }: PushCardProps) {
   const push = usePush();
   const toast = useToast();
+  const canAssign = useCan('screen.assign');
+  const canPush = useCan('push.publish');
   const [picking, setPicking] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [failures, setFailures] = useState<{
@@ -182,27 +186,32 @@ export function PushCard({ playlist, dirty }: PushCardProps) {
           <BulkFailures title={failures.title} note={failures.note} failures={failures.failed} />
         )}
 
-        <div className="tx-playlist-editor-push__actions">
-          <Button
-            variant="secondary"
-            icon={Plus}
-            onClick={() => {
-              setFailures(null);
-              setPicking(true);
-            }}
-            data-testid="playlist-editor-assign"
-          >
-            Assign to screens
-          </Button>
-          {hold === null ? (
-            pushButton
-          ) : (
-            <Tooltip content={hold} describe>
-              {pushButton}
-            </Tooltip>
-          )}
-        </div>
-        {hold !== null && planKnown && (
+        {(canAssign || canPush) && (
+          <div className="tx-playlist-editor-push__actions">
+            {canAssign && (
+              <Button
+                variant="secondary"
+                icon={Plus}
+                onClick={() => {
+                  setFailures(null);
+                  setPicking(true);
+                }}
+                data-testid="playlist-editor-assign"
+              >
+                Assign to screens
+              </Button>
+            )}
+            {canPush &&
+              (hold === null ? (
+                pushButton
+              ) : (
+                <Tooltip content={hold} describe>
+                  {pushButton}
+                </Tooltip>
+              ))}
+          </div>
+        )}
+        {canPush && hold !== null && planKnown && (
           <p className="tx-small tx-muted" data-testid="playlist-editor-push-hold">
             {hold}
           </p>

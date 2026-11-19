@@ -26,9 +26,10 @@ import {
   type Tx,
 } from '@tinnox/db';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { abandonBody, withOrgAllowed, withOrgDecisionAllowed } from '../auth/permissions.ts';
 import { operatorOf, type OperatorSession } from '../auth/session.ts';
 import { perMinute, type AppContext } from '../context.ts';
-import { accept, bigintToNumber, iso, refuse, withOrgDecision } from '../db-helpers.ts';
+import { accept, bigintToNumber, iso, refuse } from '../db-helpers.ts';
 import { HttpError, notFound, parseInput, pgErrorCode } from '../errors.ts';
 import { serveObject } from '../media/serve.ts';
 import { sniffMediaType } from '../media/sniff.ts';
@@ -175,19 +176,6 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
     );
   }
 
-  /**
-   * Ends an over-limit upload: the client may still be sending. The rest of the
-   * body is discarded (never stored) for a short time so the client can read the
-   * error, then the connection is closed.
-   */
-  function abandonBody(request: FastifyRequest, reply: FastifyReply): void {
-    void reply.header('connection', 'close');
-    request.raw.resume();
-    const timer = setTimeout(() => request.raw.destroy(), 2_000);
-    timer.unref();
-    request.raw.once('end', () => clearTimeout(timer));
-  }
-
   app.get(ROUTES.media, async (request): Promise<MediaListResponse> => {
     const session = operatorOf(request);
     return withOrg(pool, session.orgId, async (tx) => {
@@ -294,7 +282,9 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
 
       let media: MediaDto;
       try {
-        media = await withOrgDecision(pool, session.orgId, async (tx) => {
+        // The role is checked again first (a demotion during the upload refuses it), then the
+        // quota lock. A refusal throws, and the stored file is discarded below.
+        media = await withOrgDecisionAllowed(ctx, request, async (tx) => {
           // Serialise uploads per organisation so concurrent requests cannot pass the quota together.
           await tx.query(
             "SELECT pg_advisory_xact_lock(hashtextextended('tinnox.media_quota:' || app_org_id()::text, 0))",
@@ -390,7 +380,7 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     const patch = parseInput(MediaPatchSchema, request.body, 'media item');
     try {
-      return await withOrg(pool, session.orgId, async (tx) => {
+      return await withOrgAllowed(ctx, request, async (tx) => {
         const locked = await tx.query<{
           kind: 'image' | 'video';
           name: string | null;
@@ -608,7 +598,7 @@ export function registerMediaRoutes(app: FastifyInstance, ctx: AppContext): void
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     let keysToRemove: (string | null)[];
     try {
-      keysToRemove = await withOrg(pool, session.orgId, async (tx) => {
+      keysToRemove = await withOrgAllowed(ctx, request, async (tx) => {
         const { rows } = await tx.query<{
           status: string;
           storage_key: string | null;

@@ -1,8 +1,10 @@
 import type { DisplayDto } from '@tinnox/contracts';
 import { api } from '../../../api/index.ts';
 import { sameTagIds, tagsSavedText } from '../../../lib/screenDetail.ts';
+import { useCan } from '../../../session/AuthenticatedSession.tsx';
 import { Button, ErrorNotice, Field, useToast } from '../../../ui/index.ts';
 import { TagPicker, type TagsResource } from '../../shared/index.ts';
+import { ReadOnlyNote } from '../../shared/ReadOnlyNote.tsx';
 import type { SectionSave } from './types.ts';
 
 export interface TagsTabProps {
@@ -15,17 +17,31 @@ export interface TagsTabProps {
   readonly onSaved: (display: DisplayDto) => void;
   /** Kept by the page so a save outlives the tab (FCX-03). */
   readonly save: SectionSave;
+  /** The role may not change the screen's tags (`screen.details`): the picker shows them only. */
+  readonly readOnly: boolean;
 }
 
-/** The screen's tags: choose or create them, then save. Tags group screens in the list. */
-export function TagsTab({ display, tags, draft, onDraft, onSaved, save: saveState }: TagsTabProps) {
+/**
+ * The screen's tags: choose or create them, then save. Tags group screens in the list. New
+ * screen tags need `screen.setup`.
+ */
+export function TagsTab({
+  display,
+  tags,
+  draft,
+  onDraft,
+  onSaved,
+  save: saveState,
+  readOnly,
+}: TagsTabProps) {
   const toast = useToast();
+  const canCreate = useCan('screen.setup');
   const value = draft ?? display.tagIds;
   const dirty = draft !== null && !sameTagIds(draft, display.tagIds);
   const { saving, error: saveError, setSaving, setError: setSaveError } = saveState;
 
   const save = () => {
-    if (saving || !dirty) return;
+    if (readOnly || saving || !dirty) return;
     setSaving(true);
     setSaveError(null);
     api
@@ -46,6 +62,7 @@ export function TagsTab({ display, tags, draft, onDraft, onSaved, save: saveStat
 
   return (
     <div className="tx-screen-detail-tags" data-testid="screen-detail-tags">
+      {readOnly && <ReadOnlyNote>Editors change this screen’s tags.</ReadOnlyNote>}
       <p className="tx-screen-detail-note">
         Tags group screens, so the screens list can be filtered by them. They change nothing on the
         screen.
@@ -65,39 +82,42 @@ export function TagsTab({ display, tags, draft, onDraft, onSaved, save: saveStat
             {...control}
             tags={tags}
             value={value}
-            disabled={saving}
+            disabled={saving || readOnly}
+            allowCreate={canCreate}
             label="Tags of this screen"
             testId="screen-detail-tag-picker"
             onChange={(tagIds) => {
-              onDraft(tagIds);
+              if (!readOnly) onDraft(tagIds);
             }}
           />
         )}
       </Field>
-      <div className="tx-screen-detail-form__actions">
-        <Button
-          variant="primary"
-          busy={saving}
-          aria-disabled={!dirty || undefined}
-          onClick={save}
-          data-testid="screen-detail-tags-save"
-        >
-          Save tags
-        </Button>
-        {dirty && (
+      {!readOnly && (
+        <div className="tx-screen-detail-form__actions">
           <Button
-            variant="ghost"
-            onClick={() => {
-              onDraft(null);
-              setSaveError(null);
-            }}
-            data-testid="screen-detail-tags-discard"
+            variant="primary"
+            busy={saving}
+            aria-disabled={!dirty || undefined}
+            onClick={save}
+            data-testid="screen-detail-tags-save"
           >
-            Discard changes
+            Save tags
           </Button>
-        )}
-        {dirty && <span className="tx-screen-detail-unsaved">Unsaved changes</span>}
-      </div>
+          {dirty && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                onDraft(null);
+                setSaveError(null);
+              }}
+              data-testid="screen-detail-tags-discard"
+            >
+              Discard changes
+            </Button>
+          )}
+          {dirty && <span className="tx-screen-detail-unsaved">Unsaved changes</span>}
+        </div>
+      )}
     </div>
   );
 }

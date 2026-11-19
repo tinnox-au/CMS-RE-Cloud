@@ -47,6 +47,8 @@ export interface SequenceCardProps {
   readonly onRemove: (key: string) => void;
   readonly onChangeItem: (key: string, change: ItemChange) => void;
   readonly onAnnounce: (text: string) => void;
+  /** The role may not change playlists: no drop target, no drag, move or remove, no hint. */
+  readonly readOnly: boolean;
 }
 
 type FocusRequest =
@@ -61,7 +63,8 @@ function selectorFor(key: string, action: TileAction): string {
  * The play order as a horizontal filmstrip. Tiles move with their buttons or by dragging
  * (the HTML drag-and-drop API); library cards can be dropped between tiles. While something
  * is dragged a bar shows where it would land, and the strip scrolls when the pointer nears
- * either edge. Escape cancels a drag; the browser then drops nothing.
+ * either edge. Escape cancels a drag; the browser then drops nothing. Read-only, it only
+ * shows the play order.
  */
 export function SequenceCard({
   draft,
@@ -75,6 +78,7 @@ export function SequenceCard({
   onRemove,
   onChangeItem,
   onAnnounce,
+  readOnly,
 }: SequenceCardProps) {
   const [dropSlot, setDropSlot] = useState<number | null>(null);
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
@@ -323,12 +327,16 @@ export function SequenceCard({
           'tx-playlist-editor-strip',
           dropSlot !== null && 'tx-playlist-editor-strip--target',
         )}
-        onDragEnter={(event) => {
-          acceptDrag(event);
-        }}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
+        onDragEnter={
+          readOnly
+            ? undefined
+            : (event) => {
+                acceptDrag(event);
+              }
+        }
+        onDragOver={readOnly ? undefined : onDragOver}
+        onDragLeave={readOnly ? undefined : onDragLeave}
+        onDrop={readOnly ? undefined : onDrop}
         data-testid="playlist-editor-strip"
       >
         {items.length === 0 ? (
@@ -345,10 +353,12 @@ export function SequenceCard({
               <Icon icon={ListVideo} />
             </span>
             <p className="tx-playlist-editor-empty__title">This playlist is empty</p>
-            <p className="tx-playlist-editor-empty__text">
-              Add ready media or apps from the library below: choose one, or drag it here. A
-              playlist needs at least one item before it can be pushed.
-            </p>
+            {!readOnly && (
+              <p className="tx-playlist-editor-empty__text">
+                Add ready media or apps from the library below: choose one, or drag it here. A
+                playlist needs at least one item before it can be pushed.
+              </p>
+            )}
           </div>
         ) : (
           <ol className="tx-playlist-editor-strip__list" aria-label="Items in play order">
@@ -365,6 +375,7 @@ export function SequenceCard({
                   dropBefore={shownSlot === index}
                   dropAfter={shownSlot === items.length && index === items.length - 1}
                   dragging={draggingKey === item.key}
+                  readOnly={readOnly}
                   onMove={(delta) => {
                     moveBy(index, delta);
                   }}
@@ -386,7 +397,7 @@ export function SequenceCard({
           </ol>
         )}
       </div>
-      {items.length > 1 && (
+      {items.length > 1 && !readOnly && (
         <p className="tx-playlist-editor-sequence__hint">
           Drag a picture to change the order, or use the arrow buttons under it.
         </p>

@@ -4,12 +4,13 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../../api/index.ts';
 import { useLoad } from '../../hooks/useLoad.ts';
 import {
-  AUDIT_CATEGORY_OPTIONS,
   AUDIT_RESULT_OPTIONS,
   appendOlderAuditPage,
   auditActionLabel,
-  auditActorLabel,
+  auditActor,
+  auditActorText,
   auditAllTargets,
+  auditCategoryOptionsFor,
   auditCountLabel,
   auditDetailsButtonLabel,
   auditDetailSummary,
@@ -29,6 +30,7 @@ import {
   type AuditTargetKind,
 } from '../../lib/auditView.ts';
 import { matchesSearch } from '../../lib/listView.ts';
+import { useCan } from '../../session/AuthenticatedSession.tsx';
 import { Page } from '../../shell/Page.tsx';
 import { ChevronDown, Eye, Funnel, RefreshCw, ScrollText, SearchX, X } from '../../ui/icons.ts';
 import {
@@ -71,17 +73,22 @@ type Older = AuditOlderPages<AuditEventDto>;
  * The audit log (docs/portal-v2/stage-a.md, section 3.10): the organisation's security and
  * operational events, newest first, filtered by category and result (the API's `category`
  * and `result` parameters, kept in the address). Each row says what happened in plain words
- * and keeps the raw action as text. "Load older events" pages back with the API's cursor and
- * keeps the filter, as in M0. Records cannot be changed from the portal.
+ * and keeps the raw action as text, and names the person who acted from the member list.
+ * "Load older events" pages back with the API's cursor and keeps the filter, as in M0.
+ * Records cannot be changed from the portal. Without the full log (`audit.read`) the API
+ * returns content and screen events only (docs/portal-v2/stage-c.md, 7.5), and the category
+ * filter offers only those.
  */
 export function AuditPage() {
+  const fullLog = useCan('audit.read');
+  const categoryOptions = useMemo(() => auditCategoryOptionsFor(fullLog), [fullLog]);
   const [params, setParams] = useSearchParams();
   const filter: AuditFilter = useMemo(
     () => ({
-      category: parseAuditCategory(params.get('category')),
+      category: parseAuditCategory(params.get('category'), fullLog),
       result: parseAuditResult(params.get('result')),
     }),
-    [params],
+    [params, fullLog],
   );
   const key = auditFilterKey(filter);
 
@@ -277,18 +284,25 @@ export function AuditPage() {
       header: 'Actor',
       width: '140px',
       priority: 3,
-      cell: (event) => (
-        <span className="tx-audit-object">
-          <span className="tx-audit-object__name">{auditActorLabel(event.actorType)}</span>
-          {event.actorId !== null && (
-            <span className="tx-audit-object__meta">
-              <span className="tx-mono" title={event.actorId}>
-                {shortAuditId(event.actorId)}
-              </span>
+      cell: (event) => {
+        const actor = auditActor(event, names);
+        return (
+          <span className="tx-audit-object">
+            <span className="tx-audit-object__name" title={auditActorText(actor)}>
+              {actor.name}
+              {actor.removed && <span className="tx-muted"> (removed)</span>}
+              {actor.renamed && <span className="tx-muted"> (renamed)</span>}
             </span>
-          )}
-        </span>
-      ),
+            {event.actorId !== null && (
+              <span className="tx-audit-object__meta">
+                <span className="tx-mono" title={event.actorId}>
+                  {shortAuditId(event.actorId)}
+                </span>
+              </span>
+            )}
+          </span>
+        );
+      },
     },
     {
       id: 'object',
@@ -368,12 +382,12 @@ export function AuditPage() {
             size="sm"
             value={filter.category ?? ''}
             onChange={(event) => {
-              setFilter({ category: parseAuditCategory(event.target.value) });
+              setFilter({ category: parseAuditCategory(event.target.value, fullLog) });
             }}
             data-testid="audit-filter-category"
           >
             <option value="">All categories</option>
-            {AUDIT_CATEGORY_OPTIONS.map((option) => (
+            {categoryOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -419,9 +433,15 @@ export function AuditPage() {
     );
   } else if (!loading && !filtered && events.length === 0) {
     content = (
-      <EmptyState icon={ScrollText} title="No events recorded yet" level={2}>
-        Sign-ins, changes to screens, media and playlists, pushes and refused requests are recorded
-        here as they happen.
+      // Without audit.read, the words of section 7.5 once, as the title.
+      <EmptyState
+        icon={ScrollText}
+        title={fullLog ? 'No events recorded yet' : 'No content or screen events yet'}
+        level={2}
+      >
+        {fullLog
+          ? 'Sign-ins, changes to screens, media and playlists, pushes and refused requests are recorded here as they happen.'
+          : undefined}
       </EmptyState>
     );
   } else {
@@ -520,8 +540,9 @@ export function AuditPage() {
     <Page title="Audit log">
       <div className="tx-stack tx-audit" data-testid="audit-page">
         <p className="tx-audit-intro">
-          Security and operational events for this organisation, newest first. Records cannot be
-          edited or deleted through the application.
+          {fullLog
+            ? 'Security and operational events for this organisation, newest first. Records cannot be edited or deleted through the application.'
+            : 'Content and screen events in this organisation: who changed what, and when.'}
         </p>
         {state.status === 'ready' && !switching && state.refreshError !== null && (
           <ErrorNotice

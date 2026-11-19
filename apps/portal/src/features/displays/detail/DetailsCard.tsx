@@ -25,6 +25,7 @@ import {
   Textarea,
   useToast,
 } from '../../../ui/index.ts';
+import { ReadOnlyNote } from '../../shared/ReadOnlyNote.tsx';
 
 export interface DetailsCardProps {
   readonly display: DisplayDto;
@@ -33,27 +34,38 @@ export interface DetailsCardProps {
   readonly draft: ScreenDetailsValues | null;
   readonly onDraft: (draft: ScreenDetailsValues | null) => void;
   readonly onSaved: (display: DisplayDto) => void;
+  /** The role may not change the name and description: the form shows them and sends nothing. */
+  readonly readOnly: boolean;
 }
 
 /** Name and description (an inline form with its own Save), and the facts that do not change. */
-export function DetailsCard({ display, site, draft, onDraft, onSaved }: DetailsCardProps) {
+export function DetailsCard({
+  display,
+  site,
+  draft,
+  onDraft,
+  onSaved,
+  readOnly,
+}: DetailsCardProps) {
   const toast = useToast();
   const values = draft ?? screenDetailsOf(display);
   const dirty = draft !== null && screenDetailsDirty(draft, display);
   const [errors, setErrors] = useState<ScreenDetailsErrors>({});
   const [saveError, setSaveError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
+  const locked = saving || readOnly;
 
   // While a save runs the form is read-only: its answer replaces the draft, so anything typed
   // meanwhile would be lost without a word (as the media details form does).
   const set = (patch: Partial<ScreenDetailsValues>) => {
-    if (saving) return;
+    if (locked) return;
     onDraft({ ...values, ...patch });
   };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (saving) return;
+    // Enter in the name field submits the form too: read-only, it sends nothing.
+    if (readOnly || saving) return;
     const result = validateScreenDetails(values, display);
     if (!result.ok) {
       setErrors(result.errors);
@@ -107,6 +119,7 @@ export function DetailsCard({ display, site, draft, onDraft, onSaved }: DetailsC
         aria-labelledby="screen-detail-details-title"
         data-testid="screen-detail-details-form"
       >
+        {readOnly && <ReadOnlyNote>Editors change the screen’s name and description.</ReadOnlyNote>}
         {saveError !== null && (
           <ErrorNotice
             error={saveError}
@@ -122,7 +135,7 @@ export function DetailsCard({ display, site, draft, onDraft, onSaved }: DetailsC
               <TextInput
                 {...control}
                 value={values.name}
-                readOnly={saving}
+                readOnly={locked}
                 maxLength={SCREEN_NAME_MAX + 20}
                 autoComplete="off"
                 data-testid="screen-detail-name"
@@ -143,7 +156,7 @@ export function DetailsCard({ display, site, draft, onDraft, onSaved }: DetailsC
                 {...control}
                 rows={3}
                 value={values.description}
-                readOnly={saving}
+                readOnly={locked}
                 data-testid="screen-detail-description"
                 onChange={(event) => {
                   set({ description: event.target.value });
@@ -152,23 +165,25 @@ export function DetailsCard({ display, site, draft, onDraft, onSaved }: DetailsC
             )}
           </Field>
         </div>
-        <div className="tx-screen-detail-form__actions">
-          <Button
-            type="submit"
-            variant="primary"
-            busy={saving}
-            aria-disabled={!dirty || undefined}
-            data-testid="screen-detail-details-save"
-          >
-            Save
-          </Button>
-          {dirty && (
-            <Button variant="ghost" onClick={discard} data-testid="screen-detail-details-discard">
-              Discard
+        {!readOnly && (
+          <div className="tx-screen-detail-form__actions">
+            <Button
+              type="submit"
+              variant="primary"
+              busy={saving}
+              aria-disabled={!dirty || undefined}
+              data-testid="screen-detail-details-save"
+            >
+              Save
             </Button>
-          )}
-          {dirty && <span className="tx-screen-detail-unsaved">Unsaved changes</span>}
-        </div>
+            {dirty && (
+              <Button variant="ghost" onClick={discard} data-testid="screen-detail-details-discard">
+                Discard
+              </Button>
+            )}
+            {dirty && <span className="tx-screen-detail-unsaved">Unsaved changes</span>}
+          </div>
+        )}
       </form>
 
       <Facts className="tx-screen-detail-facts">

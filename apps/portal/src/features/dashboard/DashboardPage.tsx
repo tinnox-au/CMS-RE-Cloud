@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { anythingPushed, pluralCount, setupProgress } from '../../lib/dashboard.ts';
 import { formatAge } from '../../lib/format.ts';
+import { useCan } from '../../session/AuthenticatedSession.tsx';
 import { Page } from '../../shell/Page.tsx';
 import { ErrorNotice, IconButton } from '../../ui/index.ts';
 import { RefreshCw } from '../../ui/icons.ts';
@@ -27,10 +28,22 @@ export function DashboardPage() {
   const data = useDashboardData();
   const { overview, displays, statuses, activity } = data;
   const { plan, planError } = usePush();
+  const canSetup = useCan('screen.setup');
+  const canPair = useCan('screen.pair');
+  const canWrite = useCan('content.write');
+  const canPush = useCan('push.publish');
 
+  // Refresh also re-reads the people's names (spec 7.5); the 15 s poll does not.
+  const [namesGeneration, setNamesGeneration] = useState(0);
+  const reloadData = data.reloadAll;
+  const reloadAll = useCallback(() => {
+    reloadData();
+    setNamesGeneration((n) => n + 1);
+  }, [reloadData]);
   const names = useActivityNames(
     activity.status === 'ready' ? activity.data : null,
     displays.status === 'ready' ? displays.data : null,
+    namesGeneration,
   );
 
   const statusViews = statuses.status === 'ready' ? statuses.data : null;
@@ -39,15 +52,18 @@ export function DashboardPage() {
     const pushed = anythingPushed(statusViews, plan);
     if (pushed === null) return null;
     const { displays: screens, media, playlists } = overview.data;
-    return setupProgress({
-      screens: screens.total,
-      paired: screens.paired,
-      media: media.total,
-      playlists: playlists.total,
-      pushed,
-      pending: plan?.pendingCount ?? null,
-    });
-  }, [overview, statusViews, plan]);
+    return setupProgress(
+      {
+        screens: screens.total,
+        paired: screens.paired,
+        media: media.total,
+        playlists: playlists.total,
+        pushed,
+        pending: plan?.pendingCount ?? null,
+      },
+      { setup: canSetup, pair: canPair, write: canWrite, push: canPush },
+    );
+  }, [overview, statusViews, plan, canSetup, canPair, canWrite, canPush]);
 
   // The oldest of the figures on screen, for "Updated 12 seconds ago".
   const readAt = [overview, displays, statuses, activity]
@@ -85,7 +101,7 @@ export function DashboardPage() {
             icon={RefreshCw}
             label="Refresh the dashboard"
             size="sm"
-            onClick={data.reloadAll}
+            onClick={reloadAll}
             data-testid="dashboard-refresh"
           />
         </div>
@@ -101,10 +117,11 @@ export function DashboardPage() {
           />
         )}
         {refreshError !== null && refreshError !== undefined && (
-          <StaleNotice error={refreshError} age={age} onRetry={data.reloadAll} />
+          <StaleNotice error={refreshError} age={age} onRetry={reloadAll} />
         )}
 
-        {setup !== null && !setup.complete && <SetupCard progress={setup} />}
+        {/* Setting up starts with adding a screen: without screen.setup the card is not shown. */}
+        {canSetup && setup !== null && !setup.complete && <SetupCard progress={setup} />}
 
         <ScreensCard overview={overview} />
 

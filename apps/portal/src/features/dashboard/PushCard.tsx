@@ -2,6 +2,7 @@ import type { PushPlanRow } from '@tinnox/contracts';
 import { Link } from 'react-router-dom';
 import { planRowContent } from '../../lib/assignedContent.ts';
 import { formatCount, pushOverview, type PushOverview } from '../../lib/dashboard.ts';
+import { useCan } from '../../session/AuthenticatedSession.tsx';
 import { Button, Card, CardHeader, cx, ErrorNotice, Icon } from '../../ui/index.ts';
 import { ChevronRight, CircleCheck, CircleDashed, Lock } from '../../ui/icons.ts';
 import { usePush } from '../push/PushContext.tsx';
@@ -15,7 +16,8 @@ import { CardSkeleton } from './parts.tsx';
  */
 export function PushCard() {
   const { plan, planError, refresh, openDialog } = usePush();
-  const summary = plan === null ? null : pushOverview(plan);
+  const canPush = useCan('push.publish');
+  const summary = plan === null ? null : pushOverview(plan, 3, canPush);
 
   return (
     <Card
@@ -30,7 +32,7 @@ export function PushCard() {
         size="title"
         description={summary?.text}
         actions={
-          summary !== null && (summary.pending > 0 || summary.blocked > 0) ? (
+          canPush && summary !== null && (summary.pending > 0 || summary.blocked > 0) ? (
             <Button
               variant="ghost"
               size="sm"

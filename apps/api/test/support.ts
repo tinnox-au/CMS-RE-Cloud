@@ -27,6 +27,7 @@ import {
   type LayoutZoneInput,
   type MediaJobResult,
   type PlaylistItemInput,
+  type Role,
   type ScheduleDto,
   type ScheduleEventInput,
 } from '@tinnox/contracts';
@@ -59,7 +60,7 @@ export const PLAYER_ORIGIN = 'http://localhost:5174';
 
 /** Sign-in is not under test here; any attempt to use the provider fails loudly. */
 const noIdentityProvider: IdentityProvider = {
-  beginLogin: () =>
+  beginLogin: (_options?: { readonly reauthenticate?: boolean }) =>
     Promise.reject(new IdentityProviderError('unavailable', 'not available in tests')),
   completeLogin: () =>
     Promise.reject(new IdentityProviderError('unavailable', 'not available in tests')),
@@ -182,8 +183,15 @@ export interface TestOrg {
   readonly oidcSub: string;
 }
 
-/** Creates an organisation with one site and one member, as the migrator (arranging data only). */
-export async function createOrg(name: string): Promise<TestOrg> {
+/**
+ * Creates an organisation with one site and one member, as the migrator (arranging data only).
+ * The member is an Owner unless `role` says otherwise, and has no display name unless one is
+ * given.
+ */
+export async function createOrg(
+  name: string,
+  options: { readonly role?: Role; readonly displayName?: string | null } = {},
+): Promise<TestOrg> {
   const org: TestOrg = {
     orgId: randomUUID(),
     siteId: randomUUID(),
@@ -202,11 +210,16 @@ export async function createOrg(name: string): Promise<TestOrg> {
       `${name} site`,
       'Australia/Melbourne',
     ]);
-    await client.query('INSERT INTO membership (id, org_id, oidc_sub) VALUES ($1, $2, $3)', [
-      org.membershipId,
-      org.orgId,
-      org.oidcSub,
-    ]);
+    await client.query(
+      'INSERT INTO membership (id, org_id, oidc_sub, role, display_name) VALUES ($1, $2, $3, $4, $5)',
+      [
+        org.membershipId,
+        org.orgId,
+        org.oidcSub,
+        options.role ?? 'owner',
+        options.displayName ?? null,
+      ],
+    );
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -217,8 +230,12 @@ export async function createOrg(name: string): Promise<TestOrg> {
   return org;
 }
 
-/** Adds a second member to an organisation. */
-export async function addMember(org: TestOrg): Promise<TestOrg> {
+/** Adds another member to an organisation, an Owner unless `role` says otherwise. */
+export async function addMember(
+  org: TestOrg,
+  role: Role = 'owner',
+  displayName: string | null = null,
+): Promise<TestOrg> {
   const member: TestOrg = {
     ...org,
     membershipId: randomUUID(),
@@ -229,11 +246,10 @@ export async function addMember(org: TestOrg): Promise<TestOrg> {
   try {
     await client.query('BEGIN');
     await client.query("SELECT set_config('app.org_id', $1, true)", [org.orgId]);
-    await client.query('INSERT INTO membership (id, org_id, oidc_sub) VALUES ($1, $2, $3)', [
-      member.membershipId,
-      member.orgId,
-      member.oidcSub,
-    ]);
+    await client.query(
+      'INSERT INTO membership (id, org_id, oidc_sub, role, display_name) VALUES ($1, $2, $3, $4, $5)',
+      [member.membershipId, member.orgId, member.oidcSub, role, displayName],
+    );
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -251,8 +267,17 @@ export interface Operator {
   readonly csrfToken: string;
 }
 
-/** Creates a session for the member through sec.session_create and returns a client that uses it. */
-export async function signIn(t: TestApp, org: TestOrg): Promise<Operator> {
+/**
+ * Creates a session for the member through sec.session_create and returns a client that uses it.
+ * `authTime` defaults to a minute from now, after any cut-off a test has set (even within the
+ * same second, or with the database clock a little ahead; nothing checks an upper bound). Tests
+ * of the cut-off pass their own.
+ */
+export async function signIn(
+  t: TestApp,
+  org: TestOrg,
+  options: { readonly authTime?: Date | null } = {},
+): Promise<Operator> {
   const sessionId = randomBytes(32).toString('base64url');
   const csrfToken = randomBytes(32).toString('base64url');
   const created = await sessionCreate(poolAsTx(t.pool), {
@@ -261,8 +286,11 @@ export async function signIn(t: TestApp, org: TestOrg): Promise<Operator> {
     csrfToken,
     ttlSeconds: 3600,
     idToken: null,
+    authTime: options.authTime === undefined ? new Date(Date.now() + 60_000) : options.authTime,
   });
-  if (created === null) throw new Error('test member has no membership');
+  if (created.outcome !== 'created') {
+    throw new Error(`test member could not sign in: ${created.outcome}`);
+  }
   const cookie = `${t.config.sessionCookieName}=${sessionId}`;
   return {
     cookie,
@@ -745,4 +773,100 @@ export function losingCommitAnswers(pool: Pool, marker: RegExp): Pool {
 
 export async function listDir(path: string): Promise<string[]> {
   return (await readdir(path)).filter((name) => !name.startsWith('.worker-alive'));
+}
+
+/** The in-write role check of every write transaction (membershipForCheck, auth/permissions.ts). */
+export const isRoleCheck = (text: string): boolean =>
+  text.includes('FROM membership WHERE id = $1 AND org_id = app_org_id() FOR SHARE');
+
+export interface StatementHold {
+  /** Resolves when the held statement arrives; it is not sent until `release`. */
+  readonly reached: Promise<void>;
+  release(): void;
+}
+
+export interface StatementHolds {
+  /** Pass as `startTestApp(…, { wrapPool })`. */
+  readonly wrapPool: (pool: Pool) => Pool;
+  /**
+   * Holds the next statement of any transaction for which `matches` is true, before it is
+   * sent, until `release`: a test then changes the database in between. `matches` is called
+   * for every statement until it matches, so it may count.
+   */
+  hold(matches: (text: string) => boolean): StatementHold;
+}
+
+/** A pool wrapper whose statements a test can hold one at a time (`hold`). */
+export function statementHolds(): StatementHolds {
+  const bound = <T extends object>(target: T, key: string | symbol): unknown => {
+    const value: unknown = Reflect.get(target, key);
+    return typeof value === 'function'
+      ? (value as (...args: unknown[]) => unknown).bind(target)
+      : value;
+  };
+  let armed: {
+    matches: (text: string) => boolean;
+    reached: () => void;
+    released: Promise<void>;
+  } | null = null;
+  return {
+    wrapPool: (pool) =>
+      new Proxy(pool, {
+        get(target, key) {
+          if (key !== 'connect') return bound(target, key);
+          return async () => {
+            const client = await target.connect();
+            return new Proxy(client, {
+              get(real, name) {
+                if (name !== 'query') return bound(real, name);
+                return async (text: string, values?: unknown[]) => {
+                  const hold = armed;
+                  if (hold !== null && typeof text === 'string' && hold.matches(text)) {
+                    armed = null;
+                    hold.reached();
+                    await hold.released;
+                  }
+                  return real.query(text, values);
+                };
+              },
+            });
+          };
+        },
+      }),
+    hold(matches) {
+      let reached: () => void = () => undefined;
+      let release: () => void = () => undefined;
+      const atStatement = new Promise<void>((resolve) => {
+        reached = resolve;
+      });
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      armed = { matches, reached, released };
+      return { reached: atStatement, release };
+    },
+  };
+}
+
+/**
+ * Arranging only: runs `work` as the migrator in one committed transaction with the
+ * organisation's context, which row-level security and membership_guard need (stage-c.md 9.3).
+ */
+export async function asMigratorIn(
+  orgId: string,
+  work: (client: pg.Client) => Promise<unknown>,
+): Promise<void> {
+  const client = new pg.Client({ connectionString: need('TEST_DATABASE_MIGRATOR_URL') });
+  await client.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.org_id', $1, true)", [orgId]);
+    await work(client);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    await client.end();
+  }
 }

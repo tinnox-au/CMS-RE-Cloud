@@ -1,6 +1,7 @@
 import type { DeliveryStatusView, DisplayDto } from '@tinnox/contracts';
 import type { LoadState } from '../../../hooks/useLoad.ts';
 import { STATUS_DISCLAIMER } from '../../../lib/screenDetail.ts';
+import { useCan } from '../../../session/AuthenticatedSession.tsx';
 import { Ellipsis, KeyRound, RefreshCw, Send, Unlink } from '../../../ui/icons.ts';
 import {
   Banner,
@@ -28,6 +29,11 @@ export interface SummaryCardProps {
   readonly onPush: () => void;
   readonly onRevoke: () => void;
   readonly onShowPairing: () => void;
+  /**
+   * The role may pair and revoke (`screen.pair`), decided when the page opened, like the
+   * Pairing tab that "Pair player" opens.
+   */
+  readonly canPair: boolean;
   /** The revocation started from this card, while its outcome is shown. */
   readonly revoke: RevokeState | null;
   readonly onDismissRevoke: () => void;
@@ -35,7 +41,8 @@ export interface SummaryCardProps {
 
 /**
  * The left card: what is assigned, drawn in the shape of the canvas; what the player last
- * reported; and the two actions that act on the screen as a whole.
+ * reported; and the two actions that act on the screen as a whole. "Push to this screen" needs
+ * `push.publish`, pairing and revoking `screen.pair`; "Refresh status" is for everyone.
  */
 export function SummaryCard({
   display,
@@ -45,10 +52,12 @@ export function SummaryCard({
   onPush,
   onRevoke,
   onShowPairing,
+  canPair,
   revoke,
   onDismissRevoke,
 }: SummaryCardProps) {
   const paired = display.player !== null;
+  const canPush = useCan('push.publish');
   return (
     <Card
       as="section"
@@ -67,9 +76,16 @@ export function SummaryCard({
           <p className="tx-screen-detail-note">{STATUS_DISCLAIMER}</p>
 
           <div className="tx-screen-detail-summary__actions">
-            <Button variant="primary" icon={Send} onClick={onPush} data-testid="screen-detail-push">
-              Push to this screen
-            </Button>
+            {canPush && (
+              <Button
+                variant="primary"
+                icon={Send}
+                onClick={onPush}
+                data-testid="screen-detail-push"
+              >
+                Push to this screen
+              </Button>
+            )}
             <Menu
               placement="bottom-end"
               trigger={(props) => (
@@ -85,19 +101,23 @@ export function SummaryCard({
               <MenuItem icon={RefreshCw} onSelect={onReloadStatus}>
                 Refresh status
               </MenuItem>
-              <MenuItem icon={KeyRound} onSelect={onShowPairing}>
-                {paired ? 'Pair a different player' : 'Pair player'}
-              </MenuItem>
-              <MenuSeparator />
-              <MenuItem
-                icon={Unlink}
-                tone="danger"
-                disabled={!paired}
-                hint={paired ? undefined : 'Not paired'}
-                onSelect={onRevoke}
-              >
-                Revoke player
-              </MenuItem>
+              {canPair && (
+                <>
+                  <MenuItem icon={KeyRound} onSelect={onShowPairing}>
+                    {paired ? 'Pair a different player' : 'Pair player'}
+                  </MenuItem>
+                  <MenuSeparator />
+                  <MenuItem
+                    icon={Unlink}
+                    tone="danger"
+                    disabled={!paired}
+                    hint={paired ? undefined : 'Not paired'}
+                    onSelect={onRevoke}
+                  >
+                    Revoke player
+                  </MenuItem>
+                </>
+              )}
             </Menu>
           </div>
 

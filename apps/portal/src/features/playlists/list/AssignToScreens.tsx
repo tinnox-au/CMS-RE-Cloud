@@ -1,5 +1,6 @@
 import type { DisplayDto, PlaylistSummaryDto } from '@tinnox/contracts';
 import { useState } from 'react';
+import { isRoleRefusal } from '../../../api/client.ts';
 import { api } from '../../../api/index.ts';
 import { anyHasOtherContent, CONTENT_REPLACED_NOTE } from '../../../lib/assignedContent.ts';
 import { mergeBulkOutcomes, runInSequence, type BulkOutcome } from '../../../lib/bulkOutcome.ts';
@@ -11,6 +12,7 @@ import {
   canPushAfterAssign,
   failureText,
 } from '../../../lib/playlistsListActions.ts';
+import { useCan } from '../../../session/AuthenticatedSession.tsx';
 import { CircleCheck, Monitor, Send } from '../../../ui/icons.ts';
 import {
   Banner,
@@ -46,6 +48,7 @@ export interface AssignToScreensProps {
  */
 export function AssignToScreens({ playlist, onClose, onAssigned }: AssignToScreensProps) {
   const push = usePush();
+  const mayPush = useCan('push.publish');
   const open = playlist !== null;
   // The playlist of this opening; it stays while a dialog fades out.
   const [shown, setShown] = useState<PlaylistSummaryDto | null>(playlist);
@@ -83,6 +86,8 @@ export function AssignToScreens({ playlist, onClose, onAssigned }: AssignToScree
   const canPush = canPushAfterAssign(done.length, pushView);
   const note = assignResultNote(shown?.name ?? '', done.length);
   const nothingWaiting = done.length > 0 && !canPush;
+  // A refusal by role is the same for every screen and every retry: no "Try again".
+  const roleRefused = failed.some((failure) => isRoleRefusal(failure.error));
 
   const openPush = () => {
     onClose();
@@ -137,7 +142,7 @@ export function AssignToScreens({ playlist, onClose, onAssigned }: AssignToScree
             >
               Close
             </Button>
-            {failed.length > 0 && (
+            {failed.length > 0 && !roleRefused && (
               <Button
                 variant={done.length === 0 ? 'primary' : 'secondary'}
                 busy={busy}
@@ -152,7 +157,7 @@ export function AssignToScreens({ playlist, onClose, onAssigned }: AssignToScree
                 Try again
               </Button>
             )}
-            {done.length > 0 && (
+            {mayPush && done.length > 0 && (
               <Button
                 variant={canPush ? 'primary' : 'secondary'}
                 icon={Send}

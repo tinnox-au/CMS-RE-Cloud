@@ -259,16 +259,31 @@ export interface SetupProgress {
   readonly summary: string;
 }
 
+/**
+ * What the member's role allows, for the step actions: `screen.setup`, `screen.pair`,
+ * `content.write` and `push.publish`. A step whose key is missing offers no action.
+ */
+export interface SetupAllowed {
+  readonly setup: boolean;
+  readonly pair: boolean;
+  readonly write: boolean;
+  readonly push: boolean;
+}
+
+const ALL_ALLOWED: SetupAllowed = { setup: true, pair: true, write: true, push: true };
+
 /** The four steps from an empty organisation to content on a screen, from real numbers only. */
-export function setupProgress(input: SetupInput): SetupProgress {
+export function setupProgress(input: SetupInput, can: SetupAllowed = ALL_ALLOWED): SetupProgress {
   const hasScreen = input.screens > 0;
   const hasPlayer = input.paired > 0;
   const hasMedia = input.media > 0;
 
-  const pushAction = (): SetupAction => {
+  const pushAction = (): SetupAction | null => {
+    if (!can.push) return null;
     if (input.pending !== null && input.pending > 0) {
       return { kind: 'push', label: 'Review and push' };
     }
+    if (!can.write) return null;
     if (input.playlists === 0)
       return { kind: 'link', label: 'Create a playlist', to: '/playlists' };
     return { kind: 'link', label: 'Open playlists', to: '/playlists' };
@@ -281,7 +296,8 @@ export function setupProgress(input: SetupInput): SetupProgress {
       text: 'Give the screen a name, a site and its canvas size in pixels.',
       doneText: 'A screen is set up.',
       done: hasScreen,
-      action: hasScreen ? null : { kind: 'link', label: 'Add screen', to: '/screens/new' },
+      action:
+        hasScreen || !can.setup ? null : { kind: 'link', label: 'Add screen', to: '/screens/new' },
     },
     {
       id: 'pair',
@@ -292,7 +308,7 @@ export function setupProgress(input: SetupInput): SetupProgress {
       doneText: 'A player is paired with a screen.',
       done: hasPlayer,
       action:
-        hasPlayer || !hasScreen
+        hasPlayer || !hasScreen || !can.pair
           ? null
           : { kind: 'link', label: 'Choose a screen to pair', to: screensPath('unpaired') },
     },
@@ -302,12 +318,14 @@ export function setupProgress(input: SetupInput): SetupProgress {
       text: 'Add the images and videos you want to show.',
       doneText: 'There is media in the library.',
       done: hasMedia,
-      action: hasMedia ? null : { kind: 'link', label: 'Add media', to: '/media' },
+      action: hasMedia || !can.write ? null : { kind: 'link', label: 'Add media', to: '/media' },
     },
     {
       id: 'push',
       title: 'Push a playlist',
-      text: 'Put media in a playlist, assign it to a screen, then push.',
+      text: can.push
+        ? 'Put media in a playlist, assign it to a screen, then push.'
+        : 'An editor or admin pushes.',
       doneText: 'A playlist has been pushed to a screen.',
       done: input.pushed,
       action: input.pushed ? null : pushAction(),
@@ -360,8 +378,12 @@ export interface PushOverview {
   readonly blockedText: string | null;
 }
 
-/** The "Changes waiting" card, from the push plan. */
-export function pushOverview(plan: PushPlanResponse, limit = 3): PushOverview {
+/**
+ * The "Changes waiting" card, from the push plan. `canPush` false (no `push.publish`) words
+ * the texts for someone who waits for an editor to push.
+ */
+export function pushOverview(plan: PushPlanResponse, limit = 3, canPush = true): PushOverview {
+  const whoPushes = canPush ? 'you push' : 'an editor pushes';
   const pendingRows = plan.items.filter((row) => isPushPending(row.state));
   const pending = pendingRows.length;
   const blocked = plan.items.filter((row) => row.state === 'blocked').length;
@@ -374,7 +396,7 @@ export function pushOverview(plan: PushPlanResponse, limit = 3): PushOverview {
   if (pending > 0) {
     state = 'changes';
     headline = pending === 1 ? 'screen has changes waiting' : 'screens have changes waiting';
-    text = 'Nothing changes on a screen until you push.';
+    text = `Nothing changes on a screen until ${whoPushes}.`;
   } else if (blocked > 0) {
     state = 'blocked_only';
     headline = 'No changes can be pushed';
@@ -382,13 +404,15 @@ export function pushOverview(plan: PushPlanResponse, limit = 3): PushOverview {
   } else if (plan.items.length === 0) {
     state = 'no_screens';
     headline = 'Nothing to push yet';
-    text =
-      'Add a screen and assign a playlist, a schedule or a layout to it. Its changes then wait here until you push.';
+    text = canPush
+      ? 'Add a screen and assign a playlist, a schedule or a layout to it. Its changes then wait here until you push.'
+      : 'An editor adds screens and assigns content. Changes then wait here until an editor pushes.';
   } else if (assigned === 0) {
     state = 'nothing_assigned';
     headline = 'Nothing to push yet';
-    text =
-      'Assign a playlist, a schedule or a layout to a screen. Its changes then wait here until you push.';
+    text = canPush
+      ? 'Assign a playlist, a schedule or a layout to a screen. Its changes then wait here until you push.'
+      : 'An editor assigns a playlist, a schedule or a layout to a screen. Its changes then wait here until an editor pushes.';
   } else {
     state = 'up_to_date';
     headline = 'Everything is up to date';

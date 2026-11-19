@@ -93,6 +93,9 @@ export {
   Tags,
   Timer,
   Type,
+  UserCog,
+  UserMinus,
+  UserPlus,
   UserRound,
   Users,
   // Status

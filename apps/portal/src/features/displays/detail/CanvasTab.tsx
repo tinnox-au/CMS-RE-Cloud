@@ -22,7 +22,7 @@ import {
   ROTATION_LABELS,
   toCanvasPatch,
 } from '../../../lib/screenDetailCanvas.ts';
-import { useSession } from '../../../session/SessionContext.tsx';
+import { useSession } from '../../../session/AuthenticatedSession.tsx';
 import { Check } from '../../../ui/icons.ts';
 import {
   Banner,
@@ -36,6 +36,7 @@ import {
   useToast,
 } from '../../../ui/index.ts';
 import { usePush } from '../../push/PushContext.tsx';
+import { ReadOnlyNote } from '../../shared/ReadOnlyNote.tsx';
 import { CanvasFrame } from './CanvasFrame.tsx';
 import type { SectionSave } from './types.ts';
 
@@ -74,6 +75,8 @@ export interface CanvasTabProps {
   readonly onSaved: (display: DisplayDto) => void;
   /** Kept by the page so a save outlives the tab (FCX-03). */
   readonly save: SectionSave;
+  /** The role may not set the screen up: the form shows the canvas and sends nothing. */
+  readonly readOnly: boolean;
 }
 
 /**
@@ -89,6 +92,7 @@ export function CanvasTab({
   onRotationDraft,
   onSaved,
   save: saveState,
+  readOnly,
 }: CanvasTabProps) {
   const { limits } = useSession();
   const toast = useToast();
@@ -99,13 +103,14 @@ export function CanvasTab({
     (draft !== null || rotationDraft !== null) && canvasFormDirty(values, display, rotation);
   const [errors, setErrors] = useState<DisplayFormErrors>({});
   const { saving, error: saveError, setSaving, setError: setSaveError } = saveState;
+  const locked = saving || readOnly;
   const summaryRef = useRef<HTMLDivElement>(null);
   const controls = useRef<Partial<Record<DisplayFormField, HTMLElement | null>>>({});
 
   // While a save runs the form takes no changes: its answer replaces the draft, so anything
   // changed meanwhile would be lost without a word (as the media details form does).
   const change = (next: DisplayFormValues) => {
-    if (saving) return;
+    if (locked) return;
     onDraft(next);
   };
   const set = <K extends keyof DisplayFormValues>(key: K, value: DisplayFormValues[K]) => {
@@ -118,7 +123,8 @@ export function CanvasTab({
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (saving) return;
+    // There is no dirty check here, so this is what stops Enter in a read-only field.
+    if (readOnly || saving) return;
     const result = validateDisplayForm(canvasFormForValidation(values, display), limits);
     if (!result.ok) {
       setErrors(result.errors);
@@ -171,7 +177,7 @@ export function CanvasTab({
           width="sm"
           autoComplete="off"
           value={values[field]}
-          readOnly={saving}
+          readOnly={locked}
           data-testid={`screen-detail-canvas-${field}`}
           onChange={(event) => {
             set(field, event.target.value);
@@ -190,6 +196,7 @@ export function CanvasTab({
       data-testid="screen-detail-canvas-form"
     >
       <div className="tx-screen-detail-canvas__form">
+        {readOnly && <ReadOnlyNote>Editors change the canvas.</ReadOnlyNote>}
         {items.length > 0 && (
           <Banner
             ref={summaryRef}
@@ -242,31 +249,34 @@ export function CanvasTab({
             {pixelInput('width', 'Width (px)')}
             {pixelInput('height', 'Height (px)')}
           </div>
-          <div className="tx-screen-detail-presets" role="group" aria-label="Canvas size presets">
-            {CANVAS_PRESETS.map((preset) => {
-              const current =
-                values.width.trim() === preset.width && values.height.trim() === preset.height;
-              return (
-                <Button
-                  key={preset.label}
-                  size="sm"
-                  variant="secondary"
-                  icon={current ? Check : undefined}
-                  aria-pressed={current}
-                  onClick={() => {
-                    change({ ...values, width: preset.width, height: preset.height });
-                  }}
-                >
-                  {preset.label}
-                </Button>
-              );
-            })}
-          </div>
+          {!readOnly && (
+            <div className="tx-screen-detail-presets" role="group" aria-label="Canvas size presets">
+              {CANVAS_PRESETS.map((preset) => {
+                const current =
+                  values.width.trim() === preset.width && values.height.trim() === preset.height;
+                return (
+                  <Button
+                    key={preset.label}
+                    size="sm"
+                    variant="secondary"
+                    icon={current ? Check : undefined}
+                    aria-pressed={current}
+                    onClick={() => {
+                      change({ ...values, width: preset.width, height: preset.height });
+                    }}
+                  >
+                    {preset.label}
+                  </Button>
+                );
+              })}
+            </div>
+          )}
         </FieldGroup>
 
         <div className="tx-screen-detail-section">
           <Checkbox
             checked={values.useContentRect}
+            disabled={readOnly}
             label="Limit content to a rectangle inside the canvas"
             hint="Optional. Content is drawn only inside this rectangle and the rest of the frame stays black. Leave it off to use the whole canvas."
             data-testid="screen-detail-canvas-use-rect"
@@ -294,6 +304,7 @@ export function CanvasTab({
               ref={bind('defaultFit')}
               width="lg"
               value={values.defaultFit}
+              disabled={readOnly}
               data-testid="screen-detail-canvas-fit"
               onChange={(event) => {
                 const fit = FIT_MODES.find((mode) => mode === event.target.value);
@@ -318,10 +329,11 @@ export function CanvasTab({
               {...control}
               width="lg"
               value={String(rotation)}
+              disabled={readOnly}
               data-testid="screen-detail-canvas-rotation"
               onChange={(event) => {
                 const next = ROTATIONS.find((value) => String(value) === event.target.value);
-                if (next !== undefined && !saving) onRotationDraft(next);
+                if (next !== undefined && !locked) onRotationDraft(next);
               }}
             >
               {ROTATIONS.map((value) => (
@@ -333,28 +345,36 @@ export function CanvasTab({
           )}
         </Field>
 
-        <p className="tx-screen-detail-note">
-          Changing the canvas does not change what the screen is already showing. Push again to
-          deliver content for the new canvas.
-        </p>
+        {!readOnly && (
+          <>
+            <p className="tx-screen-detail-note">
+              Changing the canvas does not change what the screen is already showing. Push again to
+              deliver content for the new canvas.
+            </p>
 
-        <div className="tx-screen-detail-form__actions">
-          <Button
-            type="submit"
-            variant="primary"
-            busy={saving}
-            aria-disabled={!dirty || undefined}
-            data-testid="screen-detail-canvas-save"
-          >
-            Save changes
-          </Button>
-          {dirty && (
-            <Button variant="ghost" onClick={discard} data-testid="screen-detail-canvas-discard">
-              Discard changes
-            </Button>
-          )}
-          {dirty && <span className="tx-screen-detail-unsaved">Unsaved changes</span>}
-        </div>
+            <div className="tx-screen-detail-form__actions">
+              <Button
+                type="submit"
+                variant="primary"
+                busy={saving}
+                aria-disabled={!dirty || undefined}
+                data-testid="screen-detail-canvas-save"
+              >
+                Save changes
+              </Button>
+              {dirty && (
+                <Button
+                  variant="ghost"
+                  onClick={discard}
+                  data-testid="screen-detail-canvas-discard"
+                >
+                  Discard changes
+                </Button>
+              )}
+              {dirty && <span className="tx-screen-detail-unsaved">Unsaved changes</span>}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="tx-screen-detail-canvas__shape">

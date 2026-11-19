@@ -1,5 +1,6 @@
 import type { TagDto, TagScope } from '@tinnox/contracts';
 import { useState } from 'react';
+import { isRoleRefusal } from '../../api/client.ts';
 import { api } from '../../api/index.ts';
 import {
   bulkFailureTitle,
@@ -45,6 +46,8 @@ export interface TagsDialogProps {
    * the changed items, before the dialog closes. Reload the list here.
    */
   readonly onSaved?: (updatedIds: readonly string[]) => void;
+  /** False when the role may not create tags in this scope: the list searches only. Default true. */
+  readonly allowCreate?: boolean;
   /** Default `shared-tags-dialog`. */
   readonly testId?: string;
 }
@@ -106,6 +109,7 @@ export function TagsDialog({
   items,
   tags,
   onSaved,
+  allowCreate = true,
   testId = 'shared-tags-dialog',
 }: TagsDialogProps) {
   const toast = useToast();
@@ -179,8 +183,12 @@ export function TagsDialog({
     void run(jobs, null);
   };
 
+  // A refusal by role is the same for every item and every retry: only Close is left.
+  const roleRefused =
+    phase.kind === 'failed' && phase.outcome.failed.some((failure) => isRoleRefusal(failure.error));
+
   const retry = () => {
-    if (phase.kind !== 'failed') return;
+    if (phase.kind !== 'failed' || roleRefused) return;
     void run(
       phase.outcome.failed.map((failure) => failure.item),
       phase.outcome,
@@ -214,9 +222,11 @@ export function TagsDialog({
         phase.kind === 'failed' ? (
           <>
             <Button onClick={onClose}>Close</Button>
-            <Button variant="primary" onClick={retry} data-testid={`${testId}-retry`}>
-              Try again
-            </Button>
+            {!roleRefused && (
+              <Button variant="primary" onClick={retry} data-testid={`${testId}-retry`}>
+                Try again
+              </Button>
+            )}
           </>
         ) : (
           <>
@@ -262,6 +272,7 @@ export function TagsDialog({
                 },
               }));
             }}
+            allowCreate={allowCreate}
             disabled={saving}
             someHint={`on some of the selected ${noun}s`}
             testId={`${testId}-checklist`}

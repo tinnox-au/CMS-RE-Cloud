@@ -57,6 +57,13 @@ export interface ScreenTabsProps {
   readonly onRevoke: () => void;
   readonly revoke: RevokeState | null;
   readonly onDismissRevoke: () => void;
+  /** Tabs the role may only look at, each decided by its own key when the page opened. */
+  readonly readOnly: {
+    readonly canvas: boolean;
+    readonly pairing: boolean;
+    readonly tags: boolean;
+    readonly workingHours: boolean;
+  };
 }
 
 function isOpenTab(id: ScreenDetailTabId): id is ScreenDetailOpenTabId {
@@ -113,6 +120,7 @@ function TabContent(props: ScreenTabsProps) {
           onRotationDraft={props.onRotationDraft}
           onSaved={props.onSaved}
           save={props.saves.canvas}
+          readOnly={props.readOnly.canvas}
         />
       );
     case 'pairing':
@@ -123,6 +131,7 @@ function TabContent(props: ScreenTabsProps) {
           onRevoke={props.onRevoke}
           revoke={props.revoke}
           onDismissRevoke={props.onDismissRevoke}
+          readOnly={props.readOnly.pairing}
         />
       );
     case 'tags':
@@ -134,6 +143,7 @@ function TabContent(props: ScreenTabsProps) {
           onDraft={props.onTagsDraft}
           onSaved={props.onSaved}
           save={props.saves.tags}
+          readOnly={props.readOnly.tags}
         />
       );
     case 'working-hours':
@@ -145,6 +155,7 @@ function TabContent(props: ScreenTabsProps) {
           onDraft={props.onWorkingHoursDraft}
           onSaved={props.onSaved}
           save={props.saves.workingHours}
+          readOnly={props.readOnly.workingHours}
         />
       );
   }

@@ -11,8 +11,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MediaPipeline } from '../src/media/pipeline.ts';
 import {
   actAsWorker,
+  addMember,
+  asMigratorIn,
   createDisplay,
   createOrg,
+  isRoleCheck,
   listDir,
   losingCommitAnswers,
   pairPlayer,
@@ -22,6 +25,7 @@ import {
   signIn,
   settleStrayMediaJobs,
   startTestApp,
+  statementHolds,
   uploadBytes,
   type Operator,
   type TestApp,
@@ -903,5 +907,43 @@ describe('upload limits and validation results', () => {
     });
     expect(keys.map((k) => k.id)).toEqual([used.id]);
     expect(await storage.stat(keys[0]?.storage_key ?? '')).not.toBeNull();
+  });
+
+  it('refuses an upload whose uploader is demoted while it streams, and keeps nothing (CMS-13)', async () => {
+    // The role is checked again in the transaction that writes the row (stage-c.md 6.3). The
+    // pool holds that check until the uploader has been made a Viewer.
+    const holds = statementHolds();
+    const racing = await startTestApp(
+      {
+        LIMIT_MAX_UPLOAD_BYTES: String(UPLOAD_LIMIT),
+        LIMIT_MAX_ORG_STORAGE_BYTES: String(QUOTA),
+      },
+      1000,
+      { wrapPool: holds.wrapPool },
+    );
+    try {
+      const demoted = await createOrg('Upload demotion');
+      const editorMember = await addMember(demoted, 'editor');
+      const editor = await signIn(racing, editorMember);
+      const held = holds.hold(isRoleCheck);
+      const uploading = uploadBytes(editor, await pngBytes());
+      await held.reached;
+      try {
+        await asMigratorIn(demoted.orgId, (c) =>
+          c.query("UPDATE membership SET role = 'viewer' WHERE id = $1", [
+            editorMember.membershipId,
+          ]),
+        );
+      } finally {
+        held.release();
+      }
+      const response = await uploading;
+      expect(response.status).toBe(403);
+      expect(((await response.json()) as { error: { code: string } }).error.code).toBe('forbidden');
+      expect(await mediaCount(demoted)).toBe(0);
+      expect(await listDir(join(racing.jobsDir, 'inbox'))).toEqual([]);
+    } finally {
+      await racing.close();
+    }
   });
 });

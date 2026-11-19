@@ -36,9 +36,12 @@ export interface FolderChipsProps {
   readonly onChange: (folder: string | null) => void;
   /** Files of this page's kind per folder, for the numbers on the chips. */
   readonly counts: FolderCounts | null;
-  readonly onCreate: () => void;
-  readonly onRename: (folder: FolderDto) => void;
-  readonly onDelete: (folder: FolderDto) => void;
+  /** "New folder"; left out (the role may not write content), the button is hidden. */
+  readonly onCreate?: () => void;
+  /** "Rename folder" in the chosen folder's menu; left out, the item is hidden. */
+  readonly onRename?: (folder: FolderDto) => void;
+  /** "Delete folder" in the chosen folder's menu; left out, the item is hidden. */
+  readonly onDelete?: (folder: FolderDto) => void;
 }
 
 /**
@@ -77,7 +80,7 @@ export function FolderChips({
   onRename,
   onDelete,
 }: FolderChipsProps) {
-  const newFolder = (
+  const newFolder = onCreate !== undefined && (
     <Button
       variant="ghost"
       size="sm"
@@ -211,7 +214,7 @@ export function FolderChips({
       */}
       {newFolder}
       <span className="tx-media-library__folder-actions">
-        {chosen !== undefined && (
+        {chosen !== undefined && (onRename !== undefined || onDelete !== undefined) && (
           <Menu
             placement="bottom-end"
             trigger={(props) => (
@@ -224,24 +227,28 @@ export function FolderChips({
               />
             )}
           >
-            <MenuItem
-              icon={Pencil}
-              onSelect={() => {
-                onRename(chosen);
-              }}
-            >
-              Rename folder
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem
-              icon={Trash}
-              tone="danger"
-              onSelect={() => {
-                onDelete(chosen);
-              }}
-            >
-              Delete folder
-            </MenuItem>
+            {onRename !== undefined && (
+              <MenuItem
+                icon={Pencil}
+                onSelect={() => {
+                  onRename(chosen);
+                }}
+              >
+                Rename folder
+              </MenuItem>
+            )}
+            {onRename !== undefined && onDelete !== undefined && <MenuSeparator />}
+            {onDelete !== undefined && (
+              <MenuItem
+                icon={Trash}
+                tone="danger"
+                onSelect={() => {
+                  onDelete(chosen);
+                }}
+              >
+                Delete folder
+              </MenuItem>
+            )}
           </Menu>
         )}
       </span>

@@ -1,6 +1,6 @@
 import type { Limits, MediaDto } from '@tinnox/contracts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { isAbort } from '../../../api/client.ts';
+import { isAbort, isRoleRefusal } from '../../../api/client.ts';
 import { apiClient } from '../../../api/index.ts';
 import { uploadMedia, type UploadHandle } from '../../../api/upload.ts';
 import {
@@ -86,13 +86,25 @@ export function useUploadQueue(
         onSettled();
       })
       .catch((error: unknown) => {
-        setState((previous) =>
-          patch(
+        setState((previous) => {
+          // A refusal by role refuses every file after it too: fail the waiting ones with the
+          // same message instead of sending them one by one.
+          if (isRoleRefusal(error)) {
+            return {
+              ...previous,
+              entries: previous.entries.map((entry) =>
+                entry.id === id || entry.status === 'queued'
+                  ? { ...entry, status: 'failed', error }
+                  : entry,
+              ),
+            };
+          }
+          return patch(
             previous,
             id,
             isAbort(error) ? { status: 'cancelled' } : { status: 'failed', error },
-          ),
-        );
+          );
+        });
         // The outcome on the server may be unknown; show its current list.
         onSettled();
       })

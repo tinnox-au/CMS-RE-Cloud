@@ -257,8 +257,11 @@ function UsageBody({
 export interface MediaUsageProps {
   readonly state: LoadState<MediaUsageResponse>;
   readonly onRetry: () => void;
-  /** Opens the playlist picker for the item as it is saved. */
-  readonly onAddToPlaylist: () => void;
+  /**
+   * Opens the playlist picker for the item as it is saved. Left out when the role may not
+   * change content: there is then no "Add to playlist".
+   */
+  readonly onAddToPlaylist?: () => void;
 }
 
 export interface MediaDetailsCardProps {
@@ -308,15 +311,17 @@ export function MediaDetailsCard({ media, name, usage }: MediaDetailsCardProps) 
             <h2 id={usageId} className="tx-media-detail-part__title">
               Used in
             </h2>
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={ListPlus}
-              data-testid="media-detail-add-to-playlist"
-              onClick={usage.onAddToPlaylist}
-            >
-              Add to playlist
-            </Button>
+            {usage.onAddToPlaylist !== undefined && (
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={ListPlus}
+                data-testid="media-detail-add-to-playlist"
+                onClick={usage.onAddToPlaylist}
+              >
+                Add to playlist
+              </Button>
+            )}
           </div>
           <UsageBody state={usage.state} onRetry={usage.onRetry} />
         </Card>

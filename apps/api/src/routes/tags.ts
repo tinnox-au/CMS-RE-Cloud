@@ -1,6 +1,8 @@
 /**
  * Tags for media and for displays (portal v2, stage A). A tag belongs to one
  * scope for life; the database refuses a display tag on media and the reverse.
+ * Media tags are content (content.write, content.delete); screen tags are screen set-up
+ * (screen.setup). A change or deletion checks the stored tag's scope (stage-c.md 6.1).
  */
 import {
   ABSOLUTE,
@@ -17,6 +19,7 @@ import {
 } from '@tinnox/contracts';
 import { auditScoped, STAGE_A_CONSTRAINTS, violatedConstraint, withOrg, type Tx } from '@tinnox/db';
 import type { FastifyInstance } from 'fastify';
+import { requirePermission, tagScopeKey, withOrgAllowed } from '../auth/permissions.ts';
 import { operatorOf } from '../auth/session.ts';
 import type { AppContext } from '../context.ts';
 import { bigintToNumber } from '../db-helpers.ts';
@@ -151,7 +154,7 @@ export function registerTagRoutes(app: FastifyInstance, ctx: AppContext): void {
     const input = parseInput(TagCreateSchema, request.body, 'tag');
     let created: TagDto;
     try {
-      created = await withOrg(pool, session.orgId, async (tx) => {
+      created = await withOrgAllowed(ctx, request, async (tx) => {
         // One at a time per organisation, so the ceiling below cannot be passed by a burst.
         await tx.query(
           "SELECT pg_advisory_xact_lock(hashtextextended('tinnox.tag_count:' || app_org_id()::text, 0))",
@@ -199,7 +202,15 @@ export function registerTagRoutes(app: FastifyInstance, ctx: AppContext): void {
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     const patch = parseInput(TagPatchSchema, request.body, 'tag');
     try {
-      return await withOrg(pool, session.orgId, async (tx) => {
+      return await withOrgAllowed(ctx, request, async (tx, role) => {
+        // The scope decides the key; the row stays locked until the change commits.
+        const stored = await tx.query<{ scope: string }>(
+          'SELECT scope FROM tag WHERE id = $1 AND org_id = app_org_id() FOR UPDATE',
+          [id],
+        );
+        const scope = stored.rows[0]?.scope;
+        if (scope === undefined) throw notFound('The tag');
+        requirePermission(role, { all: [tagScopeKey(TagScopeSchema.parse(scope), 'write')] });
         const updated = await tx.query(
           `UPDATE tag SET name = COALESCE($2, name), colour = COALESCE($3, colour)
            WHERE id = $1 AND org_id = app_org_id()`,
@@ -229,7 +240,7 @@ export function registerTagRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.delete(ROUTES.tagPattern, async (request, reply) => {
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
-    await withOrg(pool, session.orgId, async (tx) => {
+    await withOrgAllowed(ctx, request, async (tx, role) => {
       const current = await tx.query<TagRow>(
         `SELECT ${TAG_COLUMNS} FROM tag t
          WHERE t.id = $1 AND t.org_id = app_org_id() FOR UPDATE OF t`,
@@ -237,6 +248,7 @@ export function registerTagRoutes(app: FastifyInstance, ctx: AppContext): void {
       );
       const row = current.rows[0];
       if (row === undefined) throw notFound('The tag');
+      requirePermission(role, { all: [tagScopeKey(TagScopeSchema.parse(row.scope), 'delete')] });
       await tx.query('DELETE FROM tag WHERE id = $1 AND org_id = app_org_id()', [id]);
       await auditScoped(tx, {
         actorType: 'operator',

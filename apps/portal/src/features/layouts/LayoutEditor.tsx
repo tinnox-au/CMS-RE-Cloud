@@ -21,6 +21,7 @@ import {
 import { headerStatusLabel } from '../../lib/mediaDetailState.ts';
 import { assignedScreensLabel } from '../../lib/playlistsList.ts';
 import { playlistsByName } from '../../lib/schedules.ts';
+import { useCan, useCanAtMount } from '../../session/AuthenticatedSession.tsx';
 import { EditorPage } from '../../shell/EditorPage.tsx';
 import { CircleCheck, CircleDashed, Ellipsis, Trash } from '../../ui/icons.ts';
 import {
@@ -42,6 +43,7 @@ import {
   useToast,
 } from '../../ui/index.ts';
 import { usePush } from '../push/PushContext.tsx';
+import { ReadOnlyNote } from '../shared/ReadOnlyNote.tsx';
 import { useLeaveGuard } from '../shared/useLeaveGuard.tsx';
 import { DeleteLayoutDialog } from './DeleteLayoutDialog.tsx';
 import { LayoutPreview } from './LayoutPreview.tsx';
@@ -67,13 +69,17 @@ function usedPlaylistNames(layout: LayoutDto): ReadonlyMap<string, string> {
  * zones on a screen shape; Cancel and Save in the header, Delete in its menu. A layout whose
  * zones match no preset keeps their sizes, and only its playlists can be changed. The pure
  * rules (what changed, what is sent, the plain-words checks) are in `lib/layouts.ts`, which
- * also holds the one-preset shortcut; the server stays the authority.
+ * also holds the one-preset shortcut; the server stays the authority. Without `content.write`
+ * (decided when the page opens) it is read-only: no Cancel or Save, every field locked,
+ * nothing submits; Delete stays for a role that holds `content.delete`.
  */
 export function LayoutEditor({ initial, playlists }: LayoutEditorProps) {
   const toast = useToast();
   const push = usePush();
   const navigate = useNavigate();
   const baseId = useId();
+  const readOnly = !useCanAtMount('content.write');
+  const canDelete = useCan('content.delete');
 
   const [saved, setSaved] = useState(initial);
   const [draft, setDraft] = useState<LayoutDraft>(() => layoutDraftFromDto(initial));
@@ -93,7 +99,8 @@ export function LayoutEditor({ initial, playlists }: LayoutEditorProps) {
 
   const dirty = layoutIsDirty(saved, draft);
   // Until the save answers, the changes are not safe: it can still fail (FCX-04).
-  const guard = useLeaveGuard(dirty, saved.name, saving);
+  const guard = useLeaveGuard(dirty && !readOnly, saved.name, saving);
+  const locked = saving || readOnly;
   const entries = layoutErrorEntries(errors, draft);
   const preset = draft.bandPercent !== null;
 
@@ -109,6 +116,7 @@ export function LayoutEditor({ initial, playlists }: LayoutEditorProps) {
   };
 
   const change = (slot: 'name' | 'description' | 'bandPercent' | number, next: LayoutDraft) => {
+    if (locked) return;
     setDraft(next);
     setErrors(withoutLayoutError(errors, slot));
   };
@@ -121,7 +129,7 @@ export function LayoutEditor({ initial, playlists }: LayoutEditorProps) {
   };
 
   const save = () => {
-    if (saving || !dirty) return;
+    if (readOnly || saving || !dirty) return;
     const result = validateLayoutDraft(draft);
     if (!result.ok) {
       setErrors(result.errors);
@@ -160,6 +168,7 @@ export function LayoutEditor({ initial, playlists }: LayoutEditorProps) {
 
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
+    if (readOnly || saving) return;
     save();
   };
 
@@ -168,55 +177,65 @@ export function LayoutEditor({ initial, playlists }: LayoutEditorProps) {
       title={draft.name.trim() === '' ? saved.name : draft.name.trim()}
       back={LAYOUTS_BACK}
       status={
-        <span className="tx-layout-editor-status" data-state={dirty ? 'unsaved' : 'saved'}>
-          <Icon icon={dirty ? CircleDashed : CircleCheck} size={16} />
-          <span role="status" data-testid="layout-save-state" data-dirty={dirty}>
-            {headerStatusLabel(dirty)}
+        readOnly ? undefined : (
+          <span className="tx-layout-editor-status" data-state={dirty ? 'unsaved' : 'saved'}>
+            <Icon icon={dirty ? CircleDashed : CircleCheck} size={16} />
+            <span role="status" data-testid="layout-save-state" data-dirty={dirty}>
+              {headerStatusLabel(dirty)}
+            </span>
           </span>
-        </span>
+        )
       }
       actions={
-        <>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              void navigate('/layouts');
-            }}
-            data-testid="layout-cancel"
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            busy={saving}
-            aria-disabled={!dirty || undefined}
-            onClick={save}
-            data-testid="layout-save"
-          >
-            Save
-          </Button>
-          <Menu
-            placement="bottom-end"
-            trigger={(props) => (
-              <IconButton
-                {...props}
-                icon={Ellipsis}
-                label={`More actions for ${saved.name}`}
-                data-testid="layout-menu"
-              />
+        readOnly && !canDelete ? undefined : (
+          <>
+            {!readOnly && (
+              <>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    void navigate('/layouts');
+                  }}
+                  data-testid="layout-cancel"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  busy={saving}
+                  aria-disabled={!dirty || undefined}
+                  onClick={save}
+                  data-testid="layout-save"
+                >
+                  Save
+                </Button>
+              </>
             )}
-          >
-            <MenuItem
-              icon={Trash}
-              tone="danger"
-              onSelect={() => {
-                setDeleting(saved);
-              }}
-            >
-              Delete layout
-            </MenuItem>
-          </Menu>
-        </>
+            {canDelete && (
+              <Menu
+                placement="bottom-end"
+                trigger={(props) => (
+                  <IconButton
+                    {...props}
+                    icon={Ellipsis}
+                    label={`More actions for ${saved.name}`}
+                    data-testid="layout-menu"
+                  />
+                )}
+              >
+                <MenuItem
+                  icon={Trash}
+                  tone="danger"
+                  onSelect={() => {
+                    setDeleting(saved);
+                  }}
+                >
+                  Delete layout
+                </MenuItem>
+              </Menu>
+            )}
+          </>
+        )
       }
     >
       <form
@@ -227,6 +246,7 @@ export function LayoutEditor({ initial, playlists }: LayoutEditorProps) {
         aria-busy={saving || undefined}
         data-testid="layout-editor"
       >
+        {readOnly && <ReadOnlyNote>You can view this layout. Editors make changes.</ReadOnlyNote>}
         {saveError !== null && (
           <ErrorNotice
             error={saveError}
@@ -288,7 +308,7 @@ export function LayoutEditor({ initial, playlists }: LayoutEditorProps) {
                       value={draft.name}
                       maxLength={ABSOLUTE.maxNameLength}
                       autoComplete="off"
-                      readOnly={saving}
+                      readOnly={locked}
                       data-testid="layout-name"
                       onChange={(event) => {
                         change('name', { ...draft, name: event.target.value });
@@ -308,7 +328,7 @@ export function LayoutEditor({ initial, playlists }: LayoutEditorProps) {
                       rows={3}
                       value={draft.description}
                       maxLength={ABSOLUTE.maxDescriptionLength}
-                      readOnly={saving}
+                      readOnly={locked}
                       data-testid="layout-description"
                       onChange={(event) => {
                         change('description', { ...draft, description: event.target.value });
@@ -350,7 +370,7 @@ export function LayoutEditor({ initial, playlists }: LayoutEditorProps) {
                         step={1}
                         unit="%"
                         stepLabel="band height"
-                        disabled={saving}
+                        disabled={locked}
                         data-testid="layout-band-percent"
                         onChange={(bandPercent) => {
                           change('bandPercent', { ...draft, bandPercent });
@@ -375,7 +395,7 @@ export function LayoutEditor({ initial, playlists }: LayoutEditorProps) {
                     error={errors.zones.get(index)?.playlistId}
                     playlists={options}
                     knownNames={knownNames}
-                    disabled={saving}
+                    disabled={locked}
                     onChange={(playlistId) => {
                       changeZone(index, playlistId);
                     }}

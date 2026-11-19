@@ -388,6 +388,45 @@ describe('setupProgress', () => {
     expect(progress.steps.every((step) => step.action === null)).toBe(true);
   });
 
+  describe('without a key', () => {
+    const all = { setup: true, pair: true, write: true, push: true };
+    // A screen without a player, nothing else yet: steps 2 to 4 can act.
+    const oneScreen: SetupInput = { ...empty, screens: 1 };
+
+    it('offers every action with all keys, as with one argument', () => {
+      expect(setupProgress(empty, all)).toEqual(setupProgress(empty));
+      expect(setupProgress(oneScreen, all)).toEqual(setupProgress(oneScreen));
+    });
+
+    it('drops the Add screen action without screen.setup', () => {
+      const steps = setupProgress(empty, { ...all, setup: false }).steps;
+      expect(steps[0]?.action).toBeNull();
+      expect(steps[2]?.action).not.toBeNull();
+    });
+
+    it('drops the pairing action without screen.pair', () => {
+      const steps = setupProgress(oneScreen, { ...all, pair: false }).steps;
+      expect(steps[1]?.action).toBeNull();
+    });
+
+    it('drops the media and playlist links without content.write', () => {
+      const steps = setupProgress(empty, { ...all, write: false }).steps;
+      expect(steps[2]?.action).toBeNull();
+      expect(steps[3]?.action).toBeNull();
+      // The push dialog itself needs push.publish only.
+      const waiting = setupProgress({ ...empty, pending: 2 }, { ...all, write: false });
+      expect(waiting.steps[3]?.action).toEqual({ kind: 'push', label: 'Review and push' });
+    });
+
+    it('says who pushes without push.publish, and offers nothing', () => {
+      for (const pending of [0, 2, null]) {
+        const step = setupProgress({ ...empty, pending }, { ...all, push: false }).steps[3];
+        expect(step?.action).toBeNull();
+        expect(step?.text).toBe('An editor or admin pushes.');
+      }
+    });
+  });
+
   it('never says online, offline or display, and never links to an M0 address', () => {
     for (const input of [empty, { ...empty, screens: 1 }, { ...empty, screens: 1, pending: 2 }]) {
       for (const step of setupProgress(input).steps) {
@@ -485,6 +524,22 @@ describe('pushOverview', () => {
     );
   });
 
+  it('says an editor pushes to someone who cannot push', () => {
+    expect(pushOverview(plan(['changes']), 3, false).text).toBe(
+      'Nothing changes on a screen until an editor pushes.',
+    );
+    expect(pushOverview(plan([]), 3, false).text).toBe(
+      'An editor adds screens and assigns content. Changes then wait here until an editor pushes.',
+    );
+    expect(pushOverview(plan(['nothing_assigned']), 3, false).text).toContain(
+      'until an editor pushes.',
+    );
+    for (const states of [['changes'], [], ['nothing_assigned']] as PushState[][]) {
+      expect(pushOverview(plan(states), 3, false).text).not.toContain('you push');
+      expect(pushOverview(plan(states), 3, true).text).toBe(pushOverview(plan(states)).text);
+    }
+  });
+
   it('never says online, offline or display', () => {
     const mixes: PushState[][] = [
       [],
@@ -494,7 +549,7 @@ describe('pushOverview', () => {
       ['nothing_assigned'],
     ];
     for (const states of mixes) {
-      const result = pushOverview(plan(states));
+      const result = pushOverview(plan(states), 3, states.length % 2 === 0);
       expect(
         `${result.headline} ${result.text} ${result.blockedText ?? ''}`.toLowerCase(),
       ).not.toMatch(/online|offline|display/);

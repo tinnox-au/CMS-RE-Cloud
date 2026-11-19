@@ -17,6 +17,7 @@ import {
 } from '@tinnox/contracts';
 import { auditScoped, withOrg, type Tx } from '@tinnox/db';
 import type { FastifyInstance } from 'fastify';
+import { withOrgAllowed } from '../auth/permissions.ts';
 import { operatorOf } from '../auth/session.ts';
 import type { AppContext } from '../context.ts';
 import { bigintToNumber, iso } from '../db-helpers.ts';
@@ -84,7 +85,7 @@ export function registerAppRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.post(ROUTES.apps, async (request, reply): Promise<AppDto> => {
     const session = operatorOf(request);
     const input = parseInput(AppCreateSchema, request.body, 'app');
-    const dto = await withOrg(pool, session.orgId, async (tx) => {
+    const dto = await withOrgAllowed(ctx, request, async (tx) => {
       const inserted = await tx.query<{ id: string }>(
         `INSERT INTO app (org_id, type, name, description, settings)
          VALUES (app_org_id(), $1, $2, $3, $4::jsonb) RETURNING id`,
@@ -128,7 +129,7 @@ export function registerAppRoutes(app: FastifyInstance, ctx: AppContext): void {
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     const patch = parseInput(AppPatchSchema, request.body, 'app');
-    return withOrg(pool, session.orgId, async (tx) => {
+    return withOrgAllowed(ctx, request, async (tx) => {
       const locked = await tx.query<{ type: string }>(
         'SELECT type FROM app WHERE id = $1 AND org_id = app_org_id() FOR UPDATE',
         [id],
@@ -176,7 +177,7 @@ export function registerAppRoutes(app: FastifyInstance, ctx: AppContext): void {
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     try {
-      await withOrg(pool, session.orgId, async (tx) => {
+      await withOrgAllowed(ctx, request, async (tx) => {
         const locked = await tx.query<{ type: string }>(
           'SELECT type FROM app WHERE id = $1 AND org_id = app_org_id() FOR UPDATE',
           [id],

@@ -1,10 +1,9 @@
-import { useSession } from '../session/SessionContext.tsx';
+import { ROLE_LABELS } from '@tinnox/domain';
+import { useSession } from '../session/AuthenticatedSession.tsx';
 import { Avatar, Menu, MenuHeader, MenuItem, MenuSeparator } from '../ui/index.ts';
 import { LogOut } from '../ui/icons.ts';
 import { ACCOUNT_NAV } from './nav.ts';
 import { useShell } from './ShellContext.ts';
-
-const ROLE_LABEL = { operator: 'Operator' } as const;
 
 export interface AccountMenuProps {
   /**
@@ -16,8 +15,8 @@ export interface AccountMenuProps {
 }
 
 /**
- * The round initials button in the page header and its menu: who is signed in, then Settings, Users,
- * Audit log and Sign out.
+ * The round initials button in the page header and its menu: who is signed in, then Settings, Users
+ * (only with `member.read`), Audit log and Sign out.
  *
  * Signing out is started here and runs in `AppShell`, which outlives the menu: the button
  * shows that it is working, and a failure is reported by the page frame as an alert.
@@ -25,7 +24,17 @@ export interface AccountMenuProps {
 export function AccountMenu({ showOrganisation = false }: AccountMenuProps) {
   const session = useSession();
   const { signOut } = useShell();
-  const name = session.user.displayName;
+  const role = ROLE_LABELS[session.user.role];
+  // A member TINNOX has not named yet is shown by their role.
+  const name = session.user.displayName ?? role;
+  const permissions = session.user.permissions;
+  // The role under the name, unless it already is the name; the organisation where asked.
+  const meta = [
+    session.user.displayName !== null ? role : null,
+    showOrganisation ? session.organization.name : null,
+  ]
+    .filter((part) => part !== null)
+    .join(' · ');
 
   return (
     <Menu
@@ -53,15 +62,14 @@ export function AccountMenu({ showOrganisation = false }: AccountMenuProps) {
           <Avatar name={name} size="lg" />
           <span className="tx-account-card__text">
             <span className="tx-account-card__name">{name}</span>
-            <span className="tx-account-card__meta">
-              {ROLE_LABEL[session.user.role]}
-              {showOrganisation && ` · ${session.organization.name}`}
-            </span>
+            {meta !== '' && <span className="tx-account-card__meta">{meta}</span>}
           </span>
         </span>
       </MenuHeader>
       <MenuSeparator />
-      {ACCOUNT_NAV.map((item) => (
+      {ACCOUNT_NAV.filter(
+        (item) => item.permission === undefined || permissions.includes(item.permission),
+      ).map((item) => (
         <MenuItem
           key={item.id}
           icon={item.icon}

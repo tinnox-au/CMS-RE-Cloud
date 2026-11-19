@@ -34,6 +34,8 @@ export interface TagChecklistProps {
   readonly onToggle: (tag: TagDto) => void;
   /** A tag was just created here; the owner turns it on. */
   readonly onCreated: (tag: TagDto) => void;
+  /** False when the role may not create tags in this scope: search only, no "Create tag". */
+  readonly allowCreate?: boolean;
   readonly disabled?: boolean;
   /** No further tag can be turned on: the limit of tags on one item is reached. */
   readonly atLimit?: boolean;
@@ -54,6 +56,7 @@ export function TagChecklist({
   stateOf,
   onToggle,
   onCreated,
+  allowCreate = true,
   disabled = false,
   atLimit = false,
   someHint = 'on some of the selected items',
@@ -72,7 +75,8 @@ export function TagChecklist({
   const ready = tags.status === 'ready';
   const matches = ready ? searchTags(tags.tags, query) : [];
   const newName = query.trim();
-  const offerCreate = ready && newName !== '' && findTagByName(tags.tags, newName) === undefined;
+  const offerCreate =
+    allowCreate && ready && newName !== '' && findTagByName(tags.tags, newName) === undefined;
   const nameProblem = offerCreate ? tagNameProblem(newName) : null;
   const optionCount = matches.length + (offerCreate ? 1 : 0);
   const activeIndex = optionCount === 0 ? -1 : Math.min(active, optionCount - 1);
@@ -146,8 +150,8 @@ export function TagChecklist({
       }}
     >
       <SearchField
-        label="Search tags or type a new name"
-        placeholder="Search or create a tag"
+        label={allowCreate ? 'Search tags or type a new name' : 'Search tags'}
+        placeholder={allowCreate ? 'Search or create a tag' : 'Search tags'}
         value={query}
         onChange={(next) => {
           setQuery(next);
@@ -272,7 +276,9 @@ export function TagChecklist({
       {ready && optionCount === 0 && (
         <p className="tx-shared-checklist__empty">
           {tags.tags.length === 0
-            ? 'No tags yet. Type a name to create the first one.'
+            ? allowCreate
+              ? 'No tags yet. Type a name to create the first one.'
+              : 'No tags yet.'
             : 'No tag matches the search.'}
         </p>
       )}

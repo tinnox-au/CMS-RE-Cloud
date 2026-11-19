@@ -9,6 +9,7 @@ import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import { ABSOLUTE, PLAYER_PREFIX } from '@tinnox/contracts';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
+import { createRouteCheck, permissionGuard } from './auth/permissions.ts';
 import { requireOperator } from './auth/session.ts';
 import { perMinute, type AppContext } from './context.ts';
 import { HttpError, registerErrorHandling, sendFrameworkError } from './errors.ts';
@@ -19,6 +20,7 @@ import { registerDisplayRoutes } from './routes/displays.ts';
 import { registerFolderRoutes } from './routes/folders.ts';
 import { registerLayoutRoutes } from './routes/layouts.ts';
 import { registerMediaRoutes } from './routes/media.ts';
+import { registerMemberRoutes } from './routes/members.ts';
 import { registerOpsRoutes } from './routes/ops.ts';
 import { registerOverviewRoutes } from './routes/overview.ts';
 import { registerPlaylistRoutes } from './routes/playlists.ts';
@@ -54,6 +56,7 @@ export async function buildApp(
 
   registerErrorHandling(app);
   app.decorateRequest('operator', null);
+  app.decorateRequest('permission', null);
   // Only JSON and multipart bodies are accepted anywhere.
   app.removeContentTypeParser('text/plain');
 
@@ -99,9 +102,15 @@ export async function buildApp(
   registerAuthRoutes(app, ctx);
 
   // Operator API: every route below requires a session; state-changing ones also
-  // require the portal Origin and the CSRF token (auth/session.ts).
+  // require the portal Origin and the CSRF token (auth/session.ts). Then the session's role
+  // must hold the route's permission keys (auth/permissions.ts); a route without an entry in
+  // the table stops the start-up.
+  const routeCheck = createRouteCheck();
   await app.register(async (api) => {
+    // Before any route is registered, so it sees exactly the operator routes.
+    api.addHook('onRoute', routeCheck.onRoute);
     api.addHook('preHandler', requireOperator(ctx));
+    api.addHook('preHandler', permissionGuard(ctx));
     api.addHook('onSend', async (_request, reply) => {
       if (reply.getHeader('cache-control') === undefined)
         void reply.header('cache-control', 'no-store');
@@ -117,7 +126,9 @@ export async function buildApp(
     registerPushRoutes(api, ctx);
     registerOverviewRoutes(api, ctx);
     registerAuditRoutes(api, ctx);
+    registerMemberRoutes(api, ctx);
   });
+  routeCheck.assertComplete();
 
   await app.register((player) => registerPlayerRoutes(player, ctx), { prefix: PLAYER_PREFIX });
 

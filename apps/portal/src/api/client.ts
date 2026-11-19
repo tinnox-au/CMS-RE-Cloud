@@ -73,6 +73,16 @@ export function isAbort(value: unknown): boolean {
 }
 
 /**
+ * The API refused the request because the member's role lacks its key ("Your role doesn't
+ * allow this."). `csrf_failed` and `origin_not_allowed` are 403 too, but never this.
+ */
+export function isRoleRefusal(value: unknown): value is ApiRequestError {
+  return (
+    isApiRequestError(value) && value.status === 403 && value.code === 'forbidden' && value.fromApi
+  );
+}
+
+/**
  * True when the request may or may not have been carried out by the server:
  * no response, an unreadable response, a server fault or throttling.
  */
@@ -133,6 +143,8 @@ export interface ApiClientDeps {
   readonly fetch: FetchLike;
   /** Called when the API says the session is missing or has ended. */
   readonly onUnauthenticated: () => void;
+  /** Called when the API refuses a request by role (403 `forbidden`); the session reloads. */
+  readonly onForbidden?: () => void;
 }
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -158,6 +170,8 @@ export interface ApiClient {
   clearSession(): void;
   /** For callers that talk to the API without `request` (uploads) and receive a 401. */
   notifyUnauthenticated(): void;
+  /** For callers that talk to the API without `request` (uploads) and receive a 403 `forbidden`. */
+  notifyForbidden(): void;
 }
 
 const STATE_CHANGING: ReadonlySet<HttpMethod> = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -173,6 +187,19 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
   function notifyUnauthenticated(): void {
     csrfToken = null;
     deps.onUnauthenticated();
+  }
+
+  function notifyForbidden(): void {
+    deps.onForbidden?.();
+  }
+
+  /** A 401 returns the person to sign-in; a refusal by role reloads the session. */
+  function noticeRefusal(error: ApiRequestError, path: string): void {
+    if (error.status === 401) {
+      if (path !== ROUTES.session) notifyUnauthenticated();
+    } else if (isRoleRefusal(error)) {
+      notifyForbidden();
+    }
   }
 
   async function send(options: RequestOptions): Promise<{ status: number; text: string }> {
@@ -240,10 +267,6 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
       return await send(options);
     } catch (error) {
       if (!isApiRequestError(error)) throw error;
-      if (error.status === 401) {
-        if (options.path !== ROUTES.session) notifyUnauthenticated();
-        throw error;
-      }
       // A rejected CSRF token means the request was not carried out. The token may simply be
       // out of date (session renewed in another tab), so fetch it again and retry exactly once.
       if (error.code === 'csrf_failed' && error.fromApi && options.path !== ROUTES.session) {
@@ -252,8 +275,14 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
           notifyUnauthenticated();
           throw error;
         }
-        return await send(options);
+        try {
+          return await send(options);
+        } catch (retryError) {
+          if (isApiRequestError(retryError)) noticeRefusal(retryError, options.path);
+          throw retryError;
+        }
       }
+      noticeRefusal(error, options.path);
       throw error;
     }
   }
@@ -324,5 +353,6 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
       csrfToken = null;
     },
     notifyUnauthenticated,
+    notifyForbidden,
   };
 }

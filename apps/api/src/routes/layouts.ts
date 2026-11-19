@@ -16,6 +16,7 @@ import {
 } from '@tinnox/contracts';
 import { auditScoped, withOrg, type Tx } from '@tinnox/db';
 import type { FastifyInstance } from 'fastify';
+import { withOrgAllowed } from '../auth/permissions.ts';
 import { operatorOf, type OperatorSession } from '../auth/session.ts';
 import type { AppContext } from '../context.ts';
 import { bigintToNumber, iso } from '../db-helpers.ts';
@@ -213,7 +214,7 @@ export function registerLayoutRoutes(app: FastifyInstance, ctx: AppContext): voi
     const session = operatorOf(request);
     const input = parseInput(LayoutInputSchema, request.body, 'layout');
     try {
-      const dto = await withOrg(pool, session.orgId, (tx) => saveLayout(tx, session, null, input));
+      const dto = await withOrgAllowed(ctx, request, (tx) => saveLayout(tx, session, null, input));
       if (dto === null) throw new Error('created layout is not visible');
       void reply.code(201);
       return dto;
@@ -240,7 +241,7 @@ export function registerLayoutRoutes(app: FastifyInstance, ctx: AppContext): voi
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     const input = parseInput(LayoutInputSchema, request.body, 'layout');
     try {
-      return await withOrg(pool, session.orgId, async (tx) => {
+      return await withOrgAllowed(ctx, request, async (tx) => {
         const dto = await saveLayout(tx, session, id, input);
         if (dto === null) throw notFound('The layout');
         return dto;
@@ -257,7 +258,7 @@ export function registerLayoutRoutes(app: FastifyInstance, ctx: AppContext): voi
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     try {
-      await withOrg(pool, session.orgId, async (tx) => {
+      await withOrgAllowed(ctx, request, async (tx) => {
         const locked = await tx.query(
           'SELECT 1 FROM layout WHERE id = $1 AND org_id = app_org_id() FOR UPDATE',
           [id],

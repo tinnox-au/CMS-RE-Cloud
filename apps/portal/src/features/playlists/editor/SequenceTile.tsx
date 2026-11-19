@@ -43,6 +43,8 @@ export interface SequenceTileProps {
   readonly dropAfter: boolean;
   /** This tile is the one being dragged. */
   readonly dragging: boolean;
+  /** The role may not change playlists: no drag, move or remove; the fit shown as text. */
+  readonly readOnly: boolean;
   readonly onMove: (delta: -1 | 1) => void;
   readonly onRemove: () => void;
   readonly onChange: (change: ItemChange) => void;
@@ -64,6 +66,7 @@ export function SequenceTile({
   dropBefore,
   dropAfter,
   dragging,
+  readOnly,
   onMove,
   onRemove,
   onChange,
@@ -95,9 +98,9 @@ export function SequenceTile({
     >
       <div
         className="tx-playlist-editor-tile__handle"
-        draggable
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
+        draggable={!readOnly}
+        onDragStart={readOnly ? undefined : onDragStart}
+        onDragEnd={readOnly ? undefined : onDragEnd}
       >
         {item.source === 'app' ? (
           <span className="tx-playlist-editor-app-thumb">
@@ -109,9 +112,11 @@ export function SequenceTile({
         <span className="tx-playlist-editor-tile__position tx-num" aria-hidden="true">
           {position}
         </span>
-        <span className="tx-playlist-editor-tile__grip" aria-hidden="true">
-          <Icon icon={GripVertical} size={16} />
-        </span>
+        {!readOnly && (
+          <span className="tx-playlist-editor-tile__grip" aria-hidden="true">
+            <Icon icon={GripVertical} size={16} />
+          </span>
+        )}
       </div>
 
       <div className="tx-playlist-editor-tile__body">
@@ -148,9 +153,10 @@ export function SequenceTile({
                 max={bounds.max}
                 unit="s"
                 stepLabel={`time on screen of ${name}`}
+                disabled={readOnly}
                 data-testid="playlist-editor-item-duration"
                 onChange={(durationText) => {
-                  onChange({ durationText });
+                  if (!readOnly) onChange({ durationText });
                 }}
               />
             )}
@@ -167,7 +173,13 @@ export function SequenceTile({
           </div>
         )}
 
-        {item.source === 'media' && (
+        {item.source === 'media' && readOnly && (
+          <div className="tx-playlist-editor-tile__fit">
+            <span className="tx-playlist-editor-tile__label">Fit</span>
+            <span className="tx-playlist-editor-tile__value">{fitLabel(item.fit)}</span>
+          </div>
+        )}
+        {item.source === 'media' && !readOnly && (
           <div className="tx-playlist-editor-tile__fit">
             <span className="tx-playlist-editor-tile__label" aria-hidden="true">
               Fit
@@ -207,40 +219,42 @@ export function SequenceTile({
         )}
       </div>
 
-      <div className="tx-playlist-editor-tile__actions">
-        <IconButton
-          icon={ArrowLeft}
-          size="sm"
-          label={`Move ${name} earlier`}
-          aria-disabled={index === 0 || undefined}
-          data-action="earlier"
-          data-testid="playlist-editor-item-earlier"
-          onClick={() => {
-            onMove(-1);
-          }}
-        />
-        <IconButton
-          icon={ArrowRight}
-          size="sm"
-          label={`Move ${name} later`}
-          aria-disabled={index === count - 1 || undefined}
-          data-action="later"
-          data-testid="playlist-editor-item-later"
-          onClick={() => {
-            onMove(1);
-          }}
-        />
-        <span className="tx-playlist-editor-tile__spacer" />
-        <IconButton
-          icon={Trash}
-          size="sm"
-          variant="danger"
-          label={`Remove ${name} from position ${position}`}
-          data-action="remove"
-          data-testid="playlist-editor-item-remove"
-          onClick={onRemove}
-        />
-      </div>
+      {!readOnly && (
+        <div className="tx-playlist-editor-tile__actions">
+          <IconButton
+            icon={ArrowLeft}
+            size="sm"
+            label={`Move ${name} earlier`}
+            aria-disabled={index === 0 || undefined}
+            data-action="earlier"
+            data-testid="playlist-editor-item-earlier"
+            onClick={() => {
+              onMove(-1);
+            }}
+          />
+          <IconButton
+            icon={ArrowRight}
+            size="sm"
+            label={`Move ${name} later`}
+            aria-disabled={index === count - 1 || undefined}
+            data-action="later"
+            data-testid="playlist-editor-item-later"
+            onClick={() => {
+              onMove(1);
+            }}
+          />
+          <span className="tx-playlist-editor-tile__spacer" />
+          <IconButton
+            icon={Trash}
+            size="sm"
+            variant="danger"
+            label={`Remove ${name} from position ${position}`}
+            data-action="remove"
+            data-testid="playlist-editor-item-remove"
+            onClick={onRemove}
+          />
+        </div>
+      )}
     </li>
   );
 }

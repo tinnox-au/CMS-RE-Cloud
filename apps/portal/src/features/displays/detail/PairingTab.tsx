@@ -11,9 +11,10 @@ import {
   pairingStateText,
   pairingTtlMinutes,
 } from '../../../lib/screenDetail.ts';
-import { useSession } from '../../../session/SessionContext.tsx';
+import { useSession } from '../../../session/AuthenticatedSession.tsx';
 import { KeyRound, Unlink } from '../../../ui/icons.ts';
 import { Banner, Button, ErrorNotice, Field, StatusPill, TextInput } from '../../../ui/index.ts';
+import { ReadOnlyNote } from '../../shared/ReadOnlyNote.tsx';
 import { apiErrorCode } from './errors.ts';
 import type { RevokeState } from './types.ts';
 
@@ -26,6 +27,8 @@ export interface PairingTabProps {
   /** The revocation started from this tab, while its outcome is shown. */
   readonly revoke: RevokeState | null;
   readonly onDismissRevoke: () => void;
+  /** The role may not pair or revoke (`screen.pair`): only the player's state is shown. */
+  readonly readOnly: boolean;
 }
 
 /**
@@ -38,6 +41,7 @@ export function PairingTab({
   onRevoke,
   revoke,
   onDismissRevoke,
+  readOnly,
 }: PairingTabProps) {
   const { limits } = useSession();
   const ttlMinutes = pairingTtlMinutes(limits.pairingCodeTtlSeconds);
@@ -56,7 +60,7 @@ export function PairingTab({
   const submit = (event: FormEvent) => {
     event.preventDefault();
     // One request about the player at a time: not while a revocation is on its way either.
-    if (busy || revoke?.busy === true) return;
+    if (readOnly || busy || revoke?.busy === true) return;
     setClaimed(null);
     setError(null);
     onDismissRevoke();
@@ -86,6 +90,7 @@ export function PairingTab({
 
   return (
     <div className="tx-screen-detail-pairing" data-testid="screen-detail-pairing">
+      {readOnly && <ReadOnlyNote>Editors pair and revoke players.</ReadOnlyNote>}
       <section className="tx-screen-detail-section" aria-labelledby="screen-detail-player-title">
         <h3 id="screen-detail-player-title" className="tx-screen-detail-caption">
           Player
@@ -100,109 +105,113 @@ export function PairingTab({
         </p>
       </section>
 
-      <section className="tx-screen-detail-section" aria-labelledby="screen-detail-pair-title">
-        <h3 id="screen-detail-pair-title" className="tx-screen-detail-caption">
-          {paired ? 'Pair a different player' : 'Pair a player'}
-        </h3>
-        <form
-          className="tx-screen-detail-pairform"
-          noValidate
-          onSubmit={submit}
-          aria-labelledby="screen-detail-pair-title"
-        >
-          <Field
-            label="Pairing code shown on the player"
-            error={fieldError}
-            hint={pairingHint(ttlMinutes)}
+      {!readOnly && (
+        <section className="tx-screen-detail-section" aria-labelledby="screen-detail-pair-title">
+          <h3 id="screen-detail-pair-title" className="tx-screen-detail-caption">
+            {paired ? 'Pair a different player' : 'Pair a player'}
+          </h3>
+          <form
+            className="tx-screen-detail-pairform"
+            noValidate
+            onSubmit={submit}
+            aria-labelledby="screen-detail-pair-title"
           >
-            {(control) => (
-              <TextInput
-                {...control}
-                mono
-                width="sm"
-                value={code}
-                maxLength={32}
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                data-testid="screen-detail-pairing-code"
-                onChange={(event) => {
-                  setCode(event.target.value);
-                }}
-              />
-            )}
-          </Field>
+            <Field
+              label="Pairing code shown on the player"
+              error={fieldError}
+              hint={pairingHint(ttlMinutes)}
+            >
+              {(control) => (
+                <TextInput
+                  {...control}
+                  mono
+                  width="sm"
+                  value={code}
+                  maxLength={32}
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  data-testid="screen-detail-pairing-code"
+                  onChange={(event) => {
+                    setCode(event.target.value);
+                  }}
+                />
+              )}
+            </Field>
+            <div className="tx-screen-detail-form__actions">
+              <Button
+                type="submit"
+                variant="primary"
+                icon={KeyRound}
+                busy={busy}
+                data-testid="screen-detail-pair"
+              >
+                Pair player
+              </Button>
+              {preview !== null && !busy && (
+                <span className="tx-screen-detail-note" data-testid="screen-detail-pairing-preview">
+                  Will be sent as <span className="tx-mono">{formatPairingCode(preview)}</span>
+                </span>
+              )}
+            </div>
+          </form>
+          {claimed !== null && (
+            <Banner
+              tone="ok"
+              title="Code accepted"
+              live="polite"
+              onDismiss={() => {
+                setClaimed(null);
+              }}
+            >
+              {pairingAcceptedText(claimed.replaced)}
+            </Banner>
+          )}
+          {error !== null && (
+            <>
+              <ErrorNotice error={error} title="The player was not paired" />
+              {help !== null && <p data-testid="screen-detail-pairing-help">{help}</p>}
+            </>
+          )}
+        </section>
+      )}
+
+      {!readOnly && (
+        <section className="tx-screen-detail-section" aria-labelledby="screen-detail-revoke-title">
+          <h3 id="screen-detail-revoke-title" className="tx-screen-detail-caption">
+            {paired ? 'Revoke' : 'Pending pairing'}
+          </h3>
+          <p id="screen-detail-revoke-note" className="tx-screen-detail-note">
+            {endPairing.note}
+          </p>
           <div className="tx-screen-detail-form__actions">
             <Button
-              type="submit"
-              variant="primary"
-              icon={KeyRound}
-              busy={busy}
-              data-testid="screen-detail-pair"
+              variant={paired ? 'danger' : 'secondary'}
+              icon={Unlink}
+              busy={revoke?.busy === true}
+              // Not while a code is being sent: the two answers could arrive in either order.
+              aria-disabled={busy || undefined}
+              aria-describedby="screen-detail-revoke-note"
+              onClick={onRevoke}
+              data-testid="screen-detail-revoke"
             >
-              Pair player
+              {endPairing.button}
             </Button>
-            {preview !== null && !busy && (
-              <span className="tx-screen-detail-note" data-testid="screen-detail-pairing-preview">
-                Will be sent as <span className="tx-mono">{formatPairingCode(preview)}</span>
-              </span>
-            )}
           </div>
-        </form>
-        {claimed !== null && (
-          <Banner
-            tone="ok"
-            title="Code accepted"
-            live="polite"
-            onDismiss={() => {
-              setClaimed(null);
-            }}
-          >
-            {pairingAcceptedText(claimed.replaced)}
-          </Banner>
-        )}
-        {error !== null && (
-          <>
-            <ErrorNotice error={error} title="The player was not paired" />
-            {help !== null && <p data-testid="screen-detail-pairing-help">{help}</p>}
-          </>
-        )}
-      </section>
-
-      <section className="tx-screen-detail-section" aria-labelledby="screen-detail-revoke-title">
-        <h3 id="screen-detail-revoke-title" className="tx-screen-detail-caption">
-          {paired ? 'Revoke' : 'Pending pairing'}
-        </h3>
-        <p id="screen-detail-revoke-note" className="tx-screen-detail-note">
-          {endPairing.note}
-        </p>
-        <div className="tx-screen-detail-form__actions">
-          <Button
-            variant={paired ? 'danger' : 'secondary'}
-            icon={Unlink}
-            busy={revoke?.busy === true}
-            // Not while a code is being sent: the two answers could arrive in either order.
-            aria-disabled={busy || undefined}
-            aria-describedby="screen-detail-revoke-note"
-            onClick={onRevoke}
-            data-testid="screen-detail-revoke"
-          >
-            {endPairing.button}
-          </Button>
-        </div>
-        {revoke !== null && revoke.result !== null && (
-          <Banner tone="ok" live="polite" onDismiss={onDismissRevoke}>
-            {revoke.result}
-          </Banner>
-        )}
-        {revoke !== null && revoke.error !== null && (
-          <ErrorNotice
-            error={revoke.error}
-            title={endPairing.errorTitle}
-            onDismiss={onDismissRevoke}
-          />
-        )}
-      </section>
+          {revoke !== null && revoke.result !== null && (
+            <Banner tone="ok" live="polite" onDismiss={onDismissRevoke}>
+              {revoke.result}
+            </Banner>
+          )}
+          {revoke !== null && revoke.error !== null && (
+            <ErrorNotice
+              error={revoke.error}
+              title={endPairing.errorTitle}
+              onDismiss={onDismissRevoke}
+            />
+          )}
+        </section>
+      )}
     </div>
   );
 }

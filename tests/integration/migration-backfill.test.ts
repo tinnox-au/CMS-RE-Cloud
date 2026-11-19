@@ -25,6 +25,7 @@ import {
   PlaylistListResponseSchema,
   PushPlanResponseSchema,
   PushResponseSchema,
+  SessionResponseSchema,
   type ManifestV1,
 } from '@tinnox/contracts';
 import { resetTestDatabase, runMigrations } from '@tinnox/db';
@@ -245,6 +246,22 @@ describe('an M0 database upgraded to portal v2, through the API', () => {
     await t?.close();
     await runMigrations({ connectionString: migratorUrl(), directory: MIGRATIONS });
     if (scratch !== undefined) await rm(scratch, { recursive: true, force: true });
+  });
+
+  it('makes every M0 operator an Owner (0013)', async () => {
+    for (const [operator, org] of [
+      [alice, a],
+      [bob, b],
+    ] as const) {
+      const session = SessionResponseSchema.parse(
+        await (await operator.fetch('/api/session')).json(),
+      );
+      expect(session.authenticated && session.user).toMatchObject({
+        membershipId: org.membershipId,
+        role: 'owner',
+        displayName: null,
+      });
+    }
   });
 
   it('shows each display with the playlist it was last given assigned', async () => {

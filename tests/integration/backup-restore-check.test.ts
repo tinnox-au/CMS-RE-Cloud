@@ -139,10 +139,11 @@ async function createOrg(
     input.site,
     input.timeZone,
   ]);
-  await c.query('INSERT INTO membership (id, org_id, oidc_sub) VALUES ($1, $2, $3)', [
+  await c.query('INSERT INTO membership (id, org_id, oidc_sub, role) VALUES ($1, $2, $3, $4)', [
     org.membershipId,
     org.orgId,
     `test-sub-${randomUUID()}`,
+    'owner',
   ]);
   await c.query(
     'INSERT INTO display (id, org_id, site_id, name, canvas_width, canvas_height) VALUES ($1, $2, $3, $4, $5, $6)',

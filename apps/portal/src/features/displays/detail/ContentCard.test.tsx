@@ -1,8 +1,9 @@
-import type { DisplayDto } from '@tinnox/contracts';
+import type { DisplayDto, Role } from '@tinnox/contracts';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
+import { WithSession } from '../../../session/session.test-support.tsx';
 import { ToastProvider } from '../../../ui/index.ts';
 import { PushContext, type PushContextValue } from '../../push/PushContext.tsx';
 import { ContentCard } from './ContentCard.tsx';
@@ -49,19 +50,21 @@ const PUSH: PushContextValue = {
   refreshPending: () => undefined,
 };
 
-function renderCard(display: DisplayDto = DISPLAY) {
+function renderCard(display: DisplayDto = DISPLAY, role: Role = 'owner') {
   return render(
     <MemoryRouter>
-      <ToastProvider>
-        <PushContext value={PUSH}>
-          <ContentCard
-            display={display}
-            assigned={{ status: 'loading' }}
-            onReloadAssigned={() => undefined}
-            onAssigned={() => undefined}
-          />
-        </PushContext>
-      </ToastProvider>
+      <WithSession role={role}>
+        <ToastProvider>
+          <PushContext value={PUSH}>
+            <ContentCard
+              display={display}
+              assigned={{ status: 'loading' }}
+              onReloadAssigned={() => undefined}
+              onAssigned={() => undefined}
+            />
+          </PushContext>
+        </ToastProvider>
+      </WithSession>
     </MemoryRouter>,
   );
 }
@@ -149,5 +152,32 @@ describe('ContentCard: layouts', () => {
         ),
       )
       .toBeVisible();
+  });
+});
+
+describe('ContentCard: as a Viewer', () => {
+  it('has no Change menu and keeps the link to the assigned playlist', async () => {
+    const screen = await renderCard(
+      { ...DISPLAY, assignedSchedule: null, assignedPlaylist: { id: ID(20), name: 'Loop' } },
+      'viewer',
+    );
+    await expect
+      .element(screen.getByTestId('screen-detail-open-playlist'))
+      .toHaveTextContent('Open playlist');
+    await expect
+      .element(screen.getByTestId('screen-detail-change-content'))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByText('Assigning changes nothing on the screen until you push.'))
+      .not.toBeInTheDocument();
+  });
+
+  it('says an editor assigns content when nothing is assigned, with no buttons', async () => {
+    const screen = await renderCard({ ...DISPLAY, assignedSchedule: null }, 'viewer');
+    await expect.element(screen.getByText('An editor assigns content.')).toBeVisible();
+    await expect
+      .element(screen.getByTestId('screen-detail-choose-playlist'))
+      .not.toBeInTheDocument();
+    expect(patchDisplay).not.toHaveBeenCalled();
   });
 });

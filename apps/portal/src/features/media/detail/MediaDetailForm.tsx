@@ -51,12 +51,18 @@ export interface MediaDetailFormProps {
   readonly limits: Pick<Limits, 'minImageItemDurationMs' | 'maxImageItemDurationMs'>;
   /** While a save runs the fields stay as they are but cannot be changed. */
   readonly saving: boolean;
+  /**
+   * The role may not change media (decided when the page opened): every field is locked and
+   * nothing submits, not even Enter in the name field.
+   */
+  readonly readOnly: boolean;
   /** What the last save threw, shown above the fields with the API error code. */
   readonly saveError: unknown;
   readonly onDismissSaveError: () => void;
   /** The error summary; focused after a refused save. */
   readonly summaryRef: Ref<HTMLDivElement>;
-  readonly onDelete: () => void;
+  /** Left out when the role may not delete media: the Delete section is then not shown. */
+  readonly onDelete?: () => void;
 }
 
 /**
@@ -74,12 +80,14 @@ export function MediaDetailForm({
   folders,
   limits,
   saving,
+  readOnly,
   saveError,
   onDismissSaveError,
   summaryRef,
   onDelete,
 }: MediaDetailFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
+  const locked = saving || readOnly;
   const bounds = durationBoundsSeconds(limits);
   const standardSeconds = Number(durationFieldText(STANDARD_IMAGE_DURATION_MS));
   const invalid = errorFields(errors);
@@ -98,6 +106,7 @@ export function MediaDetailForm({
   // without a time on an empty field), so it is also read on blur, which comes before Save.
   const typeWindow =
     (field: 'availableFrom' | 'availableUntil') => (event: SyntheticEvent<HTMLInputElement>) => {
+      if (locked) return;
       const input = event.currentTarget;
       const text = input.validity.badInput ? INCOMPLETE_DATE_TIME : input.value;
       if (text !== draft[field]) onChange(field, { ...draft, [field]: text });
@@ -105,12 +114,14 @@ export function MediaDetailForm({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (readOnly || saving) return;
     onSubmit();
   };
 
   const submitOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
     event.preventDefault();
+    if (readOnly) return;
     onSubmit();
   };
 
@@ -197,7 +208,7 @@ export function MediaDetailForm({
                 maxLength={ABSOLUTE.maxOriginalNameLength}
                 autoComplete="off"
                 spellCheck={false}
-                readOnly={saving}
+                readOnly={locked}
                 data-testid="media-detail-name"
                 onKeyDown={submitOnEnter}
                 onChange={(event) => {
@@ -218,7 +229,7 @@ export function MediaDetailForm({
                 {...control}
                 rows={3}
                 value={draft.description}
-                readOnly={saving}
+                readOnly={locked}
                 data-testid="media-detail-description"
                 onChange={(event) => {
                   onChange('description', { ...draft, description: event.target.value });
@@ -229,7 +240,20 @@ export function MediaDetailForm({
         </FormSection>
 
         <FormSection title="Playback" layout="rows">
-          {media.kind === 'image' ? (
+          {media.kind === 'image' && readOnly ? (
+            // Read-only, the value is text: a Stepper with live buttons would invite a change.
+            <div
+              className="tx-field tx-media-detail-static"
+              data-testid="media-detail-duration-static"
+            >
+              <span className="tx-field__label">Default duration</span>
+              <p className="tx-media-detail-static__value">
+                {draft.durationText.trim() === ''
+                  ? `Standard, ${String(standardSeconds)} s`
+                  : `${draft.durationText.trim()} s`}
+              </p>
+            </div>
+          ) : media.kind === 'image' ? (
             <Field
               className={fieldClass('defaultDurationMs')}
               label="Default duration"
@@ -245,7 +269,7 @@ export function MediaDetailForm({
                   max={bounds.max}
                   standardSeconds={standardSeconds}
                   onChange={(durationText) => {
-                    if (saving) return;
+                    if (locked) return;
                     onChange('defaultDurationMs', { ...draft, durationText });
                   }}
                 />
@@ -279,7 +303,7 @@ export function MediaDetailForm({
                 type="datetime-local"
                 width="md"
                 value={draft.availableFrom === INCOMPLETE_DATE_TIME ? '' : draft.availableFrom}
-                readOnly={saving}
+                readOnly={locked}
                 data-testid="media-detail-available-from"
                 onChange={typeWindow('availableFrom')}
                 onBlur={typeWindow('availableFrom')}
@@ -298,7 +322,7 @@ export function MediaDetailForm({
                 type="datetime-local"
                 width="md"
                 value={draft.availableUntil === INCOMPLETE_DATE_TIME ? '' : draft.availableUntil}
-                readOnly={saving}
+                readOnly={locked}
                 data-testid="media-detail-available-until"
                 onChange={typeWindow('availableUntil')}
                 onBlur={typeWindow('availableUntil')}
@@ -314,7 +338,8 @@ export function MediaDetailForm({
                 {...control}
                 folders={folders}
                 value={draft.folderId}
-                disabled={saving}
+                disabled={locked}
+                allowCreate={!readOnly}
                 testId="media-detail-folder"
                 onChange={(folderId) => {
                   onChange('folderId', { ...draft, folderId });
@@ -329,7 +354,8 @@ export function MediaDetailForm({
                 tags={tags}
                 value={draft.tagIds}
                 collapsible
-                disabled={saving}
+                disabled={locked}
+                allowCreate={!readOnly}
                 testId="media-detail-tags"
                 onChange={(tagIds) => {
                   onChange('tagIds', { ...draft, tagIds });
@@ -339,22 +365,24 @@ export function MediaDetailForm({
           </Field>
         </FormSection>
 
-        <FormSection
-          title="Delete"
-          description="Removes the file from the library. Screens keep what they were last pushed until their next push."
-        >
-          <div>
-            <Button
-              variant="danger"
-              icon={Trash}
-              onClick={onDelete}
-              aria-disabled={saving || undefined}
-              data-testid="media-detail-delete"
-            >
-              Delete file
-            </Button>
-          </div>
-        </FormSection>
+        {onDelete !== undefined && (
+          <FormSection
+            title="Delete"
+            description="Removes the file from the library. Screens keep what they were last pushed until their next push."
+          >
+            <div>
+              <Button
+                variant="danger"
+                icon={Trash}
+                onClick={onDelete}
+                aria-disabled={saving || undefined}
+                data-testid="media-detail-delete"
+              >
+                Delete file
+              </Button>
+            </div>
+          </FormSection>
+        )}
       </form>
     </Card>
   );

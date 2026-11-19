@@ -162,7 +162,7 @@ export function tagDeleteConsequence(scope: TagScope, usageCount: number): strin
 
 /* ---------- Planned settings ---------- */
 
-export type PlannedSettingId = 'users' | 'working-hours' | 'alerts' | 'api-tokens';
+export type PlannedSettingId = 'working-hours' | 'alerts' | 'api-tokens';
 
 export interface PlannedSetting {
   readonly id: PlannedSettingId;
@@ -173,12 +173,6 @@ export interface PlannedSetting {
 }
 
 export const PLANNED_SETTINGS: readonly PlannedSetting[] = [
-  {
-    id: 'users',
-    title: 'Users and roles',
-    description: 'Invite people and choose what an owner, an admin, an editor and a viewer may do.',
-    stage: 'C',
-  },
   {
     id: 'working-hours',
     title: 'Working hours',

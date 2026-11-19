@@ -8,14 +8,12 @@ import {
   useParams,
   type RouteObject,
 } from 'react-router-dom';
-import {
-  AuthenticatedProvider,
-  SessionProvider,
-  useSessionState,
-} from './session/SessionContext.tsx';
+import { AuthenticatedProvider } from './session/AuthenticatedSession.tsx';
+import { SessionProvider, useSessionState } from './session/SessionContext.tsx';
 import { AppShell } from './shell/AppShell.tsx';
 import { HOME_PATH, screensPathFor } from './shell/nav.ts';
 import { NotFoundPage } from './shell/NotFoundPage.tsx';
+import { RequirePermission } from './shell/RequirePermission.tsx';
 import {
   RouteError,
   RouteLoading,
@@ -69,6 +67,7 @@ const displayDetail = () => import('./features/displays/DisplayDetailPage.tsx');
 const settings = () => import('./features/settings/SettingsPage.tsx');
 const tags = () => import('./features/settings/TagsPage.tsx');
 const audit = () => import('./features/audit/AuditPage.tsx');
+const users = () => import('./features/users/UsersPage.tsx');
 const planned = () => import('./features/planned/PlannedPage.tsx');
 
 /**
@@ -101,8 +100,11 @@ function OldDisplaysRedirect() {
   return <Navigate to={{ pathname: screensPathFor(pathname), search, hash }} replace />;
 }
 
-/** The route table of docs/portal-v2/stage-a.md, section 1. */
-const router = createBrowserRouter([
+/**
+ * The route table of docs/portal-v2/stage-a.md, section 1. Exported for
+ * shell/RequirePermission.test.tsx, which renders the guarded routes from here.
+ */
+export const routes: RouteObject[] = [
   {
     path: '/',
     element: <AppShell />,
@@ -135,7 +137,11 @@ const router = createBrowserRouter([
           <m.LayoutEditorPage />
         </PerObject>
       )),
-      page('users', planned, (m) => <m.PlannedPage section="users" />),
+      page('users', users, (m) => (
+        <RequirePermission permission="member.read">
+          <m.UsersPage />
+        </RequirePermission>
+      )),
 
       page('playlists', playlists, (m) => <m.PlaylistsPage />),
       page('playlists/:id', playlistEditor, (m) => (
@@ -152,12 +158,17 @@ const router = createBrowserRouter([
       )),
 
       page('screens', displays, (m) => <m.DisplaysPage />),
-      page('screens/new', displayWizard, (m) => <m.DisplayWizardPage />),
+      page('screens/new', displayWizard, (m) => (
+        <RequirePermission permission="screen.setup">
+          <m.DisplayWizardPage />
+        </RequirePermission>
+      )),
       page('screens/:id', displayDetail, (m) => (
         <PerObject>
           <m.DisplayDetailPage />
         </PerObject>
       )),
+      // Only a redirect to the Canvas tab, which is read-only without screen.setup: no guard.
       { path: 'screens/:id/edit', element: <ScreenEditRedirect /> },
       { path: 'displays/*', element: <OldDisplaysRedirect /> },
 
@@ -168,14 +179,18 @@ const router = createBrowserRouter([
       { path: '*', element: <NotFoundPage /> },
     ],
   },
-]);
+];
+
+const router = createBrowserRouter(routes);
 
 function Gate() {
   const { state, retry } = useSessionState();
   if (state.status === 'loading') return <SessionCheckingScreen />;
   if (state.status === 'error') return <SessionErrorScreen error={state.error} onRetry={retry} />;
   if (state.status === 'anonymous') {
-    return <SignInScreen reason={state.reason} loginHref={loginHref()} />;
+    return (
+      <SignInScreen reason={state.reason} authError={state.authError} loginHref={loginHref()} />
+    );
   }
   return (
     <AuthenticatedProvider session={state.session}>

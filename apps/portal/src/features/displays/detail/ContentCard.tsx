@@ -18,6 +18,7 @@ import { formatTimestamp } from '../../../lib/format.ts';
 import { pushRowFor } from '../../../lib/screenDetail.ts';
 import { assignedDetail } from '../../../lib/screensList.ts';
 import { presentPushState } from '../../../lib/screenStatusPush.ts';
+import { useCan } from '../../../session/AuthenticatedSession.tsx';
 import {
   CalendarDays,
   ChevronDown,
@@ -69,11 +70,13 @@ interface AssignState {
 /**
  * What is assigned to the screen (decision P2-05: assign, then push) and where the screen
  * stands between what is assigned and what it was last given. A screen has at most one of a
- * playlist, a schedule or a layout: assigning one takes the place of the others.
+ * playlist, a schedule or a layout: assigning one takes the place of the others. Changing it
+ * needs `screen.assign`; without it the card shows what is assigned and links to it.
  */
 export function ContentCard({ display, assigned, onReloadAssigned, onAssigned }: ContentCardProps) {
   const toast = useToast();
   const push = usePush();
+  const canAssign = useCan('screen.assign');
   const [assign, setAssign] = useState<AssignState | null>(null);
   const playlist = display.assignedPlaylist;
   const schedule = display.assignedSchedule;
@@ -184,7 +187,9 @@ export function ContentCard({ display, assigned, onReloadAssigned, onAssigned }:
         id="screen-detail-content-title"
         title="Content"
         size="title"
-        description="Assigning changes nothing on the screen until you push."
+        description={
+          canAssign ? 'Assigning changes nothing on the screen until you push.' : undefined
+        }
       />
       <div className="tx-screen-detail-content">
         <div className="tx-screen-detail-playlist" data-testid="screen-detail-playlist">
@@ -213,106 +218,110 @@ export function ContentCard({ display, assigned, onReloadAssigned, onAssigned }:
               <>
                 <span className="tx-screen-detail-playlist__name">Nothing assigned</span>
                 <span className="tx-screen-detail-note">
-                  Choose a playlist, a schedule or a layout for this screen, then push it.
+                  {canAssign
+                    ? 'Choose a playlist, a schedule or a layout for this screen, then push it.'
+                    : 'An editor assigns content.'}
                 </span>
               </>
             )}
           </div>
-          <div className="tx-screen-detail-playlist__actions" ref={actionsRef}>
-            {hasContent ? (
-              <Menu
-                placement="bottom-end"
-                trigger={(props) => (
-                  <Button
-                    {...props}
-                    size="sm"
-                    trailingIcon={ChevronDown}
-                    busy={removing?.busy}
-                    // A busy button ignores clicks; Arrow keys must not open the menu either.
-                    onKeyDown={removing?.busy === true ? undefined : props.onKeyDown}
-                    data-testid="screen-detail-change-content"
+          {(canAssign || content !== null) && (
+            <div className="tx-screen-detail-playlist__actions" ref={actionsRef}>
+              {!canAssign ? null : hasContent ? (
+                <Menu
+                  placement="bottom-end"
+                  trigger={(props) => (
+                    <Button
+                      {...props}
+                      size="sm"
+                      trailingIcon={ChevronDown}
+                      busy={removing?.busy}
+                      // A busy button ignores clicks; Arrow keys must not open the menu either.
+                      onKeyDown={removing?.busy === true ? undefined : props.onKeyDown}
+                      data-testid="screen-detail-change-content"
+                    >
+                      Change
+                      <span className="tx-visually-hidden"> content</span>
+                    </Button>
+                  )}
+                >
+                  <MenuItem
+                    icon={ListVideo}
+                    onSelect={() => {
+                      openPicker('playlist');
+                    }}
                   >
-                    Change
-                    <span className="tx-visually-hidden"> content</span>
+                    Choose a playlist…
+                  </MenuItem>
+                  <MenuItem
+                    icon={CalendarDays}
+                    onSelect={() => {
+                      openPicker('schedule');
+                    }}
+                  >
+                    Choose a schedule…
+                  </MenuItem>
+                  <MenuItem
+                    icon={LayoutTemplate}
+                    onSelect={() => {
+                      openPicker('layout');
+                    }}
+                  >
+                    Choose a layout…
+                  </MenuItem>
+                  <MenuSeparator />
+                  <MenuItem icon={ListX} onSelect={removeContent}>
+                    Remove content
+                  </MenuItem>
+                </Menu>
+              ) : (
+                <>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    icon={ListVideo}
+                    onClick={() => {
+                      openPicker('playlist');
+                    }}
+                    data-testid="screen-detail-choose-playlist"
+                  >
+                    Assign playlist
                   </Button>
-                )}
-              >
-                <MenuItem
-                  icon={ListVideo}
-                  onSelect={() => {
-                    openPicker('playlist');
-                  }}
-                >
-                  Choose a playlist…
-                </MenuItem>
-                <MenuItem
-                  icon={CalendarDays}
-                  onSelect={() => {
-                    openPicker('schedule');
-                  }}
-                >
-                  Choose a schedule…
-                </MenuItem>
-                <MenuItem
-                  icon={LayoutTemplate}
-                  onSelect={() => {
-                    openPicker('layout');
-                  }}
-                >
-                  Choose a layout…
-                </MenuItem>
-                <MenuSeparator />
-                <MenuItem icon={ListX} onSelect={removeContent}>
-                  Remove content
-                </MenuItem>
-              </Menu>
-            ) : (
-              <>
-                <Button
+                  <Button
+                    size="sm"
+                    icon={CalendarDays}
+                    onClick={() => {
+                      openPicker('schedule');
+                    }}
+                    data-testid="screen-detail-choose-schedule"
+                  >
+                    Assign schedule
+                  </Button>
+                  <Button
+                    size="sm"
+                    icon={LayoutTemplate}
+                    onClick={() => {
+                      openPicker('layout');
+                    }}
+                    data-testid="screen-detail-choose-layout"
+                  >
+                    Assign layout
+                  </Button>
+                </>
+              )}
+              {content !== null && (
+                <ButtonLink
                   size="sm"
-                  variant="primary"
-                  icon={ListVideo}
-                  onClick={() => {
-                    openPicker('playlist');
-                  }}
-                  data-testid="screen-detail-choose-playlist"
+                  variant="ghost"
+                  icon={ExternalLink}
+                  to={contentHref(content.kind, content.id)}
+                  data-testid={`screen-detail-open-${content.kind}`}
                 >
-                  Assign playlist
-                </Button>
-                <Button
-                  size="sm"
-                  icon={CalendarDays}
-                  onClick={() => {
-                    openPicker('schedule');
-                  }}
-                  data-testid="screen-detail-choose-schedule"
-                >
-                  Assign schedule
-                </Button>
-                <Button
-                  size="sm"
-                  icon={LayoutTemplate}
-                  onClick={() => {
-                    openPicker('layout');
-                  }}
-                  data-testid="screen-detail-choose-layout"
-                >
-                  Assign layout
-                </Button>
-              </>
-            )}
-            {content !== null && (
-              <ButtonLink
-                size="sm"
-                variant="ghost"
-                icon={ExternalLink}
-                to={contentHref(content.kind, content.id)}
-                data-testid={`screen-detail-open-${content.kind}`}
-              >
-                Open {content.kind}
-              </ButtonLink>
-            )}
-          </div>
+                  Open {content.kind}
+                </ButtonLink>
+              )}
+            </div>
+          )}
         </div>
 
         {removing !== null && removing.error !== null && (
