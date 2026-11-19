@@ -41,13 +41,13 @@ None.
 
 | Id | Card | Agreed | PR | Since |
 |---|---|---|---|---|
-| CMS-11 | Fix the gaps from the 2026-11-19 manual user test (sign-out notice, upload summary, Apps note, test plan corrections) | Michael 19 Nov | #29 | 19 Nov |
 | CMS-9 | Review picomatch audit exception GHSA-fc5q-39xc-vjpf: upgrade if fixed, else renew or remove (CI fails once its date passes) | Michael 18 Nov | #29 | 19 Nov |
 
 ## Done, last 14 days
 
 | Id | Date | Outcome | PR |
 |---|---|---|---|
+| CMS-11 | 19 Nov | Fix the gaps from the 2026-11-19 manual user test (sign-out notice, upload summary, Apps note, test plan corrections) | #29 |
 | CMS-10 | 18 Nov | Upgrade typescript-eslint to 8.73.0, clearing the moderate minimatch advisory GHSA-g3hv-75wg-m249 | #23 |
 | CMS-8 | 18 Nov | CI audit gate: dated exception for picomatch GHSA-fc5q-39xc-vjpf (high, development tooling only, no fixed release); every other high or critical still blocks | #22 |
 | CMS-7 | 18 Nov | Backup check: pass valid databases with no publications, fail only empty ones, add an automated test | #21 |
@@ -108,3 +108,8 @@ from: CMS-8
 
 **Notes**
 - 19 Nov: GitHub withdrew GHSA-fc5q-39xc-vjpf on 18 Nov; the exception is removed in PR 29 because the audit gate refused the stale entry
+
+### CMS-11
+
+**Evidence**
+PR 29 merged to main 19 Nov with CI green; locally unit, component, integration and all 132 e2e tests passed; T11.1, T11.3, T12.1, T12.3 still need a manual re-run
