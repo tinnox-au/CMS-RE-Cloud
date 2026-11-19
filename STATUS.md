@@ -15,7 +15,9 @@ reviewed: never
 
 ## You decide
 
-None.
+| Id | Decision | With | Since |
+|---|---|---|---|
+| CMS-13 | Roles and user management (stage C): owner, admin, editor, viewer; invite and remove people; a permission matrix to decide first | - | 19 Nov |
 
 ## Waiting on others
 
@@ -42,9 +44,7 @@ None.
 
 ## In progress
 
-| Id | Card | Agreed | PR | Since |
-|---|---|---|---|---|
-| CMS-13 | Roles and user management (stage C): owner, admin, editor, viewer; invite and remove people; a permission matrix to decide first | Michael 19 Nov | - | 19 Nov |
+None.
 
 ## In review
 
