@@ -7,3 +7,4 @@ This folder holds coding guides distilled from talks and videos. Each guide is i
 | Guide | Description |
 |---|---|
 | [poteto_pyramid](poteto_pyramid/) | Lauren Tan, “All Code Is Slop (Except Mine)”: the poteto pyramid, organic architecture, and trusting agents by making the codebase enforce quality. |
+| [no_vibes_allowed](no_vibes_allowed/) | Dex Horthy, “No Vibes Allowed”: frequent intentional compaction, research then plan then implement, and staying out of the dumb zone in brownfield codebases. |
