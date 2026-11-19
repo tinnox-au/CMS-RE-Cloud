@@ -1,6 +1,6 @@
 # TINNOX CMS manual test plan
 
-Version of the software: `main` at the Layouts release (stage B, slice 4; migrations 0001 to 0012; player `player-web/0.5.0`). Written 2026-11-18.
+Version of the software: `main` at the Layouts release (stage B, slice 4; migrations 0001 to 0012; player `player-web/0.5.0`). Written 2026-11-18; revised 2026-11-19 after the first manual run (`docs/reviews/2026-11-19-manual-user-test/`).
 
 This plan is for a person, not a script. You follow the steps in order, compare what you see with the **Expected** lines, and tick each box that matches. Anything that does not match goes into the issue log at the end (section 20). Nothing here is deployed anywhere: everything runs on your own computer with synthetic data.
 
@@ -90,7 +90,7 @@ Expected:
 
 - [ ] Three coloured prefixes appear in the terminal, `api`, `portal` and `player`, and none of them prints an error. The terminal keeps running (leave it open for the whole session; Ctrl+C stops everything).
 - [ ] Open http://localhost:4000/readyz in a browser: it shows a short JSON answer in which every item reads ready or true.
-- [ ] Open http://localhost:5173 : the sign-in page appears, with the heading **Operator sign-in**, a **Sign in** button and the note "Internal engineering prototype. Synthetic data only."
+- [ ] Open http://localhost:5173 : the sign-in page appears, with the heading **Operator sign-in**, a **Sign in** control and the note "Internal engineering prototype. Synthetic data only."
 
 Always use `localhost` in the address bar, never `127.0.0.1`.
 
@@ -171,24 +171,24 @@ Use **Choose files** (or drag and drop) and pick these four files together: `lan
 Expected:
 
 - [ ] Each file gets its own row. The rows move through *Waiting*, a percentage, "Uploaded, being checked" and end at **Ready**.
-- [ ] A toast "4 files uploaded" appears (toasts appear at the edge of the window and close by themselves after a few seconds).
+- [ ] Once every check has finished, the summary at the bottom of the dialog reads "4 of 4 ready" (while checks run it also says how many are being checked). If you close the dialog while files are still sending, a toast "4 files uploaded" appears when they are sent (toasts appear at the edge of the window and close by themselves after a few seconds).
 - [ ] After **Done**, the four files are listed with Status **Ready**, Kind image or video, and dimensions in the Details column (the videos also show a length).
-- [ ] Images have a thumbnail; videos have a generic tile.
+- [ ] Images and videos each show a thumbnail.
 
 ### T4.3 Upload files that should be refused
 
 Upload these together: `hevc.mp4`, `vp9.mp4`, `h264-yuv444.mp4`, `too-wide.png`, `jpeg-signature-then-garbage.jpg`, `text-renamed.jpg`, `html-renamed.png`.
 
-Expected (every row ends at **Failed**, with a reason in plain words and a code in small text):
+Expected (the server takes five of them in and its check refuses each one, so the row ends at **Failed** with a reason in plain words and a code in small text; the two renamed files are refused as they arrive and are never stored):
 
 - [ ] `hevc.mp4` and `vp9.mp4`: "The video codec is not supported. Re-encode the video as H.264 in an MP4 container." (`unsupported_codec`)
 - [ ] `h264-yuv444.mp4`: a message about re-encoding as H.264 with 8-bit 4:2:0 colour (`unsupported_pixel_format`)
 - [ ] `too-wide.png`: "The image dimensions exceed the allowed size…" (`image_too_large`)
 - [ ] `jpeg-signature-then-garbage.jpg`: "The file is damaged or incomplete and could not be read." (`corrupt`)
-- [ ] `text-renamed.jpg` and `html-renamed.png`: a message that the content is not a recognised image or video, or does not match its declared type (`unrecognised_type` or `type_mismatch`)
-- [ ] The toast says that none of the 7 uploads completed.
-- [ ] In the list, the **Failed** status chip filters to these files. Each failed row shows its reason. Their row menu has **Add to playlist** disabled with the hint "Failed its check".
-- [ ] Open one failed file (row menu → **Open**): the page says "This file was not accepted", shows the reason, and offers **Delete file**. Delete it. Repeat until all 7 failed files are gone. (Each delete shows a confirmation dialog, then a toast.)
+- [ ] `text-renamed.jpg` and `html-renamed.png`: refused at once with **Upload failed**, the message that the content is not a JPEG, PNG or MP4 file (`unsupported_media_type`) and a **Try again** button. They are not added to the library.
+- [ ] The summary at the bottom of the dialog reads "0 of 7 ready · 5 failed the check · 2 not uploaded".
+- [ ] In the list, the **Failed** status chip filters to these five files. Each failed row shows its reason. Their row menu has **Add to playlist** disabled with the hint "Failed its check".
+- [ ] Open one failed file (row menu → **Open**): the page says "This file was not accepted", shows the reason, and offers **Delete file**. Delete it. Repeat until all 5 failed files are gone. (Each delete shows a confirmation dialog, then a toast.)
 
 ### T4.4 The media file page
 
@@ -213,7 +213,7 @@ Back in **All media**:
 
 1. Press **New folder**, name it `Campaign A`, create it.
 2. Select `portrait.png` and `h264.mp4` with their checkboxes; in the selection bar choose **Move to folder** → `Campaign A` → **Move here**.
-3. Open the row menu of `Welcome poster` → **Edit tags**. Type `hero`, choose **Create tag "hero"**, pick a colour, **Create tag**, then **Save tags**.
+3. Open the row menu of `Welcome poster` → **Edit tags**. Type `hero` and choose **Create tag "hero"** (the tag is created at once with the default colour; colours are changed later on the Media tags page), then **Save tags**.
 
 Expected:
 
@@ -283,7 +283,7 @@ Expected:
 - [ ] The dialog says the editor opens next; the editor opens with the title `Main loop`, an empty **Sequence** card that says the playlist needs at least one item before it can be pushed, and the header says "Saved".
 - [ ] Each click adds a tile at the end of the sequence. Images and the app show a **Seconds on screen** stepper (the poster shows **8**, its default duration; the others **10**); the video shows its fixed **Length** and "plays in full".
 - [ ] The card header counts **4 items** and shows a **Loop length**.
-- [ ] With the **Apps** chip chosen, the folder and tag filters are disabled and a note says apps have no folder or tags.
+- [ ] With the **Apps** chip chosen, the folder and tag filters are disabled and the note "Apps have no folder or tags." appears.
 - [ ] Toast "Playlist saved" with the detail "Nothing changes on a screen until you push."
 
 ### T6.2 Reorder, fit, duration, transition
@@ -447,7 +447,7 @@ Open **Screens → Reception TV**.
 - [ ] The status pill is **In sync** with "Last report … seconds ago" and the explanation that this is a report from the player software, not proof of what the physical screen shows.
 - [ ] The **Content** card shows caption Playlist, `Main loop`, an **Open playlist** link and a **Change** menu. The **Push state** reads **Up to date** with "Last pushed …".
 - [ ] **Overview** tab: *Desired publication* shows an id and "Pushed …"; *Downloaded publication* and *Active publication* both read **matches desired**; *Active item* reads "Item N of the active publication" and advances; *Player state* reads **Playing**; *Delivery errors* reads "None in the last report."
-- [ ] The **Assigned content preview** at the top shows a mock-up of the first item, labelled as a mock-up drawn from the library file, not a picture of the screen.
+- [ ] The **Assigned content preview** at the top shows a mock-up of the first item, labelled as a mock-up (for an app: drawn by the code the player uses for apps), not a picture of the screen.
 - [ ] **Screens** list: the row shows **In sync**, Content `Main loop` and Canvas "1920 × 1080 px"; the footnote under the table says the status is what the player last reported.
 - [ ] **Dashboard**: the Get set up card has disappeared (all 4 steps done, or it reads 4 of 4), the **In sync** counter is 1 and **Changes waiting** reads "Everything is up to date".
 
@@ -460,7 +460,7 @@ Open **Screens → Reception TV**.
 Expected:
 
 - [ ] The player **keeps playing the video**: the live content is a snapshot of the last push.
-- [ ] The screen page's **Push state** now reads **Changes waiting**; the header badge reads **1**.
+- [ ] The screen page's **Push state** now reads **Changes waiting**. (Like every editor page, the screen page has no header **Push to screens** button; it has **Push to this screen**.) Open **Dashboard**: the header badge reads **1**. Go back to the screen page.
 - [ ] Press **Push to this screen**, push. Within a minute the player's round no longer includes the video; the switch happens at an item boundary, never mid-item, and there is no blank moment.
 - [ ] Overview: *Desired*, *Downloaded* and *Active* match again; the Screens list shows **In sync**.
 
@@ -599,7 +599,7 @@ Open **Layouts**.
 
 - [ ] The **Zones** card shows **Band height (%)** at 15 with the hint about the content area, then two fieldsets **Main zone** and **Band**, each with a Playlist select and an **Open playlist** link.
 - [ ] The **Preview** card draws two outlined boxes on a landscape frame, labelled "Main zone: Main loop" and "Band: Ticker band". **Preview on** switches to Portrait and to `Reception TV`.
-- [ ] Set Band height to `4`: "Enter a whole number from 5 to 50." and the preview says "Enter a band height from 5 to 50 to see the zones." Set `25`: the band grows in the preview. Set it back to `15`.
+- [ ] Set Band height to `4`: the preview says "Enter a band height from 5 to 50 to see the zones." Press **Save**: the field shows "Enter a whole number from 5 to 50." and nothing is saved. Set `25`: the band grows in the preview. Set it back to `15`.
 - [ ] Set Band height to `30` and **Save**: toast "Layout saved" with the detail "Screens that use it show Changes waiting until you push."
 
 ### T12.3 Assign and push the layout
@@ -623,7 +623,7 @@ Expected:
 1. **Screens → Add screen**: name `Tiny strip`, preset custom Width `200`, Height `100`, Create screen. Skip pairing (**Skip for now**), **Skip and finish**.
 2. On the `Tiny strip` screen page assign the layout `Lobby with ticker` (band 15 % of 100 px = 15 px, under the 16 px minimum).
 3. Open **Layouts → Lobby with ticker** and set **Preview on** to `Tiny strip`.
-4. Press **Push to screens** in the header.
+4. Open **Screens** and press **Push to screens** in the header (editor pages such as the layout editor have no header push button).
 
 Expected:
 
@@ -649,7 +649,7 @@ Expected:
 Expected:
 
 - [ ] `Tiny strip` is in **Blocked** with the issue "The playlist has no items. Add at least one image or video." and an **Open playlist** link. The group note says each screen keeps the version it has.
-- [ ] `Reception TV` is in **Up to date**. With nothing to tick the primary button is disabled with the tooltip "No screen has changes waiting." Close the dialog.
+- [ ] `Reception TV` is in **Up to date**. With nothing to push, a banner at the top says "Nothing can be pushed right now" and "1 screen is blocked. Fix the assigned content, then push.", and the dialog's only button is **Close**. Close the dialog.
 - [ ] Dashboard: **Changes waiting** says "No changes can be pushed" and a line "1 screen is blocked…". The **Needs attention** card is calm (a blocked push is not a player error).
 
 ### T13.2 Nothing assigned
@@ -681,7 +681,7 @@ Do this in the **player's** browser window. Do not reload the player while offli
 Expected:
 
 - [ ] The player **keeps playing** both zones with no blank moment for the whole 90 seconds.
-- [ ] Player diagnostics (`d`): *Network* reads "browser reports offline"; *Failures in a row* counts up; *Recent problems* may list network errors. Nothing is drawn over the content.
+- [ ] Player diagnostics (`d`): *Failures in a row* counts up and *Recent problems* lists a network error (`network_error`). *Network* shows what the browser itself reports; with DevTools throttling it may still read "browser reports online". Nothing is drawn over the content.
 - [ ] Portal, after about 60 seconds: the status pill becomes **Not reporting** with a **STALE** badge and the explanation that the last report may no longer be true. The Dashboard counts it under **Needs attention**.
 - [ ] Within about 30 seconds of going back online the pill returns to **In sync** and the Overview's *Last report received* is fresh again.
 
@@ -707,7 +707,7 @@ On `Reception TV`, **Pairing** tab.
 Expected:
 
 - [ ] The player shows a **new** code (different from before).
-- [ ] After pairing it shows "Reception TV" and "Waiting for content" for a moment, then downloads and plays the layout again (the last push is still assigned; the media is downloaded again because the reset cleared the cache).
+- [ ] After pairing it may show "Reception TV" and "Waiting for content" briefly (often too short to see), then downloads and plays the layout again (the last push is still assigned; the media is downloaded again because the reset cleared the cache).
 - [ ] The portal returns to **In sync** within about a minute.
 
 ### T15.3 Local reset from diagnostics (two-step)
@@ -743,14 +743,14 @@ Expected:
 
 Open **Settings**.
 
-- [ ] Groups **Organisation** (name, read-only), **Content** (Media tags "1 tag", Screen tags "1 tag", Folders "1 folder" listing `Campaign B` with **Open media library**), **Security** (Audit log; Sign-in and MFA "Identity provider") and **Planned** (Users and roles, Working hours, Alerts, API tokens), each Planned row saying which stage it is planned for.
+- [ ] Groups **Organisation** (name, read-only), **Content** (Media tags "1 tag", Screen tags "1 tag", Folders "1 folder", which opens the media library; the folders themselves, `Campaign B` with its file count, are listed at the bottom of the Media tags page), **Security** (Audit log; Sign-in and MFA "Identity provider") and **Planned** (Users and roles, Working hours, Alerts, API tokens), each Planned row saying which stage it is planned for.
 
 ### T17.2 Tags page
 
 Open **Media tags**.
 
 - [ ] Two tabs **Media tags** and **Screen tags** with counts. `hero` is listed with its colour and "Used on 1 file"; **Screen tags** lists `lobby` "Used on 1 screen".
-- [ ] **New tag** → name `promo`, choose a colour, **Create tag**: toast 'Media tag "promo" created'. Create it again with the same name: "Another media tag already has this name. Choose a different name."
+- [ ] **New tag** → name `promo`, choose a colour, **Create tag**: toast 'Media tag "promo" created'. Create it again with the same name: "Another media tag already has this name."
 - [ ] Row menu of `promo` → **Rename** to `promotion`: toast "Tag renamed". **Change colour**: toast "Tag colour changed".
 - [ ] Row menu of `promotion` → **Delete**: the dialog says how many files lose the tag (0) and that it cannot be undone; confirm; toast 'Tag "promotion" deleted'.
 - [ ] Row menu of `hero` → **Show files**: the media library opens filtered to that tag.
@@ -761,7 +761,7 @@ Open the account menu → **Audit log**.
 
 - [ ] The intro says records cannot be edited or deleted through the application. Columns: Time, Action, Result, Actor, Object, Detail. Newest first.
 - [ ] The log contains, in plain words, the journey you did: "Operator signed in", "Screen added", "Pairing code accepted for screen", "Player paired with screen", "Media uploaded", "Media checked and ready", "Playlist created", "Pushed to screen", "Schedule created", "Layout created", "Player revoked on screen", "Player unpaired itself from screen". Actors read **Operator** or **Player software**.
-- [ ] **Category → Pushes to screens** leaves only pushes. **Result → Refused** shows the refused deletes from T6.6, T11.4 and T12.6 (and the wrong pairing code from T8.2 under Pairing).
+- [ ] **Category → Pushes to screens** leaves only pushes. **Result → Refused** shows the wrong pairing code from T8.2 (under Pairing). The deletes refused in T6.6, T11.4 and T12.6 are not listed: a request that changes nothing writes no audit event.
 - [ ] Open a row's **Detail**: a dialog with Time, Exact time (UTC), Action, Result, Actor, Object and the recorded detail as text; no password, token or URL appears in any detail.
 - [ ] **Load older events** at the bottom ends with "This is the first recorded event."
 

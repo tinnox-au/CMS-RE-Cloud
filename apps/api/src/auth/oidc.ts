@@ -75,6 +75,12 @@ export function mfaSatisfied(
   return { ok: true, checked: true };
 }
 
+/**
+ * The `state` the provider sends back to the post-logout URI after RP-initiated logout.
+ * The portal looks for this exact value; keep the two in step.
+ */
+export const SIGNED_OUT_STATE = 'signed_out';
+
 export function createIdentityProvider(config: AppConfig): IdentityProvider {
   let cached: Promise<oidc.Configuration> | null = null;
 
@@ -161,6 +167,9 @@ export function createIdentityProvider(config: AppConfig): IdentityProvider {
       if (cfg.serverMetadata().end_session_endpoint === undefined) return null;
       const url = oidc.buildEndSessionUrl(cfg, {
         post_logout_redirect_uri: config.oidc.postLogoutRedirectUri,
+        // Returned on the redirect back, so the portal can say "You have signed out."
+        // (SessionContext.tsx). A fixed marker, not a secret: it is not checked as a CSRF state.
+        state: SIGNED_OUT_STATE,
         ...(idToken === null ? { client_id: config.oidc.clientId } : { id_token_hint: idToken }),
       });
       return url.href;

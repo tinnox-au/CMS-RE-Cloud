@@ -37,6 +37,24 @@ function safeRedirectTarget(value: string | null): string | null {
   }
 }
 
+/**
+ * After sign-out the identity provider sends the browser back to the portal root with this
+ * `state` (apps/api/src/auth/oidc.ts). Only this exact value is acted on.
+ */
+const SIGNED_OUT_STATE = 'signed_out';
+
+/**
+ * Says whether the address carries `state=signed_out` and removes it from the address bar,
+ * keeping the path, the other query parameters and the fragment.
+ */
+function takeSignedOutMarker(): boolean {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get('state') !== SIGNED_OUT_STATE) return false;
+  url.searchParams.delete('state');
+  window.history.replaceState(window.history.state, '', url);
+  return true;
+}
+
 export function SessionProvider({ children }: { readonly children: ReactNode }) {
   const [state, setState] = useState<SessionState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -48,10 +66,13 @@ export function SessionProvider({ children }: { readonly children: ReactNode }) 
       .loadSession(controller.signal)
       .then((session) => {
         if (disposed) return;
+        // Read here, after the disposed check, so StrictMode's discarded first run never
+        // consumes the marker. It is dropped when the session is authenticated too.
+        const signedOut = takeSignedOutMarker();
         setState(
           session.authenticated
             ? { status: 'authenticated', session }
-            : { status: 'anonymous', reason: 'none' },
+            : { status: 'anonymous', reason: signedOut ? 'signed_out' : 'none' },
         );
       })
       .catch((error: unknown) => {
@@ -84,7 +105,8 @@ export function SessionProvider({ children }: { readonly children: ReactNode }) 
     apiClient.clearSession();
     const target = safeRedirectTarget(redirectTo);
     if (target !== null) {
-      // Ends the identity-provider session too; the provider sends the browser back here.
+      // Ends the identity-provider session too; the provider sends the browser back here
+      // with state=signed_out, which the session load above turns into the signed-out notice.
       window.location.assign(target);
       return;
     }

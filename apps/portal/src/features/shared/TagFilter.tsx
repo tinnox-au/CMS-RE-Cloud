@@ -20,6 +20,8 @@ export interface TagFilterProps {
   readonly className?: string;
   /** The chips stay visible but cannot be pressed (the filter does not apply right now). */
   readonly disabled?: boolean;
+  /** Id of the text that describes the group, such as why it is disabled. */
+  readonly describedBy?: string;
 }
 
 /**
@@ -39,6 +41,7 @@ export function TagFilter({
   testId = 'shared-tag-filter',
   className,
   disabled = false,
+  describedBy,
 }: TagFilterProps) {
   if (tags.status === 'loading') {
     return (
@@ -75,6 +78,7 @@ export function TagFilter({
       className={cx('tx-shared-tagfilter', className)}
       role="group"
       aria-label={label}
+      aria-describedby={describedBy}
       data-testid={testId}
     >
       {inline.map((tag) => (
