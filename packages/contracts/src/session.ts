@@ -36,10 +36,13 @@ export const LoginQuerySchema = z
   .strict();
 export type LoginQuery = z.infer<typeof LoginQuerySchema>;
 
+/** Longest `redirectTo` the portal accepts; the API drops `id_token_hint` to stay within it. */
+export const LOGOUT_REDIRECT_MAX_LENGTH = 2000;
+
 export const LogoutResponseSchema = z
   .object({
     /** Identity-provider end-session URL the browser should navigate to, if any. */
-    redirectTo: z.string().max(2000).nullable(),
+    redirectTo: z.string().max(LOGOUT_REDIRECT_MAX_LENGTH).nullable(),
   })
   .strict();
 export type LogoutResponse = z.infer<typeof LogoutResponseSchema>;
