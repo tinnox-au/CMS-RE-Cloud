@@ -105,6 +105,7 @@ interface TagFilterProps {
   testId?: string; // default 'shared-tag-filter'
   className?: string;
   disabled?: boolean; // chips shown but not pressable (the playlist library's Apps chip)
+  describedBy?: string; // id of text that describes the group, such as why it is disabled
 }
 ```
 

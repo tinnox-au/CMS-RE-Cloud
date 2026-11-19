@@ -144,6 +144,9 @@ test('the Apps chip adds the app to a playlist, and a push brings the screen up 
     'aria-pressed',
     'true',
   );
+  await expect(library.getByTestId('playlist-editor-library-apps-note')).toHaveText(
+    'Apps have no folder or tags.',
+  );
   const item = page.getByTestId('playlist-editor-item');
   await expect(item).toHaveCount(1);
   await expect(item).toHaveAttribute('data-app-id', clockId);

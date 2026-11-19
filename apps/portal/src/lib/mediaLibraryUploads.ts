@@ -64,11 +64,28 @@ export function uploadingLabel(summary: UploadSummary): string {
   return `Uploading ${position} of ${summary.total}`;
 }
 
-/** The dialog's footer line. Null for an empty queue. */
-export function uploadFooterText(summary: UploadSummary): string | null {
+/** What the server's check has come to for the accepted files of the queue. */
+export interface UploadVerdictCounts {
+  readonly ready: number;
+  /** Accepted, no verdict yet. */
+  readonly checking: number;
+  readonly failed: number;
+}
+
+/**
+ * The dialog's footer line. Null for an empty queue. Once nothing is waiting or in flight it
+ * speaks about the server's check, not the sending: a file that was accepted and then failed
+ * its check is not counted as ready.
+ */
+export function uploadFooterText(
+  summary: UploadSummary,
+  verdicts: UploadVerdictCounts,
+): string | null {
   if (summary.total === 0) return null;
   if (summary.active > 0) return `${uploadingLabel(summary)}. Uploads carry on if you close this.`;
-  const parts: string[] = [`${summary.done} of ${summary.total} uploaded`];
+  const parts: string[] = [`${verdicts.ready} of ${summary.total} ready`];
+  if (verdicts.checking > 0) parts.push(`${verdicts.checking} being checked`);
+  if (verdicts.failed > 0) parts.push(`${verdicts.failed} failed the check`);
   if (summary.problems > 0) parts.push(`${summary.problems} not uploaded`);
   if (summary.cancelled > 0) parts.push(`${summary.cancelled} cancelled`);
   return parts.join(' · ');
@@ -148,6 +165,40 @@ export function uploadVerdict(uploaded: MediaDto, listed: MediaDto | undefined):
     if (media.status === 'failed') return { kind: 'failed', media };
   }
   return { kind: 'checking' };
+}
+
+/**
+ * The verdict for one row of the queue: null until the server has accepted the file and its
+ * answer (`uploaded`) is known. `countVerdicts` counts an accepted file without an answer as
+ * being checked.
+ */
+export function entryVerdict(
+  entry: Pick<UploadEntry, 'status'>,
+  uploaded: MediaDto | undefined,
+  listed: ReadonlyMap<string, MediaDto>,
+): UploadVerdict | null {
+  return entry.status === 'done' && uploaded !== undefined
+    ? uploadVerdict(uploaded, listed.get(uploaded.id))
+    : null;
+}
+
+/** Ready, being checked and failed among the accepted files, from the same data as the rows. */
+export function countVerdicts(
+  entries: readonly UploadEntry[],
+  uploaded: ReadonlyMap<string, MediaDto>,
+  listed: ReadonlyMap<string, MediaDto>,
+): UploadVerdictCounts {
+  let ready = 0;
+  let checking = 0;
+  let failed = 0;
+  for (const entry of entries) {
+    if (entry.status !== 'done') continue;
+    const kind = entryVerdict(entry, uploaded.get(entry.id), listed)?.kind ?? 'checking';
+    if (kind === 'ready') ready += 1;
+    else if (kind === 'failed') failed += 1;
+    else checking += 1;
+  }
+  return { ready, checking, failed };
 }
 
 /** True when a drag carries files from the computer (not text, a link or an element). */

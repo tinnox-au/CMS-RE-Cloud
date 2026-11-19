@@ -89,6 +89,7 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
   const [filters, setFilters] = useState<LibraryFilters>(NO_LIBRARY_FILTERS);
   const [shown, setShown] = useState(PAGE);
   const hintId = useId();
+  const appsNoteId = useId();
 
   const all = media.state.status === 'ready' ? media.state.data.items : null;
   const ready = useMemo(() => (all === null ? [] : readyMedia(all)), [all]);
@@ -182,6 +183,7 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
           aria-label="Folder"
           value={filters.folder}
           disabled={folders.status === 'loading' || appsOnly}
+          aria-describedby={appsOnly ? appsNoteId : undefined}
           onChange={(event) => {
             setFilter({ folder: event.target.value });
           }}
@@ -200,6 +202,7 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
         <TagFilter
           tags={tags}
           disabled={appsOnly}
+          describedBy={appsOnly ? appsNoteId : undefined}
           selected={tagFilter}
           onChange={(next) => {
             setFilter({ tags: next });
@@ -207,6 +210,15 @@ export function LibraryCard({ media, apps, draft, limits, dragSource, onAdd }: L
           testId="playlist-editor-library-tags"
         />
       </div>
+      {appsOnly && (
+        <p
+          id={appsNoteId}
+          className="tx-small tx-muted"
+          data-testid="playlist-editor-library-apps-note"
+        >
+          Apps have no folder or tags.
+        </p>
+      )}
 
       {folders.status === 'error' && (
         <ErrorNotice

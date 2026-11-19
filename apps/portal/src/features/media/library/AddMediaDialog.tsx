@@ -3,11 +3,12 @@ import { useRef, useState, type ChangeEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { formatBytes } from '../../../lib/format.ts';
 import {
+  countVerdicts,
+  entryVerdict,
   summariseUploads,
   uploadFooterText,
   uploadPercent,
   uploadProgressText,
-  uploadVerdict,
 } from '../../../lib/mediaLibraryUploads.ts';
 import { isFinished, type UploadEntry } from '../../../lib/uploadQueue.ts';
 import { CloudUpload, RotateCcw, Upload, X } from '../../../ui/icons.ts';
@@ -90,7 +91,7 @@ export function AddMediaDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const [tab, setTab] = useState<AddTab>('upload');
   const summary = summariseUploads(queue.entries);
-  const footer = uploadFooterText(summary);
+  const footer = uploadFooterText(summary, countVerdicts(queue.entries, queue.uploaded, listed));
 
   const choose = (event: ChangeEvent<HTMLInputElement>) => {
     queue.addFiles(Array.from(event.target.files ?? []));
@@ -241,10 +242,7 @@ interface UploadRowProps {
 /** One file of the queue: name, size, where it is, and what can be done with it. */
 function UploadRow({ entry, uploaded, listed, onCancel, onRetry, onOpen }: UploadRowProps) {
   const percent = uploadPercent(entry);
-  const verdict =
-    entry.status === 'done' && uploaded !== undefined
-      ? uploadVerdict(uploaded, listed.get(uploaded.id))
-      : null;
+  const verdict = entryVerdict(entry, uploaded, listed);
 
   return (
     <li

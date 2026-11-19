@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { media } from './mediaLibrary.test-support.ts';
+import { ID, media } from './mediaLibrary.test-support.ts';
 import {
   backgroundFinishedToast,
   backgroundUploads,
+  countVerdicts,
   dragHasFiles,
+  entryVerdict,
   summariseUploads,
   uploadFooterText,
   uploadingLabel,
@@ -51,16 +53,64 @@ describe('upload summaries', () => {
   });
 
   it('words the footer while running and once finished', () => {
+    const none = { ready: 0, checking: 0, failed: 0 };
     const running = summariseUploads(entries);
     expect(uploadingLabel(running)).toBe('Uploading 5 of 6');
-    expect(uploadFooterText(running)).toBe('Uploading 5 of 6. Uploads carry on if you close this.');
+    expect(uploadFooterText(running, { ...none, failed: 1 })).toBe(
+      'Uploading 5 of 6. Uploads carry on if you close this.',
+    );
     const finished = summariseUploads([
       entry('a', 'done'),
       entry('d', 'failed'),
       entry('f', 'cancelled'),
     ]);
-    expect(uploadFooterText(finished)).toBe('1 of 3 uploaded · 1 not uploaded · 1 cancelled');
-    expect(uploadFooterText(summariseUploads([]))).toBeNull();
+    expect(uploadFooterText(finished, { ...none, ready: 1 })).toBe(
+      '1 of 3 ready · 1 not uploaded · 1 cancelled',
+    );
+    expect(uploadFooterText(summariseUploads([]), none)).toBeNull();
+  });
+
+  it('counts a file that failed the check apart from the ready ones (T4.3)', () => {
+    const four = summariseUploads(['a', 'b', 'c', 'd'].map((id) => entry(id, 'done')));
+    expect(uploadFooterText(four, { ready: 4, checking: 0, failed: 0 })).toBe('4 of 4 ready');
+    expect(uploadFooterText(four, { ready: 2, checking: 2, failed: 0 })).toBe(
+      '2 of 4 ready · 2 being checked',
+    );
+    const seven = summariseUploads([
+      ...['a', 'b', 'c', 'd', 'e'].map((id) => entry(id, 'done')),
+      entry('f', 'rejected'),
+      entry('g', 'failed'),
+    ]);
+    expect(uploadFooterText(seven, { ready: 0, checking: 0, failed: 5 })).toBe(
+      '0 of 7 ready · 5 failed the check · 2 not uploaded',
+    );
+  });
+
+  it('takes each verdict from the same data as the rows', () => {
+    const uploaded = new Map([
+      ['a', media(1, 'image', { status: 'processing' })],
+      ['b', media(2, 'image', { status: 'processing' })],
+      ['c', media(3, 'image', { status: 'processing' })],
+      ['d', media(4, 'image')],
+    ]);
+    const listed = new Map([
+      [ID(2), media(2, 'image')],
+      [ID(3), media(3, 'image', { status: 'failed' })],
+    ]);
+    const queue = [
+      entry('a', 'done'),
+      entry('b', 'done'),
+      entry('c', 'done'),
+      entry('d', 'done'),
+      entry('e', 'done'),
+      entry('f', 'failed'),
+      entry('g', 'uploading'),
+    ];
+    expect(countVerdicts(queue, uploaded, listed)).toEqual({ ready: 2, checking: 2, failed: 1 });
+    expect(entryVerdict(entry('a', 'done'), uploaded.get('a'), listed)?.kind).toBe('checking');
+    expect(entryVerdict(entry('c', 'done'), uploaded.get('c'), listed)?.kind).toBe('failed');
+    expect(entryVerdict(entry('e', 'done'), undefined, listed)).toBeNull();
+    expect(entryVerdict(entry('f', 'failed'), uploaded.get('a'), listed)).toBeNull();
   });
 
   it('says what carries on behind a closed dialog', () => {

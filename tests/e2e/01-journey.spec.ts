@@ -756,4 +756,8 @@ test('the audit trail records the journey without secrets', async () => {
   await expect
     .poll(async () => (await operator.api.session()).authenticated, { timeout: 30_000 })
     .toBe(false);
+  // Keycloak's end-session step sends the browser back with state=signed_out (T2.3).
+  await expect(page.getByText('You have signed out.')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('heading', { name: 'Operator sign-in' })).toBeVisible();
+  expect(new URL(page.url()).searchParams.has('state')).toBe(false);
 });
