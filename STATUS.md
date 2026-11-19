@@ -3,7 +3,7 @@ contract: status/v2
 repo: tinnox-au/tinnox-cms
 initiative: TINNOX CMS
 key: CMS
-next_id: 20
+next_id: 21
 phase: Not written yet: one sentence on what this project is and where it stands
 gate: -
 seeded: 17 Nov 2026 by status init
@@ -33,6 +33,7 @@ None.
 | CMS-16 | Playback report (stage C): what each screen played and when, from player reports | proposed | - | 19 Nov |
 | CMS-17 | Audio and PDF media (stage C): the Planned Audio and Documents entries in Media | proposed | - | 19 Nov |
 | CMS-18 | Web pages on screens (stage C): sandboxed, off by default per organisation; needs the P2-06 threat review first, like CMS-3 | proposed | - | 19 Nov |
+| CMS-20 | Self-service sign-up with payment (like Yodeck): new customers sign up and pay, invites complete without TINNOX | proposed | - | 19 Nov |
 
 ## To do
 
@@ -144,3 +145,6 @@ from: CMS-3
 
 ### CMS-19
 from: CMS-11
+
+### CMS-20
+from: CMS-13
