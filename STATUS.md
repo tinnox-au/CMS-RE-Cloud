@@ -105,3 +105,6 @@ PR 22 merged to main 18 Nov with CI green, audit step included (picomatch allowe
 ### CMS-9
 due: 18 Dec 2026
 from: CMS-8
+
+**Notes**
+- 19 Nov: GitHub withdrew GHSA-fc5q-39xc-vjpf on 18 Nov; the exception is removed in PR 29 because the audit gate refused the stale entry
