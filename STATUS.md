@@ -131,6 +131,11 @@ PR 29 merged to main 19 Nov with CI green; locally unit, component, integration 
 **Evidence**
 PR 30 merged to main after lint, unit, build, audit, integration and secret-scan checks passed; full e2e suite passed locally (132 tests)
 
+### CMS-13
+
+**Notes**
+- 19 Nov: Decision draft written at docs/portal-v2/stage-c-roles-decision.md: four nested roles, full permission matrix, invites by a portal request that TINNOX completes, 13 decisions D1-D13 (recommendation a for each). The build waits on Michael's answers.
+
 ### CMS-18
 from: CMS-3
 
