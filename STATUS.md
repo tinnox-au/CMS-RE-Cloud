@@ -136,6 +136,7 @@ PR 30 merged to main after lint, unit, build, audit, integration and secret-scan
 **Notes**
 - 19 Nov: Decision draft written at docs/portal-v2/stage-c-roles-decision.md: four nested roles, full permission matrix, invites by a portal request that TINNOX completes, 13 decisions D1-D13 (recommendation a for each). The build waits on Michael's answers.
 - 19 Nov: Michael chose three roles (Admin, Editor, Viewer), no separate Owner. Draft rewritten; the remaining decisions are D1-D9.
+- 19 Nov: Michael brought back Owner (four roles, Admins cannot remove each other) and gave Editors the widest access: push, delete, screen set-up, pairing, filtered audit page. Old D1-D6 settled; remaining decisions renumbered D1-D7.
 
 ### CMS-18
 from: CMS-3
