@@ -8,3 +8,4 @@ export * from './sources.ts';
 export * from './layout.ts';
 export * from './push.ts';
 export * from './delivery-state.ts';
+export * from './permissions.ts';

@@ -553,14 +553,21 @@ BEGIN
       USING ERRCODE = 'insufficient_privilege';
   END IF;
   -- An id from another organisation changes nothing and takes no lock (0012:11-13).
-  UPDATE public.membership m SET sessions_valid_after = now()
+  -- Built (Wave 1 review): the cut-off is the start of this call, not of the transaction, so an
+  -- identity-provider sign-in during the people route's lock waits is refused too; greatest()
+  -- never moves it back.
+  UPDATE public.membership m
+  SET sessions_valid_after = greatest(m.sessions_valid_after, statement_timestamp())
   WHERE m.id = p_membership_id AND m.org_id = v_org;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'membership does not belong to the current organisation'
       USING ERRCODE = 'insufficient_privilege';
   END IF;
+  -- shortcut: a session past the idle timeout (not known here) is still counted; pass the
+  -- timeout in, as sec.session_by_id_hash takes it, if sessionsEnded must be exact.
   UPDATE public.session s SET revoked_at = now(), id_token = NULL
-  WHERE s.membership_id = p_membership_id AND s.org_id = v_org AND s.revoked_at IS NULL;
+  WHERE s.membership_id = p_membership_id AND s.org_id = v_org AND s.revoked_at IS NULL
+    AND s.expires_at > now();
   GET DIAGNOSTICS n = ROW_COUNT;
   RETURN n;
 END $$;
@@ -672,10 +679,14 @@ export const INVITE_TTL_DAYS = 14;
 /** A member's display name in a request. Twin of membership_display_name_length and _trimmed. */
 export const MemberNameSchema = labelSchema(ABSOLUTE.maxNameLength, 'name');
 
-/** A work e-mail address in an invite request. The database twin checks only length and an "@". */
+/** A work e-mail address in an invite request. The database twin checks only length and an "@".
+ *  No control or text-direction characters (built in Wave 1: PostgreSQL text cannot hold NUL, and
+ *  Owners, Admins and TINNOX staff read the address); the same character sets as text.ts. */
 export const InviteEmailSchema = z.string().trim()
   .min(3).max(254)
-  .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'work e-mail address must look like name@example.com');
+  .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'work e-mail address must look like name@example.com')
+  .regex(SINGLE_LINE, 'work e-mail address must not contain control characters')
+  .regex(NO_DIRECTION_CONTROLS, 'work e-mail address must not contain text-direction characters');
 
 const NameOut = z.string().min(1).max(ABSOLUTE.maxNameLength);
 
@@ -1500,7 +1511,7 @@ Rules for every command:
 After the `SET LOCAL ROLE tinnox_definer` (`:14`), before the session update (`:16-26`), one statement that sets the cut-off and audits it (the definer's 0013 grant; AGENTS.md §3: a member with no live session gets a cut-off too, so the session update's `auth.logout` rows do not cover it):
 ```sql
 WITH cut AS (
-  UPDATE public.membership SET sessions_valid_after = now()
+  UPDATE public.membership SET sessions_valid_after = greatest(sessions_valid_after, statement_timestamp())
   WHERE oidc_sub = :'subject'
   RETURNING id, org_id
 )
@@ -1533,6 +1544,7 @@ Change (each because 0013 drops the default role, the five-argument `sec.session
 | `packages/db/test/sec.integration.test.ts:157-160` | 18 functions | 19, comment names `session_revoke_membership` (0013) | WP2 |
 | `packages/db/test/sec.integration.test.ts:184, 258, 267` | `role: 'operator'` | `'owner'` | WP2 |
 | `packages/db/test/sec.integration.test.ts:248, 284, 303, 317, 348, 374` | five-argument `sessionCreate`, row-or-null | `authTime: new Date()`, `outcome` result | WP2 |
+| `packages/db/test/sec.integration.test.ts:781-789` (SCX-01 faked claim) | `claimed_by_membership` NULL | set it to `org.membershipId`, so the test still reaches the active-registration check (0013's claimer check would refuse first) | WP2 |
 | `packages/db/test/rls.integration.test.ts:641-645` | `UPDATE membership SET role = 'operator'` → 42501 | deliberate change (record `:467`): `UPDATE membership SET oidc_sub`, `org_id`, `first_signed_in_at`, `sessions_valid_after`, `display_name_changed_at` → 42501 each; `UPDATE membership SET role = 'viewer'` on the only Owner → 23001 `membership_last_owner`. The INSERT refusal (`:646-655`) stays 42501 | WP2 |
 | `packages/db/test/migration-0005.integration.test.ts:598-627` (exact table list) | no `member_invite` | add `member_invite` under `// 0013` | WP2 |
 | `tests/integration/backup-restore-check.test.ts:142` | no role | `'owner'` | WP3 |
@@ -1553,7 +1565,7 @@ The default test member stays an Owner: `tests/integration/session-csrf.test.ts:
 - `ROLES` is exactly owner, admin, editor, viewer; `PERMISSION_KEYS` exactly the 14 keys of 1.2; none of `org.rename`, `org.delete`, `site.manage`, `support.grant` is in it.
 - `SessionResponseSchema`: the new user accepted; `role: 'operator'` refused; an unknown permission refused; missing `membershipId` refused; `displayName` null accepted, `''` and 121 characters refused; an extra key refused.
 - `AUTH_ERROR_CODES` contains `reauth_failed`.
-- `MemberDtoSchema` with an extra `email` refused (D3 on the client side); `InviteCreateSchema`: trims; name 1 to 120; e-mail without "@" or a dot after it, and over 254, refused; `role: 'owner'` refused; extra key refused. `MemberPatchSchema`: `{}` refused with "name a role or a display name to change"; each field alone accepted.
+- `MemberDtoSchema` with an extra `email` refused (D3 on the client side); `InviteCreateSchema`: trims; name 1 to 120; e-mail without "@" or a dot after it, over 254, or with NUL, a control character or a text-direction character, refused; `role: 'owner'` refused; extra key refused. `MemberPatchSchema`: `{}` refused with "name a role or a display name to change"; each field alone accepted.
 - `inviteReference('3f9a12c4-…')` is `'3F9A12C4'`.
 - `ROUTES.member('../x')`, `memberRemove`, `memberSignOut`, `inviteCancel` encode their argument.
 - `API_ERROR_CODES` contains `last_owner`; `AUDIT_ACTIONS` contains the nine new actions. `portal-v2.test.ts:1325-1334` (unique, well-formed actions; categories equal the derived set) stays green unchanged.

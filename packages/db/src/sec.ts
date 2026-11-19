@@ -1,7 +1,8 @@
 /**
  * Typed wrappers for the SECURITY DEFINER functions in schema `sec`
- * (db/migrations/0002_security_functions.sql). They take hashes, never raw
- * secrets: hash a token with `sha256` before calling.
+ * (db/migrations/0002_security_functions.sql; sessions and members changed by
+ * 0013_roles_and_members.sql). They take hashes, never raw secrets: hash a token
+ * with `sha256` before calling.
  */
 import { createHash } from 'node:crypto';
 import type { Tx } from './tx.ts';
@@ -81,14 +82,24 @@ export async function loginStateTake(tx: Tx, stateHash: Buffer): Promise<LoginSt
     : { codeVerifier: r.code_verifier, nonce: r.nonce, returnTo: r.return_to };
 }
 
-export interface SessionCreated {
-  readonly membershipId: string;
-  readonly orgId: string;
-  readonly role: string;
-  readonly expiresAt: string;
-}
+/**
+ * Outcome of `sec.session_create`. `role` stays a plain string here (this package depends
+ * only on `pg`); the API narrows it.
+ */
+export type SessionCreateResult =
+  | {
+      readonly outcome: 'created';
+      readonly membershipId: string;
+      readonly orgId: string;
+      readonly role: string;
+      readonly expiresAt: string;
+    }
+  /** The member's sessions were ended after this sign-in was authenticated: sign in again. */
+  | { readonly outcome: 'reauth'; readonly membershipId: string; readonly orgId: string }
+  /** No member with this subject, or a removed one: the sign-in is refused. */
+  | { readonly outcome: 'no_membership' };
 
-/** Returns null when the subject has no membership (sign-in must then be refused). */
+/** sec.session_create (0013). authTime: the ID token's auth_time; null when the token has none. */
 export async function sessionCreate(
   tx: Tx,
   input: {
@@ -97,29 +108,37 @@ export async function sessionCreate(
     csrfToken: string;
     ttlSeconds: number;
     idToken: string | null;
+    authTime: Date | null;
   },
-): Promise<SessionCreated | null> {
+): Promise<SessionCreateResult> {
   const { rows } = await tx.query<{
-    membership_id: string;
-    org_id: string;
-    role: string;
-    expires_at: Date;
-  }>('SELECT membership_id, org_id, role, expires_at FROM sec.session_create($1, $2, $3, $4, $5)', [
-    input.idHash,
-    input.oidcSub,
-    input.csrfToken,
-    input.ttlSeconds,
-    input.idToken,
-  ]);
-  const r = only(rows);
-  return r === null
-    ? null
-    : {
-        membershipId: r.membership_id,
-        orgId: r.org_id,
-        role: r.role,
-        expiresAt: iso(r.expires_at),
-      };
+    outcome: string;
+    membership_id: string | null;
+    org_id: string | null;
+    role: string | null;
+    expires_at: Date | null;
+  }>(
+    'SELECT outcome, membership_id, org_id, role, expires_at FROM sec.session_create($1, $2, $3, $4, $5, $6)',
+    [input.idHash, input.oidcSub, input.csrfToken, input.ttlSeconds, input.idToken, input.authTime],
+  );
+  if (rows.length !== 1 || rows[0] === undefined) {
+    throw new Error('sec.session_create did not return exactly one row');
+  }
+  const r = rows[0];
+  if (r.outcome === 'created' && r.membership_id !== null && r.org_id !== null && r.role !== null) {
+    return {
+      outcome: 'created',
+      membershipId: r.membership_id,
+      orgId: r.org_id,
+      role: r.role,
+      expiresAt: iso(r.expires_at),
+    };
+  }
+  if (r.outcome === 'reauth' && r.membership_id !== null && r.org_id !== null) {
+    return { outcome: 'reauth', membershipId: r.membership_id, orgId: r.org_id };
+  }
+  if (r.outcome === 'no_membership') return { outcome: 'no_membership' };
+  throw new Error(`unexpected session_create outcome ${r.outcome}`);
 }
 
 export interface SessionLookup {
@@ -181,6 +200,20 @@ export async function sessionRevoke(
   return r === null
     ? null
     : { membershipId: r.membership_id, orgId: r.org_id, idToken: r.id_token };
+}
+
+/**
+ * sec.session_revoke_membership (0013): ends every live session of the member and sets the
+ * member's cut-off, so older sessions and sign-ins authenticated before it are refused. The
+ * cut-off is the start of this statement (never earlier than it was), so lock waits before it
+ * are covered. Inside `withOrg` only: a member of another organisation, or no organisation
+ * context, raises 42501. Returns the number of sessions ended (already expired ones are not).
+ */
+export async function sessionRevokeMembership(tx: Tx, membershipId: string): Promise<number> {
+  const { rows } = await tx.query<{ n: number }>('SELECT sec.session_revoke_membership($1) AS n', [
+    membershipId,
+  ]);
+  return rows[0]?.n ?? 0;
 }
 
 export async function sessionPurgeExpired(tx: Tx): Promise<number> {

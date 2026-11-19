@@ -73,9 +73,18 @@ export function pairingCode(): string {
  * folder, playlist (assigned to the display), publication, audit row, one tag of each
  * scope put on the media item and on the display, one app, one schedule with one event, and
  * one layout with two zones. Every tenant table that the runtime role writes directly gets
- * exactly one row, except `tag` and `layout_zone`, which get two.
+ * exactly one row, except `tag` and `layout_zone`, which get two, and `member_invite`, which
+ * gets none (it also runs at migration 0011, before the table exists).
+ *
+ * The member is an Owner unless `role` says otherwise. `'operator'` is the only role that
+ * migrations 0001 to 0012 accept (migration-0012.integration.test.ts arranges data there);
+ * 0013 maps it to `'owner'`.
  */
-export async function createOrg(migrator: pg.Client, name: string): Promise<TestOrg> {
+export async function createOrg(
+  migrator: pg.Client,
+  name: string,
+  options: { role?: 'owner' | 'admin' | 'editor' | 'viewer' | 'operator' } = {},
+): Promise<TestOrg> {
   const o: TestOrg = {
     orgId: randomUUID(),
     siteId: randomUUID(),
@@ -124,11 +133,10 @@ export async function createOrg(migrator: pg.Client, name: string): Promise<Test
       `${name} site`,
       'Australia/Melbourne',
     ]);
-    await migrator.query('INSERT INTO membership (id, org_id, oidc_sub) VALUES ($1, $2, $3)', [
-      o.membershipId,
-      o.orgId,
-      o.oidcSub,
-    ]);
+    await migrator.query(
+      'INSERT INTO membership (id, org_id, oidc_sub, role) VALUES ($1, $2, $3, $4)',
+      [o.membershipId, o.orgId, o.oidcSub, options.role ?? 'owner'],
+    );
     await migrator.query(
       'INSERT INTO display (id, org_id, site_id, name, canvas_width, canvas_height) VALUES ($1, $2, $3, $4, 640, 1344)',
       [o.displayId, o.orgId, o.siteId, `${name} display`],
@@ -261,6 +269,74 @@ export async function pgViolation(
   }
 }
 
+/**
+ * Runs one statement as the owner of the security functions (BYPASSRLS; non-tenant tables),
+ * through the migrator's `SET LOCAL ROLE tinnox_definer`, in its own transaction.
+ */
+export async function asDefiner<R extends pg.QueryResultRow>(
+  migrator: pg.Client,
+  text: string,
+  values: readonly unknown[] = [],
+): Promise<R[]> {
+  await migrator.query('BEGIN');
+  try {
+    await migrator.query('SET LOCAL ROLE tinnox_definer');
+    const { rows } = await migrator.query<R>(text, [...values]);
+    await migrator.query('COMMIT');
+    return rows;
+  } catch (error) {
+    await migrator.query('ROLLBACK');
+    throw error;
+  }
+}
+
+/** The database administrator (superuser), as in the runbook. Bypasses row-level security. */
+export async function asSuperuser<T>(work: (client: pg.Client) => Promise<T>): Promise<T> {
+  const url = new URL(migratorUrl());
+  url.username = 'postgres';
+  url.password = encodeURIComponent(need('POSTGRES_SUPERUSER_PASSWORD'));
+  const client = new pg.Client({ connectionString: url.toString() });
+  await client.connect();
+  try {
+    return await work(client);
+  } finally {
+    await client.end();
+  }
+}
+
+/** Resolves to true when the promise is still pending after a short wait. */
+export async function stillWaiting(promise: Promise<unknown>): Promise<boolean> {
+  let settled = false;
+  const mark = () => {
+    settled = true;
+  };
+  promise.then(mark, mark);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  return !settled;
+}
+
+/** Two tinnox_app connections of `pool`, each in an open transaction for `orgId`. */
+export async function twoTransactions(
+  pool: Pool,
+  orgId: string,
+  work: (first: pg.PoolClient, second: pg.PoolClient) => Promise<void>,
+): Promise<void> {
+  const first = await pool.connect();
+  const second = await pool.connect();
+  try {
+    for (const client of [first, second]) {
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.org_id', $1, true)", [orgId]);
+    }
+    await work(first, second);
+  } finally {
+    for (const client of [first, second]) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      client.release();
+    }
+  }
+}
+
 export const PG = {
   insufficientPrivilege: '42501',
   rlsViolation: '42501',
@@ -268,5 +344,6 @@ export const PG = {
   unique: '23505',
   check: '23514',
   restrict: '23001',
+  notNull: '23502',
   invalidText: '22P02',
 } as const;

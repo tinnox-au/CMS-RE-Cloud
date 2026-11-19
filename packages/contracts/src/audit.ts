@@ -38,8 +38,17 @@ export const AUDIT_ACTIONS = [
   'layout.update',
   'layout.delete',
   'publication.create',
+  'invite.create',
+  'invite.cancel',
+  'membership.create',
+  'membership.role_change',
+  'membership.update',
+  'membership.remove',
+  'membership.sessions_end',
+  'membership.mfa_reset',
   'security.cross_org_denied',
   'security.csrf_rejected',
+  'security.permission_denied',
 ] as const;
 export const AuditActionSchema = z.enum(AUDIT_ACTIONS);
 export type AuditAction = z.infer<typeof AuditActionSchema>;
@@ -58,6 +67,8 @@ export const AUDIT_CATEGORIES = [
   'schedule',
   'layout',
   'publication',
+  'invite',
+  'membership',
   'security',
 ] as const;
 export const AuditCategorySchema = z.enum(AUDIT_CATEGORIES);

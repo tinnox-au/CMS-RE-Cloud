@@ -7,7 +7,15 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withOrg, withoutOrg, withResolvedOrg, type Pool } from '../src/index.ts';
-import { appPool, createOrg, migratorClient, PG, pgCode, type TestOrg } from './support.ts';
+import {
+  appPool,
+  createOrg,
+  migratorClient,
+  PG,
+  pgCode,
+  pgViolation,
+  type TestOrg,
+} from './support.ts';
 
 const TENANT_TABLES = [
   'organization',
@@ -32,17 +40,19 @@ const TENANT_TABLES = [
   'schedule_event',
   'layout',
   'layout_zone',
+  'member_invite',
 ] as const;
 /**
  * Rows that `createOrg` gives one organisation, where that is not exactly one:
- * registrations and heartbeats come from a player, there is one tag per scope, and the
- * layout has two zones.
+ * registrations and heartbeats come from a player, there is one tag per scope, the
+ * layout has two zones, and invites are requests nobody has made yet.
  */
 const ROWS_PER_ORG: Partial<Record<(typeof TENANT_TABLES)[number], number>> = {
   player_registration: 0,
   heartbeat_log: 0,
   tag: 2,
   layout_zone: 2,
+  member_invite: 0,
 };
 const LOCKED_TABLES = [
   'session',
@@ -349,9 +359,26 @@ describe('with organisation A as context', () => {
         ['DELETE FROM layout WHERE id = $1', b.layoutId],
       ];
       for (const [sql, id] of stageA) expect((await tx.query(sql, [id])).rowCount, sql).toBe(0);
+      // 0013's column grant on membership: the policy hides B's member, and display_name has
+      // no second check (membership_guard covers only role and removal).
+      const stageC: [string, unknown[]][] = [
+        ["UPDATE membership SET display_name = 'hijacked' WHERE id = $1", [b.membershipId]],
+        ["UPDATE membership SET role = 'viewer' WHERE id = $1", [b.membershipId]],
+        [
+          'UPDATE membership SET removed_at = now(), removed_by = $2 WHERE id = $1',
+          [b.membershipId, a.membershipId],
+        ],
+      ];
+      for (const [sql, values] of stageC)
+        expect((await tx.query(sql, values)).rowCount, sql).toBe(0);
     });
     // Nothing of organisation B was touched.
     await withOrg(pool, b.orgId, async (tx) => {
+      const member = await tx.query(
+        'SELECT role, display_name, removed_at FROM membership WHERE id = $1',
+        [b.membershipId],
+      );
+      expect(member.rows).toEqual([{ role: 'owner', display_name: null, removed_at: null }]);
       const { rows } = await tx.query<{
         tags: string;
         folders: string;
@@ -638,11 +665,34 @@ describe('with organisation A as context', () => {
         ),
       ),
     ).toBe(PG.insufficientPrivilege);
+    // 0013 grants an UPDATE of role, display_name, removed_at and removed_by only (the people
+    // routes). A member's identity, organisation, first sign-in, cut-off and rename stamp stay
+    // out of reach.
+    for (const column of [
+      'oidc_sub',
+      'org_id',
+      'first_signed_in_at',
+      'sessions_valid_after',
+      'display_name_changed_at',
+    ]) {
+      expect(
+        await pgCode(
+          withOrg(pool, a.orgId, (tx) =>
+            tx.query(`UPDATE membership SET ${column} = ${column} WHERE id = $1`, [a.membershipId]),
+          ),
+        ),
+        column,
+      ).toBe(PG.insufficientPrivilege);
+    }
+    // A role change passes the privilege check and is decided by the 0013 trigger: the only
+    // Owner stays one.
     expect(
-      await pgCode(
-        withOrg(pool, a.orgId, (tx) => tx.query("UPDATE membership SET role = 'operator'")),
+      await pgViolation(
+        withOrg(pool, a.orgId, (tx) =>
+          tx.query("UPDATE membership SET role = 'viewer' WHERE id = $1", [a.membershipId]),
+        ),
       ),
-    ).toBe(PG.insufficientPrivilege);
+    ).toEqual({ code: PG.restrict, constraint: 'membership_last_owner' });
     expect(
       await pgCode(
         withOrg(pool, a.orgId, (tx) =>
@@ -1011,5 +1061,77 @@ describe('immutable publications and append-only audit', () => {
         ),
       ),
     ).toBe(PG.check);
+  });
+});
+
+describe('member invites (0013)', () => {
+  const invite = (org: TestOrg) => ({
+    id: randomUUID(),
+    values: [
+      org.orgId,
+      `Invitee ${org.orgId}`,
+      `invitee-${org.orgId}@example.com`,
+      org.membershipId,
+    ],
+  });
+  const INSERT_INVITE = `INSERT INTO member_invite (id, org_id, role, name, email, invited_by, expires_at)
+     VALUES ($1, $2, 'editor', $3, $4, $5, now() + interval '14 days')`;
+
+  it('are read, written and changed only inside their own organisation', async () => {
+    const mine = invite(a);
+    const theirs = invite(b);
+    for (const [org, row] of [
+      [a, mine],
+      [b, theirs],
+    ] as const) {
+      await migrator.query('BEGIN');
+      try {
+        await migrator.query("SELECT set_config('app.org_id', $1, true)", [org.orgId]);
+        await migrator.query(INSERT_INVITE, [row.id, ...row.values]);
+        await migrator.query('COMMIT');
+      } catch (error) {
+        await migrator.query('ROLLBACK');
+        throw error;
+      }
+    }
+
+    await withOrg(pool, a.orgId, async (tx) => {
+      const { rows } = await tx.query<{ id: string; org_id: string }>(
+        'SELECT id, org_id FROM member_invite',
+      );
+      expect(rows).toEqual([{ id: mine.id, org_id: a.orgId }]);
+      expect(
+        (await tx.query('SELECT 1 FROM member_invite WHERE id = $1', [theirs.id])).rowCount,
+      ).toBe(0);
+      expect(
+        (
+          await tx.query(
+            "UPDATE member_invite SET status = 'cancelled', closed_by = $2 WHERE id = $1",
+            [theirs.id, a.membershipId],
+          )
+        ).rowCount,
+      ).toBe(0);
+    });
+    // An invite filed under organisation B, by B's own member: refused by the policy's WITH CHECK.
+    expect(
+      await pgCode(
+        withOrg(pool, a.orgId, (tx) =>
+          tx.query(INSERT_INVITE, [
+            randomUUID(),
+            b.orgId,
+            'Planted',
+            'planted@example.com',
+            b.membershipId,
+          ]),
+        ),
+      ),
+    ).toBe(PG.rlsViolation);
+    // Nothing of organisation B was touched.
+    await withOrg(pool, b.orgId, async (tx) => {
+      const { rows } = await tx.query<{ id: string; status: string }>(
+        'SELECT id, status FROM member_invite',
+      );
+      expect(rows).toEqual([{ id: theirs.id, status: 'pending' }]);
+    });
   });
 });

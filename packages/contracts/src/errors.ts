@@ -21,6 +21,7 @@ export const API_ERROR_CODES = [
   'app_in_use',
   'schedule_in_use',
   'layout_in_use',
+  'last_owner',
   'publication_rejected',
   'pairing_code_invalid',
   'pairing_expired',
