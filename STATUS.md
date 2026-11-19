@@ -3,7 +3,7 @@ contract: status/v2
 repo: tinnox-au/tinnox-cms
 initiative: TINNOX CMS
 key: CMS
-next_id: 16
+next_id: 17
 phase: Not written yet: one sentence on what this project is and where it stands
 gate: -
 seeded: 17 Nov 2026 by status init
@@ -31,6 +31,7 @@ None.
 | CMS-13 | Roles and user management (stage C): owner, admin, editor, viewer; invite and remove people; a permission matrix to decide first | proposed | - | 19 Nov |
 | CMS-14 | Emergency messages and takeover (stage C): override what chosen screens show, then return them to their content | proposed | - | 19 Nov |
 | CMS-15 | E-mail alerts when a screen stops reporting (stage C) | proposed | - | 19 Nov |
+| CMS-16 | Playback report (stage C): what each screen played and when, from player reports | proposed | - | 19 Nov |
 
 ## To do
 
