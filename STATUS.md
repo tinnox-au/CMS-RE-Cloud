@@ -140,6 +140,7 @@ PR 30 merged to main after lint, unit, build, audit, integration and secret-scan
 - 19 Nov: Michael brought back Owner (four roles, Admins cannot remove each other) and gave Editors the widest access: push, delete, screen set-up, pairing, filtered audit page. Old D1-D6 settled; remaining decisions renumbered D1-D7.
 - 19 Nov: Michael answered D1-D7 all a (19 Nov), recorded as DEC-35 in docs/decisions-2026-11.md. Next: build spec, then PRs C1 (roles enforced) and C2 (people).
 - 20 Nov: Built C1 and C2 on one branch, feat/stage-c-roles (spec docs/portal-v2/stage-c.md, As built and review record docs/reviews/2026-11-20-stage-c-review). Every suite, verify:oidc and the e2e suite pass. Not pushed; waiting for Michael's go-ahead to push and open the PR.
+- 20 Nov: Round 6 review (docs/reviews/2026-11-20-stage-c-roles-round-6): verified each finding; fixed RCX-01 (pairing claim after reactivation), RCX-02 (incident script cut-off timing) and RCX-03 (role matrix accepted 5xx) on the PR; RCU-03 needs no change. All suites and e2e pass. Not merged.
 
 ### CMS-18
 from: CMS-3
