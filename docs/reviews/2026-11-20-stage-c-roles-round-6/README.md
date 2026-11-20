@@ -92,6 +92,6 @@ Migration 0013 was edited in place for RCX-01. A database that applied the earli
 
 None of these is caused by this change.
 
-- **Lint heap.** This already happens on `main`. Both `main` and the branch need a V8 heap of about 2.3 to 2.5 GB, so both run out at Node's 2 GB default on a machine with less than about 15 GB of memory; the branch needs about 7% more (48 more TypeScript files). CI passes because its runner gets a 4 GB default. A heap setting in the root lint script is a separate chore.
+- **Lint heap.** This already happens on `main`. Both `main` and the branch need a V8 heap of about 2.3 to 2.5 GB, so both run out at Node's 2 GB default on a machine with less than about 15 GB of memory; the branch needs about 7% more (48 more TypeScript files). CI passes because its runner gets a 4 GB default. The root `lint` script now runs ESLint with a 4 GB heap (`--max-old-space-size=4096`), so it no longer depends on the machine's memory.
 - **Integration fixtures.** `tests/integration/backup-restore-check.test.ts` throws "sample media are missing" until `npm run fixtures` has run. `main` has the same guard, CI runs the fixtures first, and `media-worker.test.ts` generates them itself, which is why only the first run failed. The branch changes that file only to give its member a role.
 - **e2e text fit.** The failure at `tests/e2e/07-apps-player.spec.ts:347` is in code the branch does not touch (`apps/player-web`, `packages/app-render` and that spec). It is a font-metric difference on the reviewer's Linux machine.

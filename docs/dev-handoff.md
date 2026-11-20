@@ -17,7 +17,7 @@ Run everything from the repository root. You should not need `npm install`; `nod
 | `npm run db:seed` | Creates "TINNOX Internal", site "Melbourne Workshop" (Australia/Melbourne) and one member per role: the operator (Owner, "Dev Owner"), `org-admin` (Admin), `editor` and `viewer`. `-- --second-org` also creates "Isolation Test Organisation" with the second test user as its Owner ("Second Owner"). |
 | `npm run verify:oidc` | Signs the test operator in to Keycloak over HTTP (PKCE, password, TOTP) and exchanges the code; checks `auth_time`, a forced re-authentication (`prompt=login`) and the provisioning reader (`view-users` only). Takes a user key (`operator`, `secondOrgOperator`, `admin`, `editor`, `viewer`). Prints no secret. |
 | `npm run dev` | Runs `dev` in `@tinnox/api`, `@tinnox/portal`, `@tinnox/player-web` together. |
-| `npm run typecheck` / `npm run lint` / `npm run format` / `npm run format:check` | Type check every workspace plus `scripts/`; ESLint; Prettier. |
+| `npm run typecheck` / `npm run lint` / `npm run format` / `npm run format:check` | Type check every workspace plus `scripts/`; ESLint (run with a 4 GB heap: it needs about 2.5 GB, more than Node's 2 GB default on machines with under about 15 GB of memory); Prettier. |
 | `npm test` | Unit tests (vitest project `unit`). |
 | `npm run test:integration` | Integration tests against PostgreSQL. Rebuilds database `tinnox_test` first. |
 | `npm run test:e2e` | Playwright suite in `tests/e2e` (25 tests; rebuilds database `tinnox_e2e_test`, builds and starts portal, player and API itself; evidence to `tests/.run/evidence` unless `E2E_EVIDENCE_DIR` is set). |
