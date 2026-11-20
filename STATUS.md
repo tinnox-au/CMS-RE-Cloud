@@ -37,9 +37,7 @@ None.
 
 ## To do
 
-| Id | Card | Agreed | PR | Since |
-|---|---|---|---|---|
-| CMS-19 | Re-run manual tests T11.1, T11.3, T12.1 and T12.3 after PR 29 (schedule and layout create and play) | Michael 19 Nov | - | 19 Nov |
+None.
 
 ## In progress
 
@@ -53,6 +51,7 @@ None.
 
 | Id | Date | Outcome | PR |
 |---|---|---|---|
+| CMS-19 | 20 Nov | Re-run manual tests T11.1, T11.3, T12.1 and T12.3 after PR 29 (schedule and layout create and play) | - |
 | CMS-13 | 20 Nov | Roles and user management (stage C): owner, admin, editor, viewer; invite and remove people; a permission matrix to decide first | #31 |
 | CMS-12 | 19 Nov | Fix the confirmed PR 29 review findings (logout URL fallback, upload poll retry, sign-out e2e check, plan and control wording) | #30 |
 | CMS-11 | 19 Nov | Fix the gaps from the 2026-11-19 manual user test (sign-out notice, upload summary, Apps note, test plan corrections) | #29 |
@@ -149,6 +148,9 @@ from: CMS-3
 
 ### CMS-19
 from: CMS-11
+
+**Evidence**
+Re-run on 20 Nov against main with stage C: T11.1, T11.3, T12.1 and T12.3 all pass (seeded playlists stood in for Main loop and Lunch specials)
 
 ### CMS-20
 from: CMS-13
