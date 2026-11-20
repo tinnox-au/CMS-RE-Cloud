@@ -1,4 +1,4 @@
-# Stage C roles and people review, round 5
+# Stage C roles and people review, round 6
 
 Date: 20 November 2026, Australia/Melbourne (UTC+11).
 Status: documented review only. Both reviewers worked read-only. No product code was changed, and this folder is a record of the outcome, not a patch. PR #31 was not merged at review time, so links to files that the PR adds resolve only once it lands.
