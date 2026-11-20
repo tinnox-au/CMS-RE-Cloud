@@ -43,13 +43,13 @@ None.
 
 ## In progress
 
-| Id | Card | Agreed | PR | Since |
-|---|---|---|---|---|
-| CMS-13 | Roles and user management (stage C): owner, admin, editor, viewer; invite and remove people; a permission matrix to decide first | - | - | 19 Nov |
+None.
 
 ## In review
 
-None.
+| Id | Card | Agreed | PR | Since |
+|---|---|---|---|---|
+| CMS-13 | Roles and user management (stage C): owner, admin, editor, viewer; invite and remove people; a permission matrix to decide first | - | #31 | 20 Nov |
 
 ## Done, last 14 days
 
@@ -139,6 +139,7 @@ PR 30 merged to main after lint, unit, build, audit, integration and secret-scan
 - 19 Nov: Michael chose three roles (Admin, Editor, Viewer), no separate Owner. Draft rewritten; the remaining decisions are D1-D9.
 - 19 Nov: Michael brought back Owner (four roles, Admins cannot remove each other) and gave Editors the widest access: push, delete, screen set-up, pairing, filtered audit page. Old D1-D6 settled; remaining decisions renumbered D1-D7.
 - 19 Nov: Michael answered D1-D7 all a (19 Nov), recorded as DEC-35 in docs/decisions-2026-11.md. Next: build spec, then PRs C1 (roles enforced) and C2 (people).
+- 20 Nov: Built C1 and C2 on one branch, feat/stage-c-roles (spec docs/portal-v2/stage-c.md, As built and review record docs/reviews/2026-11-20-stage-c-review). Every suite, verify:oidc and the e2e suite pass. Not pushed; waiting for Michael's go-ahead to push and open the PR.
 
 ### CMS-18
 from: CMS-3
