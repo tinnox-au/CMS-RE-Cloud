@@ -20,6 +20,12 @@ export interface VerifiedIdentity {
   readonly amr: readonly string[];
   /** Raw ID token, kept server-side only, for RP-initiated logout. */
   readonly idToken: string | null;
+  /**
+   * When the person last authenticated at the provider (`auth_time`, seconds since the epoch),
+   * verified with the token. Null when the token has none. Compared with the member's session
+   * cut-off at sign-in (sec.session_create).
+   */
+  readonly authTime: number | null;
 }
 
 export interface AuthorizationRequest {
@@ -39,8 +45,12 @@ export class IdentityProviderError extends Error {
 }
 
 export interface IdentityProvider {
-  /** Creates state, nonce and PKCE verifier and the provider URL to send the browser to. */
-  beginLogin(): Promise<AuthorizationRequest>;
+  /**
+   * Creates state, nonce and PKCE verifier and the provider URL to send the browser to.
+   * `reauthenticate` asks the provider to sign the person in again even when it still has a
+   * session for them (`prompt=login`), after their sessions were ended.
+   */
+  beginLogin(options?: { readonly reauthenticate?: boolean }): Promise<AuthorizationRequest>;
   /** Redeems the authorization response. `query` is the callback's query string as received. */
   completeLogin(
     query: URLSearchParams,
@@ -114,7 +124,7 @@ export function createIdentityProvider(config: AppConfig): IdentityProvider {
   }
 
   return {
-    async beginLogin(): Promise<AuthorizationRequest> {
+    async beginLogin(options = {}): Promise<AuthorizationRequest> {
       const cfg = await configuration();
       const codeVerifier = oidc.randomPKCECodeVerifier();
       const state = oidc.randomState();
@@ -127,6 +137,9 @@ export function createIdentityProvider(config: AppConfig): IdentityProvider {
         nonce,
         code_challenge: await oidc.calculatePKCECodeChallenge(codeVerifier),
         code_challenge_method: 'S256',
+        // No max_age: it would oblige a maxAge check on the token exchange. The callback compares
+        // auth_time with the member's cut-off itself.
+        ...(options.reauthenticate === true ? { prompt: 'login' } : {}),
       });
       return { state, nonce, codeVerifier, url: url.href };
     },
@@ -158,7 +171,8 @@ export function createIdentityProvider(config: AppConfig): IdentityProvider {
       const amr = Array.isArray(claims.amr)
         ? claims.amr.filter((value): value is string => typeof value === 'string')
         : [];
-      return { sub: claims.sub, acr, amr, idToken: tokens.id_token ?? null };
+      const authTime = typeof claims.auth_time === 'number' ? claims.auth_time : null;
+      return { sub: claims.sub, acr, amr, idToken: tokens.id_token ?? null, authTime };
     },
 
     async endSessionUrl(idToken): Promise<string | null> {

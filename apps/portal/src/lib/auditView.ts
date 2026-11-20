@@ -8,9 +8,17 @@ import {
   type AuditCategory,
   type AuditEventDto,
   type AuditResult,
+  type MemberNameDto,
   type TagScope,
 } from '@tinnox/contracts';
-import { activityActorLabel, describeActivity } from './activity.ts';
+import { visibleAuditCategories } from '@tinnox/domain';
+import {
+  activityActorKindLabel,
+  activityActorLabel,
+  activityActorMember,
+  describeActivity,
+} from './activity.ts';
+import { memberName } from './users.ts';
 
 /**
  * The audit log as the portal shows it: the plain words for an action, the filters, the
@@ -44,6 +52,8 @@ export const AUDIT_CATEGORY_LABELS: { readonly [K in AuditCategory]: string } = 
   schedule: 'Schedules',
   layout: 'Layouts',
   publication: 'Pushes to screens',
+  invite: 'Invites',
+  membership: 'People',
   security: 'Security',
 };
 
@@ -55,9 +65,25 @@ export const AUDIT_CATEGORY_OPTIONS: readonly {
   (a, b) => a.label.localeCompare(b.label, 'en-AU'),
 );
 
-/** A category from the address bar; anything the API would refuse reads as "no filter". */
-export function parseAuditCategory(value: string | null | undefined): AuditCategory | null {
-  return AUDIT_CATEGORIES.find((category) => category === value) ?? null;
+/**
+ * The categories a member may filter by: every one with the full log (`audit.read`), else the
+ * activity categories the API returns without it (section 1.5).
+ */
+export function auditCategoryOptionsFor(fullLog: boolean): typeof AUDIT_CATEGORY_OPTIONS {
+  const visible = visibleAuditCategories(fullLog);
+  return AUDIT_CATEGORY_OPTIONS.filter((option) => visible.includes(option.value));
+}
+
+/**
+ * A category from the address bar; anything the API would refuse reads as "no filter", and so
+ * does a category outside the member's view (a bookmarked `?category=auth` without the full
+ * log shows the whole filtered log, not "No event matches").
+ */
+export function parseAuditCategory(
+  value: string | null | undefined,
+  fullLog = true,
+): AuditCategory | null {
+  return visibleAuditCategories(fullLog).find((category) => category === value) ?? null;
 }
 
 /** A result from the address bar; anything the API would refuse reads as "no filter". */
@@ -122,6 +148,8 @@ const CATEGORY_SUBJECTS: { readonly [K in AuditCategory]: string } = {
   schedule: 'Schedule',
   layout: 'Layout',
   publication: 'Push',
+  invite: 'Invite',
+  membership: 'Person',
   security: 'Security',
 };
 
@@ -238,9 +266,39 @@ export function auditTime(iso: string, timeZone?: string): AuditTime {
 
 /* ---------- Actor ---------- */
 
-/** Who acted, by kind: the same words as the recent-activity list. */
+/** Who acted, by kind: the same words as the recent-activity list ("Person", "System"). */
 export function auditActorLabel(actorType: AuditActorType): string {
-  return activityActorLabel(actorType);
+  return activityActorKindLabel(actorType);
+}
+
+export interface AuditActor {
+  /** The member's name, "Unnamed person", or the kind of actor when no name is known. */
+  readonly name: string;
+  /** The member was removed since; their name stays readable. */
+  readonly removed: boolean;
+  /** The member's name was changed after the event, so the event happened under another name. */
+  readonly renamed: boolean;
+}
+
+/** Who acted, named from the member list, with the marks the log shows next to the name. */
+export function auditActor(
+  event: Pick<AuditEventDto, 'actorType' | 'actorId' | 'occurredAt'>,
+  names: Pick<AuditNames, 'member'>,
+): AuditActor {
+  const member = activityActorMember(event, names.member);
+  const renamedAt =
+    member === null || member.renamedAt === null ? Number.NaN : Date.parse(member.renamedAt);
+  const occurredAt = Date.parse(event.occurredAt);
+  return {
+    name: activityActorLabel(event, names),
+    removed: member?.removed === true,
+    renamed: !Number.isNaN(renamedAt) && !Number.isNaN(occurredAt) && renamedAt > occurredAt,
+  };
+}
+
+/** "Dana Lee (removed) (renamed)": the name and its marks as one text. */
+export function auditActorText(actor: AuditActor): string {
+  return `${actor.name}${actor.removed ? ' (removed)' : ''}${actor.renamed ? ' (renamed)' : ''}`;
 }
 
 /** What the id next to an actor is, for the details view. */
@@ -264,7 +322,9 @@ const OBJECT_TYPE_LABELS: Readonly<Record<string, string>> = {
   publication: 'Publication',
   player_registration: 'Player',
   pairing: 'Pairing',
-  membership: 'Operator account',
+  membership: 'Person',
+  invite: 'Invite',
+  route: 'Request',
   session: 'Session',
 };
 
@@ -286,7 +346,15 @@ export function shortAuditId(id: string): string {
 
 /** The kinds of object the portal can name, and for most of them open. */
 export type AuditTargetKind =
-  'display' | 'media' | 'playlist' | 'tag' | 'folder' | 'app' | 'schedule' | 'layout';
+  | 'display'
+  | 'media'
+  | 'playlist'
+  | 'tag'
+  | 'folder'
+  | 'app'
+  | 'schedule'
+  | 'layout'
+  | 'membership';
 
 export interface AuditTarget {
   readonly kind: AuditTargetKind;
@@ -303,6 +371,7 @@ const TARGET_KINDS: readonly AuditTargetKind[] = [
   'app',
   'schedule',
   'layout',
+  'membership',
 ];
 
 const TARGET_LABELS: { readonly [K in AuditTargetKind]: string } = {
@@ -314,6 +383,7 @@ const TARGET_LABELS: { readonly [K in AuditTargetKind]: string } = {
   app: 'App',
   schedule: 'Schedule',
   layout: 'Layout',
+  membership: 'Person',
 };
 
 export function auditTargetLabel(kind: AuditTargetKind): string {
@@ -404,7 +474,7 @@ export function auditTagScope(detail: AuditEventDto['detail']): TagScope | null 
 
 /**
  * The portal address where an object can be opened; a folder opens the media library
- * filtered on it. A tag opens the tags page on its scope.
+ * filtered on it. A tag opens the tags page on its scope. A person has no page of their own.
  */
 export function auditTargetPath(
   target: AuditTarget,
@@ -429,10 +499,15 @@ export function auditTargetPath(
       return `/schedules/${id}`;
     case 'layout':
       return `/layouts/${id}`;
+    case 'membership':
+      return null;
   }
 }
 
-/** The names of the objects that exist now, by kind and id; and each tag's scope. */
+/**
+ * The names of the objects that exist now, by kind and id; each tag's scope; and every member
+ * of the organisation, removed ones included, by membership id (actors and people events).
+ */
 export interface AuditNames {
   readonly display: ReadonlyMap<string, string> | null;
   readonly media: ReadonlyMap<string, string> | null;
@@ -443,6 +518,7 @@ export interface AuditNames {
   readonly schedule: ReadonlyMap<string, string> | null;
   readonly layout: ReadonlyMap<string, string> | null;
   readonly tagScopes: ReadonlyMap<string, TagScope> | null;
+  readonly member: ReadonlyMap<string, MemberNameDto> | null;
 }
 
 export const NO_AUDIT_NAMES: AuditNames = {
@@ -455,6 +531,7 @@ export const NO_AUDIT_NAMES: AuditNames = {
   schedule: null,
   layout: null,
   tagScopes: null,
+  member: null,
 };
 
 export type ResolvedAuditTarget =
@@ -475,6 +552,13 @@ export function resolveAuditTarget(
   names: AuditNames,
   scopeHint: TagScope | null = null,
 ): ResolvedAuditTarget {
+  if (target.kind === 'membership') {
+    // Members are never deleted (a removed one keeps their row), so a missing id is unknown.
+    const member = names.member?.get(target.id);
+    return member === undefined
+      ? { state: 'unknown', path: null }
+      : { state: 'found', name: memberName(member), path: null };
+  }
   const list = names[target.kind];
   const scope = target.kind === 'tag' ? (names.tagScopes?.get(target.id) ?? scopeHint) : null;
   if (list === null) return { state: 'unknown', path: auditTargetPath(target, scope) };
@@ -625,7 +709,12 @@ export function auditDetailsButtonLabel(
  * the detail. The search covers the events loaded so far; older ones are loaded on request.
  */
 export function auditSearchTexts(event: AuditEventDto, names: AuditNames): string[] {
-  const texts = [auditActionLabel(event), event.action, auditActorLabel(event.actorType)];
+  const texts = [
+    auditActionLabel(event),
+    event.action,
+    auditActorLabel(event.actorType),
+    auditActorText(auditActor(event, names)),
+  ];
   const object = auditObjectText(event, names);
   if (object !== null) texts.push(object);
   for (const target of auditAllTargets(event)) {

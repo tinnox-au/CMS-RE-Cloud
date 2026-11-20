@@ -5,6 +5,7 @@ import {
   formatCount,
   screenCounters,
   screensNeedingAttention,
+  screensEmptyText,
   screensPath,
   type ScreenCounter,
 } from '../../lib/dashboard.ts';
@@ -24,13 +25,15 @@ import { ScreenStatusPill } from '../shared/index.ts';
 
 interface ScreensCardProps {
   readonly overview: LoadState<OverviewResponse>;
+  /** The role sets up screens (`screen.setup`): the empty card says what to do, else who does it. */
+  readonly canSetup: boolean;
 }
 
 /**
  * The screens by status: four cards across the page, each opening the screens list filtered
  * to its screens. The number of screens is the page subtitle.
  */
-export function ScreensCard({ overview }: ScreensCardProps) {
+export function ScreensCard({ overview, canSetup }: ScreensCardProps) {
   return (
     <section
       aria-labelledby="dashboard-screens-title"
@@ -50,7 +53,7 @@ export function ScreensCard({ overview }: ScreensCardProps) {
         (overview.data.displays.total === 0 ? (
           <Card>
             <EmptyState variant="inline" level={3} icon={Monitor} title="No screens yet">
-              Add a screen and pair its player. What the player reports then shows here.
+              {screensEmptyText(canSetup)}
             </EmptyState>
           </Card>
         ) : (

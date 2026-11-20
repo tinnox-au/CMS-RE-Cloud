@@ -4,10 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppConfig } from '../config.ts';
 import { createIdentityProvider, SIGNED_OUT_STATE } from './oidc.ts';
 
-// Discovery is replaced so no provider is needed; URL building stays the library's own.
+// Discovery and the token exchange are replaced so no provider is needed; URL building stays
+// the library's own.
 vi.mock('openid-client', async (importOriginal) => {
   const actual = await importOriginal<typeof oidc>();
-  return { ...actual, discovery: vi.fn() };
+  return { ...actual, discovery: vi.fn(), authorizationCodeGrant: vi.fn() };
 });
 
 const ISSUER = 'https://id.signage.example/realms/tinnox';
@@ -91,5 +92,71 @@ describe('endSessionUrl', () => {
 
   it('answers null when the provider has no end-session endpoint', async () => {
     expect(await providerWith({}).endSessionUrl('id.tok')).toBeNull();
+  });
+});
+
+describe('beginLogin', () => {
+  const AUTHORIZE = `${ISSUER}/protocol/openid-connect/auth`;
+
+  beforeEach(() => {
+    vi.mocked(oidc.discovery).mockReset();
+  });
+
+  it('asks the provider to sign the person in again when reauthenticate is set', async () => {
+    const begin = await providerWith({ authorization_endpoint: AUTHORIZE }).beginLogin({
+      reauthenticate: true,
+    });
+    const url = new URL(begin.url);
+    expect(`${url.origin}${url.pathname}`).toBe(AUTHORIZE);
+    expect(url.searchParams.get('prompt')).toBe('login');
+    expect(url.searchParams.has('max_age')).toBe(false);
+    expect(url.searchParams.get('state')).toBe(begin.state);
+  });
+
+  it('carries no prompt on a normal sign-in', async () => {
+    const provider = providerWith({ authorization_endpoint: AUTHORIZE });
+    for (const begin of [await provider.beginLogin(), await provider.beginLogin({})]) {
+      const url = new URL(begin.url);
+      expect(url.searchParams.has('prompt')).toBe(false);
+      expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    }
+  });
+});
+
+describe('completeLogin', () => {
+  const expected = { state: 'st', nonce: 'no', codeVerifier: 'cv' };
+
+  function tokensWith(claims: Record<string, unknown>) {
+    return {
+      claims: () => ({ iss: ISSUER, aud: 'tinnox-portal', iat: 1, exp: 2, ...claims }),
+      id_token: 'id.tok',
+    } as unknown as Awaited<ReturnType<typeof oidc.authorizationCodeGrant>>;
+  }
+
+  beforeEach(() => {
+    vi.mocked(oidc.discovery).mockReset();
+    vi.mocked(oidc.authorizationCodeGrant).mockReset();
+  });
+
+  it('maps auth_time to authTime in seconds', async () => {
+    vi.mocked(oidc.authorizationCodeGrant).mockResolvedValue(
+      tokensWith({ sub: 'subject-1', auth_time: 1_763_600_000 }),
+    );
+    const identity = await providerWith({}).completeLogin(
+      new URLSearchParams('code=c&state=st'),
+      expected,
+    );
+    expect(identity.sub).toBe('subject-1');
+    expect(identity.authTime).toBe(1_763_600_000);
+    expect(identity.idToken).toBe('id.tok');
+  });
+
+  it('gives a null authTime for a token without auth_time', async () => {
+    vi.mocked(oidc.authorizationCodeGrant).mockResolvedValue(tokensWith({ sub: 'subject-2' }));
+    const identity = await providerWith({}).completeLogin(
+      new URLSearchParams('code=c&state=st'),
+      expected,
+    );
+    expect(identity.authTime).toBeNull();
   });
 });

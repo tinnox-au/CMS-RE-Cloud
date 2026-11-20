@@ -17,6 +17,8 @@ export const FolderIdSchema = UuidSchema;
 export const AppIdSchema = UuidSchema;
 export const ScheduleIdSchema = UuidSchema;
 export const LayoutIdSchema = UuidSchema;
+export const MembershipIdSchema = UuidSchema;
+export const InviteIdSchema = UuidSchema;
 
 export type Uuid = z.infer<typeof UuidSchema>;
 export type OrgId = Uuid;
@@ -33,6 +35,8 @@ export type FolderId = Uuid;
 export type AppId = Uuid;
 export type ScheduleId = Uuid;
 export type LayoutId = Uuid;
+export type MembershipId = Uuid;
+export type InviteId = Uuid;
 
 /** ISO 8601 UTC timestamp, for example 2026-11-14T03:15:00.000Z. */
 export const UtcTimestampSchema = z.iso.datetime();

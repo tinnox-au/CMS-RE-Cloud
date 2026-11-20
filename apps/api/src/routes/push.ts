@@ -17,7 +17,8 @@ import {
   type PushResult,
 } from '@tinnox/contracts';
 import { withOrg, type Tx } from '@tinnox/db';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { withOrgAllowed } from '../auth/permissions.ts';
 import { operatorOf, type OperatorSession } from '../auth/session.ts';
 import { perMinute, type AppContext } from '../context.ts';
 import { iso } from '../db-helpers.ts';
@@ -83,13 +84,16 @@ export function registerPushRoutes(app: FastifyInstance, ctx: AppContext): void 
    * Pushes to one display, in its own transaction. The Idempotency-Key of the
    * request is reused per display under the same lock as publishing, so a
    * repeat of the request finds the publication it made and creates nothing.
+   * The member's role is checked again first in each transaction, before the key lock, so a
+   * demoted member's replay of the same key is refused too.
    */
   function pushDisplay(
+    request: FastifyRequest,
     session: OperatorSession,
     displayId: string,
     key: string,
   ): Promise<PushResult> {
-    return withOrg(pool, session.orgId, async (tx): Promise<PushResult> => {
+    return withOrgAllowed(ctx, request, async (tx): Promise<PushResult> => {
       await lockPublishKey(tx, displayId, key);
       // Checked before anything else, so a repeat answers as the first call did
       // even when the display would by now count as up to date.
@@ -176,15 +180,19 @@ export function registerPushRoutes(app: FastifyInstance, ctx: AppContext): void 
 
       // One display after another: each is its own transaction on one connection, so a
       // large push cannot take the whole pool, and a rejection does not undo the others.
+      // shortcut: a push refused part-way (the role was lowered, or the member's sessions were
+      // ended, during this loop) answers 403 or 401 without the results so far: screens
+      // already pushed stay pushed and their publication.create rows record it. Return
+      // per-screen results with a 'refused' outcome if people ask what happened.
       const results: PushResult[] = [];
       for (const displayId of displayIds) {
         try {
-          results.push(await pushDisplay(session, displayId, key));
+          results.push(await pushDisplay(request, session, displayId, key));
         } catch (error) {
           const pg = pgErrorCode(error);
           if (pg === '23505') {
             // Lost a race the advisory lock should already prevent; the winner's row is returned.
-            results.push(await pushDisplay(session, displayId, key));
+            results.push(await pushDisplay(request, session, displayId, key));
           } else if (pg === '23503') {
             // Displays pushed so far keep their publications; a repeat with the same
             // Idempotency-Key returns them and carries on with the rest.

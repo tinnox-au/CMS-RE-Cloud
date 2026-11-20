@@ -36,7 +36,7 @@ Exit criteria: acceptance tests PRV-01, PRV-05, MED-01, MED-02, MED-03, PL-01, S
 
 | ID | Story | Size | Spec | Tests |
 |---|---|---|---|---|
-| B1 | Operations console: create customer, site (IANA zone picker limited to Australian zones plus territories; canonical names only, offsets computed per date, aliases accepted on input and stored as the canonical name, `Etc/*` rejected (spec section 11 rule 8); no New Zealand in release 1, Q6), first admin user | S | 7.1, 11 | E2E-04, SCH-11 |
+| B1 | Operations console: create customer, site (IANA zone picker limited to Australian zones plus territories; canonical names only, offsets computed per date, aliases accepted on input and stored as the canonical name, `Etc/*` rejected (spec section 11 rule 8); no New Zealand in release 1, Q6), first Owner (one or two) | S | 7.1, 11 | E2E-04, SCH-11 |
 | B2 | Canvas profiles: global and per-customer, width, height, orientation, default fit, safe margins; change confirmation | S | 5, 6.10 | PRV-05, PRV-06 |
 | B3 | Device registration by pairing code (6 characters, 15-minute expiry, regeneration), device credential issue and hardware binding; registration beyond licensed seats refused (N3) | M | 7.2 | PRV-01, PRV-02, ISO-10 |
 | B4 | Pre-provisioning by claim token in the player image; replace device behind a display | S | 7.2 | PRV-03, PRV-07 |
@@ -101,7 +101,9 @@ Exit criteria: acceptance tests PRV-01, PRV-05, MED-01, MED-02, MED-03, PL-01, S
 | ID | Story | Size | Spec | Tests |
 |---|---|---|---|---|
 | H1 | Support grants (B+). A SupportGrant object. The operator raises a request with a reason and ticket number; a customer Admin or Owner approves it in one click or grants proactively. Scope view-only or edit. Expiry 24 hours by default, 7 days at most; renewal is explicit. Revocation ends active sessions at once. Optional pre-authorised 24-hour self-grant, logged and e-mailed to admins. Optional standing access, Managed plan only, re-confirmed every 12 months. Break-glass with dual approval (operator and manager), reason and incident number, 2-hour limit, customer notified at once by e-mail and in the portal, review within 5 working days and a monthly report. Device-operations scope stays on under the contract and cannot read media, playlists, schedules or users. Every session: named operator with MFA, portal banner, dual audit, e-mail to the customer's admins when it starts (PROPOSED, R2; R99 C4; TINNOX approval pending, Q-T6) | L | 7.6, 8, 10 items 5 and 8 | ISO-07 to ISO-09, ISO-12 to ISO-16 |
-| H2 | Customer user management: invite, roles, site scoping, ownership transfer | M | 6.10, 8 | ISO-05, ISO-06 |
+| H2 | Customer user management: four nested roles (Owner, Admin, Editor, Viewer), invite requests that TINNOX completes in the pilot, role changes, name correction, sign out everywhere, removal (CMS-13, DEC-35). No transfer action: ownership is handed over by promotion (D1 a) | M | 6.10, 8 | ISO-05 |
+| H2b | Site scoping of a customer user (deferred, DEC-35) | M | 6.10, 8 | ISO-06 |
+| H2c | Several organisations per person (agency case; deferred, DEC-35) | M | 8 | |
 | H3 | Customer deletion with purge job and report | S | 10.6 | ISO-11 |
 
 ### Epic I: Android player (P1)

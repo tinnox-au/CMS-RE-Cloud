@@ -3,15 +3,35 @@
 --
 -- Run as the database superuser (or as tinnox_migrator, which may SET ROLE
 -- tinnox_definer), with psql -v ON_ERROR_STOP=1 -v subject='<oidc subject>'.
--- End the user's sessions at the identity provider too, or they sign straight back in.
+-- It also sets the member's cut-off, so a browser still signed in at the identity provider
+-- must enter the password and one-time code again. End the user's sessions at the identity
+-- provider too.
 --
--- Sessions are marked revoked rather than deleted, so they stay as evidence. Each
--- membership that had a live session gets one audit event in the same transaction.
+-- Sessions are marked revoked rather than deleted, so they stay as evidence. In the same
+-- transaction the membership gets one membership.sessions_end audit event (also when it had no
+-- live session), and each membership that had a live session one auth.logout event.
 
 BEGIN;
--- Exactly the rights of the security functions' owner: UPDATE on session, INSERT on
--- audit_event, and past row-level security on the non-tenant session table.
+-- Exactly the rights of the security functions' owner: UPDATE on session and on the member's
+-- cut-off, INSERT on audit_event, and past row-level security on every table.
 SET LOCAL ROLE tinnox_definer;
+
+-- The member row first, in a statement of its own, as the API does. The cut-off is then taken
+-- after any wait for the row, so a sign-in authenticated during that wait is refused too.
+SELECT 1 AS locked FROM public.membership WHERE oidc_sub = :'subject' FOR NO KEY UPDATE;
+
+-- The cut-off (0013, the definer's UPDATE (sessions_valid_after) grant): sessions created, and
+-- sign-ins authenticated, before it are refused. greatest() never moves an existing one back.
+-- clock_timestamp(): a file sent as one message gives every statement one statement_timestamp().
+WITH cut AS (
+  UPDATE public.membership SET sessions_valid_after = greatest(sessions_valid_after, clock_timestamp())
+  WHERE oidc_sub = :'subject'
+  RETURNING id, org_id
+)
+INSERT INTO public.audit_event (org_id, actor_type, actor_id, action, object_type, object_id, result, detail)
+SELECT cut.org_id, 'system', NULL, 'membership.sessions_end', 'membership', cut.id::text, 'success',
+       jsonb_build_object('reason', 'incident_revocation')
+FROM cut;
 
 WITH ended AS (
   UPDATE public.session s

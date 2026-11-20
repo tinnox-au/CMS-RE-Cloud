@@ -173,9 +173,9 @@ beforeAll(async () => {
   migrator = await migratorClient();
   pool = appPool(2);
   db = poolAsTx(pool);
-  a = await createOrg(migrator, 'Upgrade A');
-  b = await createOrg(migrator, 'Upgrade B');
-  c = await createOrg(migrator, 'Upgrade C');
+  a = await createOrg(migrator, 'Upgrade A', { role: 'operator' });
+  b = await createOrg(migrator, 'Upgrade B', { role: 'operator' });
+  c = await createOrg(migrator, 'Upgrade C', { role: 'operator' });
 
   firstOfTwo = await legacyClaim(a, '5 minutes');
   // Longer than the default code lifetime of ten minutes: the lifetime is configurable.

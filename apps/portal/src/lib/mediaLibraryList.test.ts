@@ -115,6 +115,13 @@ describe('media library wording', () => {
     expect(mediaFailureText(media(3, 'video', { status: 'failed' }))?.message).toBe(
       'The file was rejected. No reason was recorded.',
     );
+    // A role that cannot upload is told what went wrong, not to re-encode and upload.
+    expect(
+      mediaFailureText(
+        media(4, 'video', { status: 'failed', errorCode: 'unsupported_codec' }),
+        true,
+      )?.message,
+    ).toBe('The video codec is not supported.');
   });
 
   it('dates the Modified column, with the year only when it differs', () => {

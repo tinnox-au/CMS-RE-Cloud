@@ -1,4 +1,4 @@
-import { isApiRequestError } from '../api/client.ts';
+import { isApiRequestError, isRoleRefusal } from '../api/client.ts';
 import { Banner } from './Banner.tsx';
 import { Button } from './Button.tsx';
 import { RefreshCw } from './icons.ts';
@@ -8,7 +8,7 @@ export interface ErrorNoticeProps {
   readonly error: unknown;
   /** What did not happen: "The playlist could not be loaded". */
   readonly title?: string;
-  /** Adds a "Try again" button. */
+  /** Adds a "Try again" button, except after a refusal by role (trying again changes nothing). */
   readonly onRetry?: () => void;
   /** Adds a close button, for an error that is about one finished attempt. */
   readonly onDismiss?: () => void;
@@ -32,7 +32,7 @@ export function ErrorNotice({ error, title, onRetry, onDismiss, className }: Err
       className={className}
       onDismiss={onDismiss}
       actions={
-        onRetry === undefined ? undefined : (
+        onRetry === undefined || isRoleRefusal(error) ? undefined : (
           <Button size="sm" icon={RefreshCw} onClick={onRetry}>
             Try again
           </Button>

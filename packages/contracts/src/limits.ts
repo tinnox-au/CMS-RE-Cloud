@@ -118,6 +118,8 @@ export const ABSOLUTE = Object.freeze({
   maxPushDisplays: 200,
   /** Rows in a list response that has no paging; the portal refuses a longer list. */
   maxListItems: 10_000,
+  /** Pending invites per organisation. Checked under the membership lock by `POST /api/invites`. */
+  maxPendingInvites: 100,
   maxHeartbeatErrors: 10,
   maxErrorMessageLength: 300,
   maxHeartbeatBodyBytes: 16 * 1024,

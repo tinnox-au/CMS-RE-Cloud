@@ -623,6 +623,8 @@ describe('forced row-level security after migration 0005', () => {
         // 0011, applied with the rest.
         'layout',
         'layout_zone',
+        // 0013, applied with the rest.
+        'member_invite',
         'session',
         'site',
         'tag',

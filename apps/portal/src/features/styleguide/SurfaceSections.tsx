@@ -24,6 +24,7 @@ import {
   Tooltip,
 } from '../../ui/index.ts';
 import {
+  AudioLines,
   CalendarDays,
   Copy,
   Monitor,
@@ -31,7 +32,6 @@ import {
   RefreshCw,
   Send,
   TriangleExclamationPoint,
-  Users,
 } from '../../ui/icons.ts';
 import { DEMO_STORAGE, useDemoArt } from './demoData.ts';
 import { Demo, Section } from './Section.tsx';
@@ -199,8 +199,8 @@ export function SurfaceSection() {
         note="A planned section says in one sentence what it will do and when. It has no controls."
       >
         <Card flush>
-          <EmptyState variant="inline" icon={Users} title="Users are planned">
-            People and their roles will be managed here. They arrive with stage C.
+          <EmptyState variant="inline" icon={AudioLines} title="Audio is planned">
+            Audio files will be added and played here in a later stage.
           </EmptyState>
         </Card>
       </Demo>

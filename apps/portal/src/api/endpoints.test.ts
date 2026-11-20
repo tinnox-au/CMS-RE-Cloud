@@ -5,9 +5,12 @@ import {
   type DeliveryStatusView,
   type DisplayDto,
   type FolderDto,
+  type InviteDto,
   type LayoutDto,
   type LayoutInput,
   type MediaDto,
+  type MemberDto,
+  type MemberNameDto,
   type OverviewResponse,
   type PlaylistDto,
   type PlaylistSummaryDto,
@@ -18,6 +21,7 @@ import {
   type ScheduleSummaryDto,
   type TagDto,
 } from '@tinnox/contracts';
+import { permissionsOf } from '@tinnox/domain';
 import { describe, expect, it } from 'vitest';
 import { ApiRequestError, createApiClient, type FetchLike } from './client.ts';
 import { createEndpoints, type Endpoints } from './endpoints.ts';
@@ -34,6 +38,9 @@ const PUBLICATION = '77777777-7777-4777-8777-777777777777';
 const SITE = '88888888-8888-4888-8888-888888888888';
 const SCHEDULE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const LAYOUT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const MEMBER = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const SELF = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const INVITE = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const AT = '2026-11-15T03:00:00.000Z';
 const CSRF = 'csrf-token-aaaaaaaaaaaaaaaaaaaa';
 const ATTEMPT_ID = 'push-attempt-0001';
@@ -191,6 +198,29 @@ const clock = app(7);
 
 const summaryRef = { id: PLAYLIST, name: 'Reception loop' };
 
+const memberDto: MemberDto = {
+  id: MEMBER,
+  displayName: 'Dana Lee',
+  role: 'editor',
+  firstSignedInAt: AT,
+  removedAt: null,
+};
+const memberName: MemberNameDto = {
+  id: MEMBER,
+  displayName: 'Dana Lee',
+  removed: false,
+  renamedAt: null,
+};
+const invite: InviteDto = {
+  id: INVITE,
+  name: 'Ari Park',
+  email: 'ari@example.com',
+  role: 'viewer',
+  invitedBy: SELF,
+  createdAt: AT,
+  expiresAt: '2026-11-29T03:00:00.000Z',
+};
+
 const pushPlan: PushPlanResponse = {
   items: [
     {
@@ -277,7 +307,12 @@ async function harness(
         new Response(
           JSON.stringify({
             authenticated: true,
-            user: { displayName: 'Test Operator', role: 'operator' },
+            user: {
+              membershipId: SELF,
+              displayName: 'Test person',
+              role: 'owner',
+              permissions: permissionsOf('owner'),
+            },
             organization: { id: ORG, name: 'Test Organisation' },
             csrfToken: CSRF,
             expiresAt: AT,
@@ -369,6 +404,14 @@ describe('endpoints: reads', () => {
       [ROUTES.layout(LAYOUT), layout, (api) => api.getLayout(LAYOUT, signal), layout],
       [ROUTES.push, pushPlan, (api) => api.getPushPlan(signal), pushPlan],
       [ROUTES.overview, overview, (api) => api.getOverview(signal), overview],
+      [ROUTES.members, { items: [memberDto] }, (api) => api.listMembers(signal), [memberDto]],
+      [
+        ROUTES.memberNames,
+        { items: [memberName] },
+        (api) => api.listMemberNames(signal),
+        [memberName],
+      ],
+      [ROUTES.invites, { items: [invite] }, (api) => api.listInvites(signal), [invite]],
     ];
     for (const [path, body, call, expected] of cases) {
       const { api, calls } = await harness(body);
@@ -581,6 +624,46 @@ describe('endpoints: changes', () => {
         (api) => api.createPlaylist('New loop'),
         { id: PLAYLIST },
       ],
+      [
+        'POST',
+        ROUTES.invites,
+        { name: 'Ari Park', email: 'ari@example.com', role: 'viewer' },
+        invite,
+        (api) => api.createInvite({ name: 'Ari Park', email: 'ari@example.com', role: 'viewer' }),
+        invite,
+      ],
+      [
+        'PATCH',
+        ROUTES.member(MEMBER),
+        { role: 'viewer' },
+        { member: { ...memberDto, role: 'viewer' }, sessionsEnded: 2, invitesCancelled: 1 },
+        (api) => api.patchMember(MEMBER, { role: 'viewer' }),
+        { member: { ...memberDto, role: 'viewer' }, sessionsEnded: 2, invitesCancelled: 1 },
+      ],
+      [
+        'PATCH',
+        ROUTES.member(MEMBER),
+        { displayName: 'Dana Li' },
+        { member: { ...memberDto, displayName: 'Dana Li' }, sessionsEnded: 0, invitesCancelled: 0 },
+        (api) => api.patchMember(MEMBER, { displayName: 'Dana Li' }),
+        { member: { ...memberDto, displayName: 'Dana Li' }, sessionsEnded: 0, invitesCancelled: 0 },
+      ],
+      [
+        'POST',
+        ROUTES.memberRemove(MEMBER),
+        undefined,
+        { member: { ...memberDto, removedAt: AT }, sessionsEnded: 1, invitesCancelled: 0 },
+        (api) => api.removeMember(MEMBER),
+        { member: { ...memberDto, removedAt: AT }, sessionsEnded: 1, invitesCancelled: 0 },
+      ],
+      [
+        'POST',
+        ROUTES.memberSignOut(MEMBER),
+        undefined,
+        { sessionsEnded: 3 },
+        (api) => api.signOutMember(MEMBER),
+        { sessionsEnded: 3 },
+      ],
     ];
     for (const [method, path, sent, answer, call, expected] of cases) {
       const what = `${method} ${path}`;
@@ -613,6 +696,31 @@ describe('endpoints: changes', () => {
       expect(calls[0]?.body).toBeUndefined();
       expect(calls[0]?.headers[HEADERS.csrf]).toBe(CSRF);
     }
+  });
+
+  it('cancels an invite with POST and the CSRF token, and accepts an empty 204', async () => {
+    const { api, calls } = await harness(null, 204);
+    await expect(api.cancelInvite(INVITE)).resolves.toBeUndefined();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.method).toBe('POST');
+    expect(calls[0]?.path).toBe(ROUTES.inviteCancel(INVITE));
+    expect(calls[0]?.body).toBeUndefined();
+    expect(calls[0]?.headers[HEADERS.csrf]).toBe(CSRF);
+  });
+
+  it('reports the last-Owner refusal with its own code', async () => {
+    const { api } = await harness(
+      {
+        error: {
+          code: 'last_owner',
+          message: 'An organisation always keeps at least one Owner.',
+        },
+      },
+      409,
+    );
+    const error = await rejection(api.patchMember(MEMBER, { role: 'viewer' }));
+    expect(error.status).toBe(409);
+    expect(error.code).toBe('last_owner');
   });
 
   it('reports the refusal of a delete with the API code', async () => {
@@ -837,6 +945,37 @@ describe('endpoints: answers the portal must not trust', () => {
         { playlists: [PLAYLIST], displays: [] },
         (api) => api.getMediaUsage(MEDIA),
       ],
+      // Members never carry an e-mail address (D3).
+      [
+        'a member with an e-mail address',
+        { items: [{ ...memberDto, email: 'dana@example.com' }] },
+        (api) => api.listMembers(),
+      ],
+      [
+        'a changed member with an e-mail address',
+        {
+          member: { ...memberDto, email: 'dana@example.com' },
+          sessionsEnded: 0,
+          invitesCancelled: 0,
+        },
+        (api) => api.removeMember(MEMBER),
+      ],
+      [
+        'a member with the old operator role',
+        { items: [{ ...memberDto, role: 'operator' }] },
+        (api) => api.listMembers(),
+      ],
+      [
+        'a member name with a role',
+        { items: [{ ...memberName, role: 'editor' }] },
+        (api) => api.listMemberNames(),
+      ],
+      [
+        'an invite for an Owner',
+        { items: [{ ...invite, role: 'owner' }] },
+        (api) => api.listInvites(),
+      ],
+      ['a sign-out answer without a count', {}, (api) => api.signOutMember(MEMBER)],
     ];
     for (const [what, body, call] of cases) {
       const { api } = await harness(body);
@@ -850,5 +989,10 @@ describe('endpoints: answers the portal must not trust', () => {
     const { api, last } = await harness(null, 204);
     await api.deleteTag('../playlists/x?y=1');
     expect(last().path).toBe(`${ROUTES.tags}/..%2Fplaylists%2Fx%3Fy%3D1`);
+    await api.cancelInvite('../members/x');
+    expect(last().path).toBe('/api/invites/..%2Fmembers%2Fx/cancel');
+    const people = await harness({ sessionsEnded: 0 });
+    await people.api.signOutMember('../invites');
+    expect(people.last().path).toBe('/api/members/..%2Finvites/sign-out');
   });
 });

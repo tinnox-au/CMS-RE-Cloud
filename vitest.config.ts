@@ -31,6 +31,7 @@ export default defineConfig({
         test: {
           name: 'component',
           include: ['apps/portal/src/**/*.test.tsx'],
+          setupFiles: ['./apps/portal/src/componentTests.setup.ts'],
           browser: {
             enabled: true,
             provider: playwright(),

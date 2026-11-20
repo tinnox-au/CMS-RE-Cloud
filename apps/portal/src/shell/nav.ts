@@ -3,6 +3,7 @@
  * the account menu list, in order, and the pure rules that decide which entry is current.
  * No DOM and no React here; `Sidebar.tsx` and `AccountMenu.tsx` render it.
  */
+import type { PermissionKey } from '@tinnox/contracts';
 import {
   AudioLines,
   Blocks,
@@ -39,6 +40,8 @@ export interface NavLinkItem {
   readonly icon: IconComponent;
   /** The page behind the entry is a Planned page: the entry carries a "Planned" pill. */
   readonly planned?: boolean;
+  /** Shown only to a member whose role holds this key (the renderer filters). */
+  readonly permission?: PermissionKey;
 }
 
 export interface NavGroupItem {
@@ -104,7 +107,14 @@ export const FOOTER_NAV: readonly NavLinkItem[] = [
 /** Account menu, above "Sign out". */
 export const ACCOUNT_NAV: readonly NavLinkItem[] = [
   { kind: 'link', id: 'account-settings', label: 'Settings', to: '/settings', icon: Settings },
-  { kind: 'link', id: 'account-users', label: 'Users', to: '/users', icon: Users, planned: true },
+  {
+    kind: 'link',
+    id: 'account-users',
+    label: 'Users',
+    to: '/users',
+    icon: Users,
+    permission: 'member.read',
+  },
   { kind: 'link', id: 'account-audit', label: 'Audit log', to: '/audit', icon: ScrollText },
 ];
 

@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { isRoleRefusal } from '../../api/client.ts';
 import { api } from '../../api/index.ts';
 import {
   bulkFailureTitle,
@@ -50,6 +51,8 @@ export interface MoveToFolderDialogProps {
    * items and where they went (null is the root), before the dialog closes. Reload the list here.
    */
   readonly onMoved?: (movedIds: readonly string[], folderId: string | null) => void;
+  /** False when the role may not create folders: no "New folder". Default true. */
+  readonly allowCreate?: boolean;
   /** Default `shared-move-dialog`. */
   readonly testId?: string;
 }
@@ -103,6 +106,7 @@ export function MoveToFolderDialog({
   items,
   folders,
   onMoved,
+  allowCreate = true,
   testId = 'shared-move-dialog',
 }: MoveToFolderDialogProps) {
   const toast = useToast();
@@ -172,8 +176,12 @@ export function MoveToFolderDialog({
     void run(toMove, target, null);
   };
 
+  // A refusal by role is the same for every item and every retry: only Close is left.
+  const roleRefused =
+    phase.kind === 'failed' && phase.outcome.failed.some((failure) => isRoleRefusal(failure.error));
+
   const retry = () => {
-    if (phase.kind !== 'failed' || target === undefined) return;
+    if (phase.kind !== 'failed' || roleRefused || target === undefined) return;
     void run(
       phase.outcome.failed.map((failure) => failure.item),
       target,
@@ -211,9 +219,11 @@ export function MoveToFolderDialog({
         phase.kind === 'failed' ? (
           <>
             <Button onClick={onClose}>Close</Button>
-            <Button variant="primary" onClick={retry} data-testid={`${testId}-retry`}>
-              Try again
-            </Button>
+            {!roleRefused && (
+              <Button variant="primary" onClick={retry} data-testid={`${testId}-retry`}>
+                Try again
+              </Button>
+            )}
           </>
         ) : (
           <>
@@ -326,7 +336,7 @@ export function MoveToFolderDialog({
             {query.trim() !== '' && shown.length === 0 && (
               <p className="tx-small tx-muted">No folder matches the search.</p>
             )}
-            {creating ? (
+            {!allowCreate ? null : creating ? (
               <NewFolderForm
                 folders={folders}
                 testId={`${testId}-new-form`}

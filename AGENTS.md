@@ -13,14 +13,14 @@ Report findings as Critical, High, Medium, Low or Observation. Cite `path:line` 
 The roles are created in `infra/postgres/init/01-roles.sh`.
 
 - `tinnox_app` is the only runtime role. It has no superuser, no `BYPASSRLS` and owns nothing. Flag any runtime code that connects as another role, any grant that lets `tinnox_app` own, alter or bypass RLS on a table, and any widening of its grants beyond what a feature needs. `audit_event` stays `INSERT` and `SELECT` only.
-- `tinnox_migrator` owns the schema and only runs migrations (`packages/db/src/migrate.ts` refuses any other `current_user`). Its credentials never reach the API, the media worker or the player.
-- `tinnox_definer` cannot log in, has `BYPASSRLS`, and only owns the narrow `sec.*` `SECURITY DEFINER` functions that must read before the organisation is known (session, device token, pairing). Every new or changed `sec.*` function must pin `search_path`, take only what it needs, return the minimum, and be granted `EXECUTE` to `tinnox_app` only. A new cross-organisation read is High until justified.
+- `tinnox_migrator` owns the schema and only runs migrations (`packages/db/src/migrate.ts`) and TINNOX's provisioning script (`scripts/provision-member.ts`) from a controlled host; both refuse any other role. Its credentials, and the provisioning reader secret, never reach the API, the media worker or the player.
+- `tinnox_definer` cannot log in, has `BYPASSRLS`, and only owns the narrow `sec.*` `SECURITY DEFINER` functions that must read before the organisation is known (session, device token, pairing). Every new or changed `sec.*` function must pin `search_path`, take only what it needs, return the minimum, and be granted `EXECUTE` to `tinnox_app` only. Migration 0013 grants it `UPDATE (first_signed_in_at, sessions_valid_after)` on `membership`, which its `sec.*` functions write. It also grants a read of `member_invite` and `UPDATE (status)` on it. Only `provision-member` uses these, under `SET LOCAL ROLE tinnox_definer`; no `sec.*` function does. A new cross-organisation read is High until justified.
 
 ### 2. Tenant isolation
 
 - Every tenant query runs inside `withOrg` (`packages/db/src/tx.ts`), which sets `app.org_id` for that transaction only. `withoutOrg` and `poolAsTx` are only for `sec.*` calls before the organisation is known. Flag any tenant query outside `withOrg`.
 - The organisation id comes from the verified session membership or the device credential, never from a path, query, body or header. Flag any route that reads an `orgId` or `org_id` from the request.
-- Every new tenant table has `ENABLE` and `FORCE ROW LEVEL SECURITY`, policies keyed on `app.org_id`, and composite `(org_id, id)` foreign keys to other tenant tables. Cross-organisation ids answer 404, never 403. Each new table or route gets a case in `packages/db/test/rls.integration.test.ts` or `tests/integration/cross-org.test.ts`.
+- Every new tenant table has `ENABLE` and `FORCE ROW LEVEL SECURITY`, policies keyed on `app.org_id`, and composite `(org_id, id)` foreign keys to other tenant tables. Cross-organisation ids answer 404, never 403. A refusal by role is decided before any lookup and is the same 403 for every id (DEC-35). Each new table or route gets a case in `packages/db/test/rls.integration.test.ts` or `tests/integration/cross-org.test.ts`.
 - Media, signed URLs, publications and player endpoints are tenant data too: check that a signed URL or device token for one organisation cannot reach another's objects.
 
 ### 3. Audit record in the same transaction as the change

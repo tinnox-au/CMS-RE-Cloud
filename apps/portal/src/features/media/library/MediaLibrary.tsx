@@ -42,7 +42,7 @@ import {
 } from '../../../lib/mediaName.ts';
 import type { RowDeleteMode } from '../../../lib/rowFocus.ts';
 import { pruneSelection, selectedRows, setMany } from '../../../lib/selection.ts';
-import { useSession } from '../../../session/SessionContext.tsx';
+import { useCan, useSession } from '../../../session/AuthenticatedSession.tsx';
 import { Page } from '../../../shell/Page.tsx';
 import {
   CloudUpload,
@@ -129,6 +129,9 @@ function pollWhileProcessing(list: MediaListResponse): number | null {
 const NO_MEDIA: readonly MediaDto[] = [];
 const NONE_SELECTED: ReadonlySet<string> = new Set();
 
+/** Takes a file drop and does nothing with it: the browser must not open the file instead. */
+const IGNORE_FILES = (): void => undefined;
+
 /**
  * The media library (docs/portal-v2/stage-a.md, section 3.2): every file of the
  * organisation, or only its images or videos, with search, folder, tag and status filters
@@ -138,6 +141,11 @@ const NONE_SELECTED: ReadonlySet<string> = new Set();
  */
 export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
   const { limits } = useSession();
+  const canWrite = useCan('content.write');
+  const canDeleteMedia = useCan('media.delete');
+  const canDeleteFolder = useCan('content.delete');
+  // Selection and the row menu exist only while one of their actions is left.
+  const canSelect = canWrite || canDeleteMedia;
   const toast = useToast();
   const { query, change, replace } = useLibraryQuery();
   const tags = useTags('media');
@@ -177,7 +185,8 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
     },
     [queue],
   );
-  const dragging = useFileDrop(openAdd);
+  // Stays mounted without content.write, so a dropped file never makes the browser leave.
+  const dragging = useFileDrop(canWrite ? openAdd : IGNORE_FILES);
 
   const closeAdd = () => {
     carriedOn.current = uploads.active > 0;
@@ -266,17 +275,29 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
   const rowMenu = (media: MediaDto) => (
     <MediaRowMenu
       media={media}
-      onAddToPlaylist={setPlaylistTarget}
-      onMove={(target) => {
-        setMoveTarget([target]);
-      }}
-      onEditTags={(target) => {
-        setTagTarget([target]);
-      }}
-      onDelete={(target) => {
-        setDeleteMode('row');
-        setDeleteTargets([target]);
-      }}
+      onAddToPlaylist={canWrite ? setPlaylistTarget : undefined}
+      onMove={
+        canWrite
+          ? (target) => {
+              setMoveTarget([target]);
+            }
+          : undefined
+      }
+      onEditTags={
+        canWrite
+          ? (target) => {
+              setTagTarget([target]);
+            }
+          : undefined
+      }
+      onDelete={
+        canDeleteMedia
+          ? (target) => {
+              setDeleteMode('row');
+              setDeleteTargets([target]);
+            }
+          : undefined
+      }
     />
   );
 
@@ -302,7 +323,7 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
           media={<MediaThumb media={media} size="sm" />}
           meta={
             media.status === 'failed' ? (
-              <MediaFailureNote media={media} />
+              <MediaFailureNote media={media} readOnly={!canWrite} />
             ) : summaryLine(media) === '' ? undefined : (
               <span className="tx-media-library__summary">{summaryLine(media)}</span>
             )
@@ -360,19 +381,20 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
     },
   ];
 
-  const addButton = (size: 'md' | 'lg') => (
-    <Button
-      variant="primary"
-      size={size}
-      icon={Plus}
-      onClick={() => {
-        openAdd();
-      }}
-      data-testid="media-library-add"
-    >
-      Add media
-    </Button>
-  );
+  const addButton = (size: 'md' | 'lg') =>
+    canWrite ? (
+      <Button
+        variant="primary"
+        size={size}
+        icon={Plus}
+        onClick={() => {
+          openAdd();
+        }}
+        data-testid="media-library-add"
+      >
+        Add media
+      </Button>
+    ) : undefined;
 
   const empty = () => {
     const which = libraryEmptyState({
@@ -395,8 +417,9 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
       case 'library_empty':
         return (
           <EmptyState variant="inline" icon={Images} title="No media yet" action={addButton('md')}>
-            Upload an image or a video to start building a playlist. You can also drop files
-            anywhere on this page.
+            {canWrite
+              ? 'Upload an image or a video to start building a playlist. You can also drop files anywhere on this page.'
+              : 'An editor adds media.'}
           </EmptyState>
         );
       case 'kind_empty':
@@ -407,9 +430,11 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
             title={`No ${libraryNoun(kind, 2)} yet`}
             action={addButton('md')}
           >
-            {kind === 'video'
-              ? 'Upload an MP4 video (H.264) and it appears here once the server has checked it.'
-              : 'Upload a JPEG or PNG image and it appears here once the server has checked it.'}
+            {!canWrite
+              ? 'An editor adds media.'
+              : kind === 'video'
+                ? 'Upload an MP4 video (H.264) and it appears here once the server has checked it.'
+                : 'Upload a JPEG or PNG image and it appears here once the server has checked it.'}
           </EmptyState>
         );
       case 'folder_missing':
@@ -431,7 +456,9 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
             title={`No ${libraryNoun(kind, 2)} in this folder`}
             action={clear('Show all folders')}
           >
-            Choose files in the library and use Move to folder to put them here.
+            {canWrite
+              ? 'Choose files in the library and use Move to folder to put them here.'
+              : undefined}
           </EmptyState>
         );
       case 'no_match':
@@ -531,7 +558,7 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
               testId="media-library-tag-filter"
             />
           </div>
-          <div className="tx-filter-row__end">{addButton('md')}</div>
+          {canWrite && <div className="tx-filter-row__end">{addButton('md')}</div>}
         </div>
 
         <div className="tx-media-library__browse">
@@ -542,13 +569,21 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
             onChange={(folder) => {
               change({ folder });
             }}
-            onCreate={() => {
-              setFolderName({ mode: 'create' });
-            }}
-            onRename={(folder) => {
-              setFolderName({ mode: 'rename', folder });
-            }}
-            onDelete={setFolderToDelete}
+            onCreate={
+              canWrite
+                ? () => {
+                    setFolderName({ mode: 'create' });
+                  }
+                : undefined
+            }
+            onRename={
+              canWrite
+                ? (folder) => {
+                    setFolderName({ mode: 'rename', folder });
+                  }
+                : undefined
+            }
+            onDelete={canDeleteFolder ? setFolderToDelete : undefined}
           />
           <div className="tx-media-library__view">
             {/*
@@ -661,12 +696,16 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
             onSortChange={(sort) => {
               change({ sort });
             }}
-            selection={{
-              selected,
-              onChange: setChosen,
-              rowLabel: (media) => mediaDisplayName(media),
-            }}
-            rowActions={rowMenu}
+            selection={
+              canSelect
+                ? {
+                    selected,
+                    onChange: setChosen,
+                    rowLabel: (media) => mediaDisplayName(media),
+                  }
+                : undefined
+            }
+            rowActions={canSelect ? rowMenu : undefined}
             rowTestId={(media) => `media-library-row-${media.id}`}
             loading={loading || refreshing}
             empty={ready ? empty() : undefined}
@@ -697,17 +736,21 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
                         <span className="tx-media-library__tile-caption">{tileCaption(media)}</span>
                         {media.status !== 'ready' && <MediaStatusPill media={media} />}
                       </span>
-                      <MediaFailureNote media={media} compact />
+                      <MediaFailureNote media={media} compact readOnly={!canWrite} />
                     </span>
                   }
-                  actions={rowMenu(media)}
-                  selection={{
-                    selected: selected.has(media.id),
-                    label: mediaDisplayName(media),
-                    onChange: (on) => {
-                      setChosen(setMany(selected, [media.id], on));
-                    },
-                  }}
+                  actions={canSelect ? rowMenu(media) : undefined}
+                  selection={
+                    canSelect
+                      ? {
+                          selected: selected.has(media.id),
+                          label: mediaDisplayName(media),
+                          onChange: (on) => {
+                            setChosen(setMany(selected, [media.id], on));
+                          },
+                        }
+                      : undefined
+                  }
                   testId={`media-library-tile-${media.id}`}
                 />
               ))}
@@ -716,51 +759,59 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
           </>
         )}
 
-        <SelectionBar
-          count={selected.size}
-          label="Selected files"
-          onClear={() => {
-            setChosen(NONE_SELECTED);
-          }}
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={FolderInput}
-            onClick={() => {
-              setMoveTarget(selectedItems());
+        {canSelect && (
+          <SelectionBar
+            count={selected.size}
+            label="Selected files"
+            onClear={() => {
+              setChosen(NONE_SELECTED);
             }}
-            data-testid="media-library-bulk-move"
           >
-            Move to folder
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={Tags}
-            onClick={() => {
-              setTagTarget(selectedItems());
-            }}
-            data-testid="media-library-bulk-tags"
-          >
-            Add tags
-          </Button>
-          <Button
-            variant="danger"
-            size="sm"
-            icon={Trash}
-            onClick={() => {
-              setDeleteMode('bulk');
-              setDeleteTargets(selectedItems());
-            }}
-            data-testid="media-library-bulk-delete"
-          >
-            Delete
-          </Button>
-        </SelectionBar>
+            {canWrite && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={FolderInput}
+                onClick={() => {
+                  setMoveTarget(selectedItems());
+                }}
+                data-testid="media-library-bulk-move"
+              >
+                Move to folder
+              </Button>
+            )}
+            {canWrite && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={Tags}
+                onClick={() => {
+                  setTagTarget(selectedItems());
+                }}
+                data-testid="media-library-bulk-tags"
+              >
+                Add tags
+              </Button>
+            )}
+            {canDeleteMedia && (
+              <Button
+                variant="danger"
+                size="sm"
+                icon={Trash}
+                onClick={() => {
+                  setDeleteMode('bulk');
+                  setDeleteTargets(selectedItems());
+                }}
+                data-testid="media-library-bulk-delete"
+              >
+                Delete
+              </Button>
+            )}
+          </SelectionBar>
+        )}
       </div>
 
-      {dragging && !adding && (
+      {canWrite && dragging && !adding && (
         <div className="tx-media-library__drop-overlay" aria-hidden="true">
           <div className="tx-media-library__drop-card">
             <span className="tx-media-library__dropzone-icon">
@@ -794,6 +845,7 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
         }}
         items={(moveTarget ?? []).map((media) => ({ ...media, name: mediaDisplayName(media) }))}
         folders={folders}
+        allowCreate={canWrite}
         onMoved={(ids) => {
           setChosen((current) => setMany(current, ids, false));
           reload();
@@ -807,6 +859,7 @@ export function MediaLibrary({ kind }: { readonly kind: LibraryKind }) {
         }}
         items={(tagTarget ?? []).map((media) => ({ ...media, name: mediaDisplayName(media) }))}
         tags={tags}
+        allowCreate={canWrite}
         onSaved={reload}
         testId="media-library-tags-dialog"
       />

@@ -12,6 +12,7 @@ import {
   filterScheduleList,
   SCHEDULE_SORT_ACCESSORS,
 } from '../../lib/schedules.ts';
+import { useCan } from '../../session/AuthenticatedSession.tsx';
 import { Page } from '../../shell/Page.tsx';
 import {
   CalendarDays,
@@ -52,6 +53,8 @@ const NO_SCHEDULES: readonly ScheduleSummaryDto[] = [];
 // shortcut: no grid, bulk selection or pagination; add when an organisation has over 100 schedules.
 export function SchedulesPage() {
   const toast = useToast();
+  const canCreate = useCan('content.write');
+  const canDelete = useCan('content.delete');
   const { state, reload } = useLoad(loadSchedules);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortState>(DEFAULT_SCHEDULE_SORT);
@@ -234,9 +237,14 @@ export function SchedulesPage() {
               onRetry={refresh}
             />
           )}
-          <EmptyState icon={CalendarDays} title="No schedules yet" action={createButton('lg')}>
-            A schedule shows different playlists at different days and times, and a default playlist
-            the rest of the time.
+          <EmptyState
+            icon={CalendarDays}
+            title="No schedules yet"
+            action={canCreate ? createButton('lg') : undefined}
+          >
+            {canCreate
+              ? 'A schedule shows different playlists at different days and times, and a default playlist the rest of the time.'
+              : 'An editor creates schedules.'}
           </EmptyState>
         </div>
         {dialogs}
@@ -264,7 +272,7 @@ export function SchedulesPage() {
               data-testid="schedules-refresh"
             />
           </div>
-          <div className="tx-filter-row__end">{createButton('md')}</div>
+          {canCreate && <div className="tx-filter-row__end">{createButton('md')}</div>}
         </div>
 
         {ready && state.refreshError !== null && (
@@ -297,7 +305,8 @@ export function SchedulesPage() {
             rowId={(schedule) => schedule.id}
             sort={sort}
             onSortChange={setSort}
-            rowActions={rowMenu}
+            // Edit alone is the name's link: no menu without Delete.
+            rowActions={canDelete ? rowMenu : undefined}
             rowTestId={(schedule) => `schedules-row-${schedule.id}`}
             loading={loading || refreshing}
             empty={

@@ -34,12 +34,14 @@ import {
 import { formatTimestamp } from '../../lib/format.ts';
 import { INCOMPLETE_DATE_TIME } from '../../lib/mediaDetailDraft.ts';
 import { headerStatusLabel } from '../../lib/mediaDetailState.ts';
+import { useCan, useCanAtMount } from '../../session/AuthenticatedSession.tsx';
 import { EditorPage } from '../../shell/EditorPage.tsx';
 import { CircleCheck, CircleDashed, Ellipsis, Trash } from '../../ui/icons.ts';
 import {
   Banner,
   Button,
   Card,
+  cx,
   ErrorNotice,
   Fact,
   Facts,
@@ -58,6 +60,7 @@ import {
 } from '../../ui/index.ts';
 import { CanvasFrame } from '../displays/detail/CanvasFrame.tsx';
 import { usePush } from '../push/PushContext.tsx';
+import { ReadOnlyNote } from '../shared/ReadOnlyNote.tsx';
 import { useLeaveGuard } from '../shared/useLeaveGuard.tsx';
 import { AppPreview } from './AppPreview.tsx';
 import { DeleteAppDialog } from './DeleteAppDialog.tsx';
@@ -85,13 +88,17 @@ export interface AppEditorProps {
  * drawn by the player's own renderer, and the facts on the left; the name, the type's
  * settings and the colours on the right; Cancel and Save in the header, Delete in its menu.
  * The pure rules (what changed, what is sent, the plain-words checks) are in `lib/apps.ts`;
- * the server stays the authority.
+ * the server stays the authority. Without `content.write` (decided when the page opens) it is
+ * read-only: no Cancel or Save, every field locked, nothing submits; "Preview on" still works
+ * and Delete stays for a role that holds `content.delete`.
  */
 export function AppEditor({ initial }: AppEditorProps) {
   const toast = useToast();
   const push = usePush();
   const navigate = useNavigate();
   const shapeId = useId();
+  const readOnly = !useCanAtMount('content.write');
+  const canDelete = useCan('content.delete');
 
   const [saved, setSaved] = useState(initial);
   const [draft, setDraft] = useState<AppDraft>(() => appDraftFromDto(initial));
@@ -117,14 +124,20 @@ export function AppEditor({ initial }: AppEditorProps) {
 
   const dirty = appIsDirty(draft, saved);
   // Until the save answers, the changes are not safe: it can still fail (FCX-04).
-  const guard = useLeaveGuard(dirty, saved.name, saving);
+  const guard = useLeaveGuard(dirty && !readOnly, saved.name, saving);
+  const locked = saving || readOnly;
   const invalid = appErrorFields(errors);
   const { content } = draft;
   const nowMs = Date.now();
-  const contrast = contrastWarning(content.settings.textColour, content.settings.backgroundColour);
+  const contrast = contrastWarning(
+    content.settings.textColour,
+    content.settings.backgroundColour,
+    readOnly,
+  );
 
   /** A field changed: its message goes (a Text message also clears the heading's). */
   const change = (field: string, next: AppDraft) => {
+    if (readOnly) return;
     setDraft(next);
     const fixed = field === 'body' ? [field, 'heading'] : [field];
     if (fixed.some((key) => errors[key] !== undefined)) {
@@ -144,7 +157,7 @@ export function AppEditor({ initial }: AppEditorProps) {
   };
 
   const save = () => {
-    if (saving || !dirty) return;
+    if (readOnly || saving || !dirty) return;
     const result = validateAppDraft(draft, saved);
     if (!result.ok) {
       setErrors(result.errors);
@@ -180,6 +193,7 @@ export function AppEditor({ initial }: AppEditorProps) {
 
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
+    if (readOnly || saving) return;
     save();
   };
 
@@ -220,7 +234,7 @@ export function AppEditor({ initial }: AppEditorProps) {
             rows={4}
             value={value}
             maxLength={max}
-            readOnly={saving}
+            readOnly={locked}
             data-testid={`app-editor-${field}`}
             onChange={(event) => {
               onText(event.target.value);
@@ -232,7 +246,7 @@ export function AppEditor({ initial }: AppEditorProps) {
             value={value}
             maxLength={max}
             autoComplete="off"
-            readOnly={saving}
+            readOnly={locked}
             data-testid={`app-editor-${field}`}
             onChange={(event) => {
               onText(event.target.value);
@@ -248,7 +262,7 @@ export function AppEditor({ initial }: AppEditorProps) {
       <Switch
         checked={value}
         label="Show seconds"
-        disabled={saving}
+        disabled={locked}
         data-testid="app-editor-show-seconds"
         onChange={onToggle}
       />
@@ -265,13 +279,14 @@ export function AppEditor({ initial }: AppEditorProps) {
                 <div id={control.id}>
                   <Segmented
                     label="Time format"
+                    disabled={locked}
                     value={content.settings.hourCycle}
                     options={[
                       { value: '12', label: '12-hour' },
                       { value: '24', label: '24-hour' },
                     ]}
                     onChange={(hourCycle) => {
-                      if (!saving) setContent('hourCycle', withSettings(content, { hourCycle }));
+                      if (!locked) setContent('hourCycle', withSettings(content, { hourCycle }));
                     }}
                   />
                 </div>
@@ -290,7 +305,7 @@ export function AppEditor({ initial }: AppEditorProps) {
               <Select
                 {...control}
                 value={content.settings.format}
-                disabled={saving}
+                disabled={locked}
                 onChange={(event) => {
                   const format = DATE_FORMATS.find((f) => f === event.target.value);
                   if (format !== undefined) setContent('format', withSettings(content, { format }));
@@ -322,7 +337,7 @@ export function AppEditor({ initial }: AppEditorProps) {
                   value={
                     content.settings.target === INCOMPLETE_DATE_TIME ? '' : content.settings.target
                   }
-                  readOnly={saving}
+                  readOnly={locked}
                   data-testid="app-editor-target"
                   onChange={typeTarget}
                   onBlur={typeTarget}
@@ -378,13 +393,14 @@ export function AppEditor({ initial }: AppEditorProps) {
                 <div id={control.id}>
                   <Segmented
                     label="Speed"
+                    disabled={locked}
                     value={content.settings.speed}
                     options={TICKER_SPEEDS.map((speed) => ({
                       value: speed,
                       label: speed === 'slow' ? 'Slow' : speed === 'medium' ? 'Medium' : 'Fast',
                     }))}
                     onChange={(speed) => {
-                      if (!saving) setContent('speed', withSettings(content, { speed }));
+                      if (!locked) setContent('speed', withSettings(content, { speed }));
                     }}
                   />
                 </div>
@@ -447,7 +463,7 @@ export function AppEditor({ initial }: AppEditorProps) {
           type="color"
           width="xs"
           value={content.settings[field]}
-          disabled={saving}
+          disabled={locked}
           data-testid={`app-editor-${field}`}
           onChange={(event) => {
             setContent(
@@ -472,58 +488,74 @@ export function AppEditor({ initial }: AppEditorProps) {
       title={draft.name.trim() === '' ? saved.name : draft.name.trim()}
       back={APPS_BACK}
       status={
-        <span className="tx-app-editor-status" data-state={dirty ? 'unsaved' : 'saved'}>
-          <Icon icon={dirty ? CircleDashed : CircleCheck} size={16} />
-          <span role="status" data-testid="app-editor-save-state" data-dirty={dirty}>
-            {headerStatusLabel(dirty)}
+        readOnly ? undefined : (
+          <span className="tx-app-editor-status" data-state={dirty ? 'unsaved' : 'saved'}>
+            <Icon icon={dirty ? CircleDashed : CircleCheck} size={16} />
+            <span role="status" data-testid="app-editor-save-state" data-dirty={dirty}>
+              {headerStatusLabel(dirty)}
+            </span>
           </span>
-        </span>
+        )
       }
       actions={
-        <>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              void navigate('/apps');
-            }}
-            data-testid="app-editor-cancel"
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            busy={saving}
-            aria-disabled={!dirty || undefined}
-            onClick={save}
-            data-testid="app-editor-save"
-          >
-            Save
-          </Button>
-          <Menu
-            placement="bottom-end"
-            trigger={(props) => (
-              <IconButton
-                {...props}
-                icon={Ellipsis}
-                label={`More actions for ${saved.name}`}
-                data-testid="app-editor-menu"
-              />
+        readOnly && !canDelete ? undefined : (
+          <>
+            {!readOnly && (
+              <>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    void navigate('/apps');
+                  }}
+                  data-testid="app-editor-cancel"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  busy={saving}
+                  aria-disabled={!dirty || undefined}
+                  onClick={save}
+                  data-testid="app-editor-save"
+                >
+                  Save
+                </Button>
+              </>
             )}
-          >
-            <MenuItem
-              icon={Trash}
-              tone="danger"
-              onSelect={() => {
-                setDeleting(saved);
-              }}
-            >
-              Delete app
-            </MenuItem>
-          </Menu>
-        </>
+            {canDelete && (
+              <Menu
+                placement="bottom-end"
+                trigger={(props) => (
+                  <IconButton
+                    {...props}
+                    icon={Ellipsis}
+                    label={`More actions for ${saved.name}`}
+                    data-testid="app-editor-menu"
+                  />
+                )}
+              >
+                <MenuItem
+                  icon={Trash}
+                  tone="danger"
+                  onSelect={() => {
+                    setDeleting(saved);
+                  }}
+                >
+                  Delete app
+                </MenuItem>
+              </Menu>
+            )}
+          </>
+        )
       }
     >
-      <div className="tx-app-editor" data-testid="app-editor" data-app-type={content.type}>
+      <div
+        // The read-only note sits above the two columns, with the page's usual gap.
+        className={cx('tx-app-editor', readOnly && 'tx-stack')}
+        data-testid="app-editor"
+        data-app-type={content.type}
+      >
+        {readOnly && <ReadOnlyNote>You can view this app. Editors make changes.</ReadOnlyNote>}
         <div className="tx-editor">
           <Card as="section" className="tx-app-editor-aside" aria-labelledby={`${shapeId}-title`}>
             <h2 id={`${shapeId}-title`} className="tx-app-editor__title">
@@ -564,7 +596,10 @@ export function AppEditor({ initial }: AppEditorProps) {
               <div data-testid="app-editor-overflow">
                 <Banner tone="warn" live="polite">
                   The text does not fit this screen shape at a readable size, so it is shown
-                  smaller. Shorten the text or preview another shape.
+                  smaller.
+                  {readOnly
+                    ? ' Preview another shape to compare.'
+                    : ' Shorten the text or preview another shape.'}
                 </Banner>
               </div>
             )}

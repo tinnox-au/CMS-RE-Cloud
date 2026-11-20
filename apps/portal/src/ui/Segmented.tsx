@@ -23,6 +23,8 @@ export interface SegmentedProps<T extends string> {
   /** Show icons only; each label becomes the option's accessible name and its tooltip. */
   readonly iconOnly?: boolean;
   readonly size?: 'sm' | 'md';
+  /** Disables every option at once, for a form that is saving or read-only. */
+  readonly disabled?: boolean;
   readonly className?: string;
 }
 
@@ -37,6 +39,7 @@ export function Segmented<T extends string>({
   onChange,
   iconOnly = false,
   size = 'md',
+  disabled = false,
   className,
 }: SegmentedProps<T>) {
   const name = useId();
@@ -64,7 +67,7 @@ export function Segmented<T extends string>({
               name={name}
               value={option.value}
               checked={option.value === value}
-              disabled={option.disabled}
+              disabled={disabled || option.disabled === true}
               aria-label={iconOnly ? option.label : undefined}
               onChange={() => {
                 onChange(option.value);

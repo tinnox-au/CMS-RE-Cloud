@@ -16,7 +16,7 @@ import {
   type PushState,
 } from '@tinnox/contracts';
 import { presentPushState as presentSharedPushState } from './screenStatusPush.ts';
-import { isApiRequestError, isOutcomeUnknown } from '../api/client.ts';
+import { isApiRequestError, isOutcomeUnknown, isRoleRefusal } from '../api/client.ts';
 import { formatAge } from './format.ts';
 import { matchesSearch } from './listView.ts';
 
@@ -208,11 +208,14 @@ export function newPushKey(randomUUID: () => string): string {
  *   with the same key carries on). The next attempt must send the same key.
  * - `refused`: the server clearly answered that it did nothing. The next attempt is a new
  *   intent with a new key.
+ * - `role`: the member's role no longer allows pushing (403 `forbidden`). The role may have
+ *   changed part of the way through: screens pushed before keep their new version. No retry.
  */
-export type PushFailureKind = 'unknown' | 'refused';
+export type PushFailureKind = 'unknown' | 'refused' | 'role';
 
 export function classifyPushFailure(error: unknown): PushFailureKind {
   if (isOutcomeUnknown(error)) return 'unknown';
+  if (isRoleRefusal(error)) return 'role';
   if (isApiRequestError(error) && error.status === 409 && error.code === 'conflict') {
     return 'unknown';
   }

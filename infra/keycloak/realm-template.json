@@ -1,5 +1,5 @@
 {
-  "_comment": "Template for the local development realm. scripts/setup-dev.mjs fills every null marked FILLED and writes infra/.generated/tinnox-dev-realm.json (gitignored). This committed file contains no secret. Development only: NODE_ENV=production start-up must refuse this realm. authenticationFlows and authenticatorConfig are the Keycloak 26.8.2 defaults (exported from a fresh import, ids removed) plus the two \"tinnox browser\" flows, bound as browserFlow, in which the one-time code is REQUIRED. The client has no profile scope, so ID tokens carry no names.",
+  "_comment": "Template for the local development realm. scripts/setup-dev.mjs fills every null marked FILLED and writes infra/.generated/tinnox-dev-realm.json (gitignored). This committed file contains no secret. Development only: NODE_ENV=production start-up must refuse this realm. authenticationFlows and authenticatorConfig are the Keycloak 26.8.2 defaults (exported from a fresh import, ids removed) plus the two \"tinnox browser\" flows, bound as browserFlow, in which the one-time code is REQUIRED. The portal client has no profile scope, so ID tokens carry no names. The tinnox-provisioning client reads accounts for scripts/provision-member.ts: its service-account user (in users) holds realm-management view-users only, never manage-users, which covers the whole realm. Its tokens carry only that role (clientScopeMappings; full scope off, which Keycloak deprecates) and the admin API audience (the built-in kc-admin-api scope, which Keycloak 26.8 requires on the admin REST API).",
   "realm": "tinnox-dev",
   "displayName": "TINNOX CMS (local development)",
   "loginTheme": "tinnox",
@@ -71,6 +71,30 @@
         "oidc.ciba.grant.enabled": "false"
       },
       "defaultClientScopes": ["basic", "acr"],
+      "optionalClientScopes": []
+    },
+    {
+      "clientId": "tinnox-provisioning",
+      "name": "TINNOX provisioning (account reader)",
+      "description": "Confidential service-account client used only by scripts/provision-member.ts on a controlled host. It reads accounts (view-users); staff create accounts by hand.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": null,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "frontchannelLogout": false,
+      "fullScopeAllowed": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {
+        "oauth2.device.authorization.grant.enabled": "false",
+        "oidc.ciba.grant.enabled": "false"
+      },
+      "defaultClientScopes": ["basic", "kc-admin-api"],
       "optionalClientScopes": []
     }
   ],
@@ -740,5 +764,16 @@
       }
     }
   ],
-  "users": []
+  "clientScopeMappings": {
+    "realm-management": [{ "client": "tinnox-provisioning", "roles": ["view-users"] }]
+  },
+  "users": [
+    {
+      "username": "service-account-tinnox-provisioning",
+      "enabled": true,
+      "serviceAccountClientId": "tinnox-provisioning",
+      "realmRoles": [],
+      "clientRoles": { "realm-management": ["view-users"] }
+    }
+  ]
 }

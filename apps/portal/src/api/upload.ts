@@ -5,7 +5,7 @@ import {
   ROUTES,
   type MediaDto,
 } from '@tinnox/contracts';
-import { ApiRequestError, errorFromResponse, type ApiClient } from './client.ts';
+import { ApiRequestError, errorFromResponse, isRoleRefusal, type ApiClient } from './client.ts';
 
 export interface UploadHandle {
   readonly done: Promise<MediaDto>;
@@ -80,6 +80,9 @@ export function uploadMedia(
       } catch (error) {
         if (error instanceof ApiRequestError && error.status === 401) {
           client.notifyUnauthenticated();
+        } else if (isRoleRefusal(error)) {
+          // The queue item shows the API's message ("Your role doesn't allow this.").
+          client.notifyForbidden();
         }
         reject(error instanceof Error ? error : new Error('Upload failed'));
       }

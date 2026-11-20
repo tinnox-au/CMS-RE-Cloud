@@ -1,8 +1,9 @@
-import type { DisplayDto } from '@tinnox/contracts';
+import type { DisplayDto, Role } from '@tinnox/contracts';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
+import { WithSession } from '../../../session/session.test-support.tsx';
 import { ToastProvider } from '../../../ui/index.ts';
 import { PushContext, type PushContextValue } from '../../push/PushContext.tsx';
 import { ContentCard } from './ContentCard.tsx';
@@ -49,19 +50,21 @@ const PUSH: PushContextValue = {
   refreshPending: () => undefined,
 };
 
-function renderCard(display: DisplayDto = DISPLAY) {
+function renderCard(display: DisplayDto = DISPLAY, role: Role = 'owner') {
   return render(
     <MemoryRouter>
-      <ToastProvider>
-        <PushContext value={PUSH}>
-          <ContentCard
-            display={display}
-            assigned={{ status: 'loading' }}
-            onReloadAssigned={() => undefined}
-            onAssigned={() => undefined}
-          />
-        </PushContext>
-      </ToastProvider>
+      <WithSession role={role}>
+        <ToastProvider>
+          <PushContext value={PUSH}>
+            <ContentCard
+              display={display}
+              assigned={{ status: 'loading' }}
+              onReloadAssigned={() => undefined}
+              onAssigned={() => undefined}
+            />
+          </PushContext>
+        </ToastProvider>
+      </WithSession>
     </MemoryRouter>,
   );
 }
@@ -74,8 +77,9 @@ describe('ContentCard: the Change menu while "Remove content" is saved', () => {
   it('opens from the keyboard while nothing is being saved', async () => {
     const screen = await renderCard();
     const change = screen.getByTestId('screen-detail-change-content');
-    (change.element() as HTMLElement).focus();
-    await userEvent.keyboard('{ArrowDown}');
+    // Scoped to the button: `userEvent.keyboard` first finds the test frame by name, which can
+    // still be the previous file's frame as it goes away ("Frame was detached").
+    await userEvent.type(change, '{ArrowDown}');
     await expect.element(screen.getByRole('menuitem', { name: 'Remove content' })).toBeVisible();
   });
 
@@ -97,13 +101,12 @@ describe('ContentCard: the Change menu while "Remove content" is saved', () => {
 
     // Each key on its own: Enter in an open menu would choose an item and close it again.
     for (const key of ['{ArrowDown}', '{ArrowUp}']) {
-      (change.element() as HTMLElement).focus();
-      await userEvent.keyboard(key);
+      await userEvent.type(change, key);
       // Give a menu that wrongly opens the time to render before looking.
       await new Promise((resolve) => setTimeout(resolve, 100));
       expect(screen.getByRole('menuitem').elements(), key).toHaveLength(0);
     }
-    await userEvent.keyboard('{Enter}');
+    await userEvent.type(change, '{Enter}');
     await change.click({ force: true });
     expect(screen.getByRole('menuitem').elements()).toHaveLength(0);
     expect(patchDisplay).toHaveBeenCalledTimes(1);
@@ -149,5 +152,32 @@ describe('ContentCard: layouts', () => {
         ),
       )
       .toBeVisible();
+  });
+});
+
+describe('ContentCard: as a Viewer', () => {
+  it('has no Change menu and keeps the link to the assigned playlist', async () => {
+    const screen = await renderCard(
+      { ...DISPLAY, assignedSchedule: null, assignedPlaylist: { id: ID(20), name: 'Loop' } },
+      'viewer',
+    );
+    await expect
+      .element(screen.getByTestId('screen-detail-open-playlist'))
+      .toHaveTextContent('Open playlist');
+    await expect
+      .element(screen.getByTestId('screen-detail-change-content'))
+      .not.toBeInTheDocument();
+    await expect
+      .element(screen.getByText('Assigning changes nothing on the screen until you push.'))
+      .not.toBeInTheDocument();
+  });
+
+  it('says an editor assigns content when nothing is assigned, with no buttons', async () => {
+    const screen = await renderCard({ ...DISPLAY, assignedSchedule: null }, 'viewer');
+    await expect.element(screen.getByText('An editor assigns content.')).toBeVisible();
+    await expect
+      .element(screen.getByTestId('screen-detail-choose-playlist'))
+      .not.toBeInTheDocument();
+    expect(patchDisplay).not.toHaveBeenCalled();
   });
 });

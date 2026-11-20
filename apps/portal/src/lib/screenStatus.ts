@@ -74,7 +74,7 @@ const EXPLANATIONS: { readonly [K in ScreenStatusKind]: string } = {
   waiting_for_player:
     'A player is paired but has not reported since it was registered. Nothing is known about what it shows.',
   nothing_pushed: 'A player is paired, but nothing has been pushed to this screen yet.',
-  not_paired: 'No player holds a credential for this screen. Pair one to deliver content.',
+  not_paired: 'No player holds a credential for this screen, so it receives no content.',
 };
 
 const INCONSISTENT_EXPLANATION =

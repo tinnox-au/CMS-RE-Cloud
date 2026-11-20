@@ -36,17 +36,21 @@ export function ErrorCodeText({ code }: { readonly code: string }) {
  * technology still reads all of it), the code keeps its own line and the inspection detail is
  * left to the list row and the details page. One failed tile then no longer stretches every
  * tile of its row.
+ *
+ * `readOnly` (a role that cannot upload) keeps what went wrong and drops what to do next.
  */
 export function MediaFailureNote({
   media,
   className,
   compact = false,
+  readOnly = false,
 }: {
   readonly media: Pick<MediaDto, 'status' | 'errorCode' | 'errorDetail'>;
   readonly className?: string;
   readonly compact?: boolean;
+  readonly readOnly?: boolean;
 }) {
-  const failure = mediaFailureText(media);
+  const failure = mediaFailureText(media, readOnly);
   if (failure === null) return null;
   const detail = compact ? null : failure.detail;
   return (

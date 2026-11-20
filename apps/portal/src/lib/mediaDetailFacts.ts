@@ -1,6 +1,7 @@
 import {
   MEDIA_ERROR_MESSAGES,
   type MediaDto,
+  type MediaErrorCode,
   type MediaMimeType,
   type MediaUsageResponse,
 } from '@tinnox/contracts';
@@ -53,8 +54,38 @@ export function shortHash(hash: string, length = 12): string {
   return hash.length <= length ? hash : `${hash.slice(0, length)}…`;
 }
 
+/**
+ * What went wrong, without what to do about it: the first sentence of each shared message
+ * (MEDIA_ERROR_MESSAGES), for a role that cannot upload or change media.
+ */
+export const MEDIA_ERROR_FACTS: { readonly [K in MediaErrorCode]: string } = {
+  unrecognised_type: 'The file content is not a recognised image or video.',
+  type_mismatch: 'The file content does not match its declared type.',
+  unsupported_type: 'This file type is not supported.',
+  unsupported_codec: 'The video codec is not supported.',
+  unsupported_pixel_format: 'The video pixel format is not supported.',
+  no_video_stream: 'The MP4 file contains no video stream.',
+  corrupt: 'The file is damaged or incomplete and could not be read.',
+  image_too_large: 'The image dimensions exceed the allowed size.',
+  video_resolution_too_large: 'The video resolution exceeds the allowed size.',
+  video_too_long: 'The video is longer than the allowed duration.',
+  file_too_large: 'The file is larger than the upload limit.',
+  empty_file: 'The file is empty.',
+  inspection_timeout: 'The file took too long to inspect and was rejected.',
+  inspection_failed: 'The file could not be inspected.',
+};
+
+/**
+ * Why a failed file was rejected, in words: the shared message (what went wrong and what to do
+ * about it), or with `readOnly` only what went wrong.
+ */
+export function mediaFailureMessage(errorCode: MediaErrorCode | null, readOnly = false): string {
+  if (errorCode === null) return 'The file was rejected. No reason was recorded.';
+  return readOnly ? MEDIA_ERROR_FACTS[errorCode] : MEDIA_ERROR_MESSAGES[errorCode];
+}
+
 export interface MediaFailureText {
-  /** What went wrong and what to do about it, from the shared message table. */
+  /** What went wrong and, unless read-only, what to do about it (`mediaFailureMessage`). */
   readonly message: string;
   /** The machine-readable reason, shown as text; null when none was recorded. */
   readonly code: string | null;
@@ -62,15 +93,13 @@ export interface MediaFailureText {
   readonly detail: string | null;
 }
 
-/** Why a failed file was rejected, worded as M0 words it. */
+/** Why a failed file was rejected, worded as M0 words it; `readOnly` drops what to do next. */
 export function mediaFailureText(
   media: Pick<MediaDto, 'errorCode' | 'errorDetail'>,
+  readOnly = false,
 ): MediaFailureText {
   return {
-    message:
-      media.errorCode !== null
-        ? MEDIA_ERROR_MESSAGES[media.errorCode]
-        : 'The file was rejected. No reason was recorded.',
+    message: mediaFailureMessage(media.errorCode, readOnly),
     code: media.errorCode,
     detail: media.errorDetail,
   };

@@ -30,10 +30,11 @@ import {
   type LibraryEntry,
   type ProblemTarget,
 } from '../../../lib/playlistEditor.ts';
-import { useSession } from '../../../session/SessionContext.tsx';
+import { useCanAtMount, useSession } from '../../../session/AuthenticatedSession.tsx';
 import { EditorPage } from '../../../shell/EditorPage.tsx';
 import { CircleCheck, Save } from '../../../ui/icons.ts';
 import { Button, ConfirmDialog, ErrorNotice, Icon, useToast } from '../../../ui/index.ts';
+import { ReadOnlyNote } from '../../shared/ReadOnlyNote.tsx';
 import { useLeaveGuard } from '../../shared/useLeaveGuard.tsx';
 import { usePush } from '../../push/PushContext.tsx';
 import { DetailsCard } from './DetailsCard.tsx';
@@ -59,12 +60,14 @@ export interface PlaylistEditorProps {
 /**
  * The editor of one playlist. The draft lives here until "Save draft" replaces the stored
  * playlist with it (`PUT /api/playlists/:id`, the whole item list); nothing reaches a screen
- * until it is pushed.
+ * until it is pushed. Without `content.write` (decided when the page opens) it is read-only:
+ * no header actions, no library, nothing to drag, move, remove or change.
  */
 export function PlaylistEditor({ initial }: PlaylistEditorProps) {
   const { limits } = useSession();
   const toast = useToast();
   const push = usePush();
+  const readOnly = !useCanAtMount('content.write');
 
   const [saved, setSaved] = useState(initial);
   const [draft, setDraft] = useState<EditorDraft>(() => editorDraftFromPlaylist(initial));
@@ -102,13 +105,14 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
   const problems = useMemo(() => listProblems(draft, errors), [draft, errors]);
 
   // The M0 safeguards: leaving the page inside the portal asks first, and so does the browser.
-  const leaveGuard = useLeaveGuard(dirty, saved.name);
+  const leaveGuard = useLeaveGuard(dirty && !readOnly, saved.name);
 
   const announce = useCallback((text: string) => {
     setAnnouncement((previous) => ({ text, seq: previous.seq + 1 }));
   }, []);
 
   const change = (next: EditorDraft) => {
+    if (readOnly) return;
     setDraft(next);
   };
 
@@ -158,7 +162,7 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
   };
 
   const save = () => {
-    if (saving) return;
+    if (readOnly || saving) return;
     setAttempted(true);
     if (!validation.ok) {
       // Let the summary render, then take the reader to it.
@@ -229,51 +233,56 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
       title={title}
       back={PLAYLIST_EDITOR_BACK}
       status={
-        <span
-          className="tx-playlist-editor-state"
-          data-state={dirty ? 'unsaved' : 'saved'}
-          data-testid="playlist-editor-save-state"
-        >
-          {dirty ? (
-            <span className="tx-playlist-editor-state__dot" aria-hidden="true" />
-          ) : (
-            <Icon icon={CircleCheck} size={16} />
-          )}
-          <span role="status" className="tx-playlist-editor-state__text">
-            {dirty ? 'Unsaved changes' : 'Saved'}
+        readOnly ? undefined : (
+          <span
+            className="tx-playlist-editor-state"
+            data-state={dirty ? 'unsaved' : 'saved'}
+            data-testid="playlist-editor-save-state"
+          >
+            {dirty ? (
+              <span className="tx-playlist-editor-state__dot" aria-hidden="true" />
+            ) : (
+              <Icon icon={CircleCheck} size={16} />
+            )}
+            <span role="status" className="tx-playlist-editor-state__text">
+              {dirty ? 'Unsaved changes' : 'Saved'}
+            </span>
           </span>
-        </span>
+        )
       }
       actions={
-        <>
-          <Button
-            variant="ghost"
-            aria-disabled={!dirty || saving || undefined}
-            onClick={() => {
-              if (dirty && !saving) setConfirmDiscard(true);
-            }}
-            className="tx-playlist-editor__discard"
-            data-testid="playlist-editor-discard"
-          >
-            Discard changes
-          </Button>
-          <Button
-            variant="primary"
-            icon={Save}
-            busy={saving}
-            aria-disabled={!dirty || undefined}
-            onClick={() => {
-              if (dirty) save();
-            }}
-            className="tx-playlist-editor__save"
-            data-testid="playlist-editor-save"
-          >
-            Save draft
-          </Button>
-        </>
+        readOnly ? undefined : (
+          <>
+            <Button
+              variant="ghost"
+              aria-disabled={!dirty || saving || undefined}
+              onClick={() => {
+                if (dirty && !saving) setConfirmDiscard(true);
+              }}
+              className="tx-playlist-editor__discard"
+              data-testid="playlist-editor-discard"
+            >
+              Discard changes
+            </Button>
+            <Button
+              variant="primary"
+              icon={Save}
+              busy={saving}
+              aria-disabled={!dirty || undefined}
+              onClick={() => {
+                if (dirty) save();
+              }}
+              className="tx-playlist-editor__save"
+              data-testid="playlist-editor-save"
+            >
+              Save draft
+            </Button>
+          </>
+        )
       }
     >
       <div className="tx-playlist-editor" data-testid="playlist-editor">
+        {readOnly && <ReadOnlyNote>You can view this playlist. Editors make changes.</ReadOnlyNote>}
         <p
           className="tx-visually-hidden"
           aria-live="polite"
@@ -317,6 +326,7 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
             onRemove={remove}
             onChangeItem={changeItem}
             onAnnounce={announce}
+            readOnly={readOnly}
           />
           <div className="tx-playlist-editor__side">
             <DetailsCard
@@ -326,19 +336,22 @@ export function PlaylistEditor({ initial }: PlaylistEditorProps) {
               nameRef={nameRef}
               descriptionRef={descriptionRef}
               onChange={change}
+              readOnly={readOnly}
             />
             <PushCard playlist={saved} dirty={dirty} />
           </div>
         </div>
 
-        <LibraryCard
-          media={media}
-          apps={apps}
-          draft={draft}
-          limits={limits}
-          dragSource={dragSource}
-          onAdd={add}
-        />
+        {!readOnly && (
+          <LibraryCard
+            media={media}
+            apps={apps}
+            draft={draft}
+            limits={limits}
+            dragSource={dragSource}
+            onAdd={add}
+          />
+        )}
       </div>
 
       <ConfirmDialog

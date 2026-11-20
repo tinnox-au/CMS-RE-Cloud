@@ -187,6 +187,13 @@ describe('style and preview', () => {
     expect(contrastWarning('red', '#000000')).toBeNull();
   });
 
+  it('gives a role that cannot change the colours the fact, not an instruction', () => {
+    expect(contrastWarning('#777777', '#ffffff', true)).toBe(
+      'The text and background colours are hard to tell apart (4.4:1). 4.5:1 or more reads well from a distance.',
+    );
+    expect(contrastWarning('#ffffff', '#000000', true)).toBeNull();
+  });
+
   it('offers landscape, portrait and each screen with its content rectangle', () => {
     const shapes = previewShapes([
       {

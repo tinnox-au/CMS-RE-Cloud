@@ -1,6 +1,7 @@
 /**
  * Sites, displays, pairing claim, player revocation and delivery status.
- * Every query runs inside withOrg with the organisation of the verified session.
+ * Every query runs inside withOrg with the organisation of the verified session; every write
+ * runs inside withOrgAllowed, which checks the member's role again first (auth/permissions.ts).
  */
 import {
   ABSOLUTE,
@@ -42,9 +43,10 @@ import {
 import { buildDeliveryStatusView, type ReportedState } from '@tinnox/domain';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { withOrgAllowed, withOrgDecisionAllowed } from '../auth/permissions.ts';
 import { operatorOf } from '../auth/session.ts';
 import { perMinute, type AppContext } from '../context.ts';
-import { accept, bigintToNumber, iso, isoOrNull, refuse, withOrgDecision } from '../db-helpers.ts';
+import { accept, bigintToNumber, iso, isoOrNull, refuse } from '../db-helpers.ts';
 import { HttpError, notFound, parseInput, pgErrorCode } from '../errors.ts';
 import { isUnknownTag, replaceTags } from './tags.ts';
 
@@ -366,7 +368,7 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
     const session = operatorOf(request);
     const input = parseInput(DisplayCreateSchema, request.body, 'display');
     assertCanvasWithinLimits(input.canvas, config.limits);
-    const created = await withOrg(pool, session.orgId, async (tx) => {
+    const created = await withOrgAllowed(ctx, request, async (tx) => {
       const site = await tx.query('SELECT 1 FROM site WHERE id = $1 AND org_id = app_org_id()', [
         input.siteId,
       ]);
@@ -428,7 +430,7 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     const patch = parseInput(DisplayPatchSchema, request.body, 'display');
     try {
-      return await withOrg(pool, session.orgId, async (tx) => {
+      return await withOrgAllowed(ctx, request, async (tx) => {
         const locked = await tx.query<{
           name: string;
           description: string | null;
@@ -590,7 +592,7 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
       const session = operatorOf(request);
       const { id } = parseInput(IdParamSchema, request.params, 'address');
       const { code } = parseInput(PairingClaimRequestSchema, request.body, 'pairing code');
-      return withOrgDecision(pool, session.orgId, async (tx) => {
+      return withOrgDecisionAllowed(ctx, request, async (tx) => {
         const result = await pairingClaim(tx, {
           code,
           displayId: id,
@@ -663,10 +665,10 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
   app.post(ROUTES.displayRevokePlayerPattern, async (request): Promise<RevokePlayerResponse> => {
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
-    return withOrg(pool, session.orgId, async (tx) => {
-      // First, before the display row is locked: claims of this screen that no player has
-      // collected yet are cancelled, so none of them can bring a player back after the
-      // revocation (round 3, SCX-01). Only this organisation's rows are touched, so an
+    return withOrgAllowed(ctx, request, async (tx) => {
+      // After the role check, the claims are cancelled first, before the display row is locked:
+      // claims of this screen that no player has collected yet can then not bring a player
+      // back after the revocation (round 3, SCX-01). Only this organisation's rows are touched, so an
       // unknown or foreign id changes nothing and is answered with 404 below.
       const cancelledPairingIds = await pairingCancelClaims(tx, id);
       const display = await tx.query(

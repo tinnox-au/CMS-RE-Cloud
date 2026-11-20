@@ -220,7 +220,7 @@ describe('credential changes and their audit events', () => {
   it('creates no session and keeps the previous one when the sign-in audit event cannot be written', async () => {
     let lastState = '';
     const provider: IdentityProvider = {
-      beginLogin: () => {
+      beginLogin: (_options?: { readonly reauthenticate?: boolean }) => {
         lastState = randomUUID();
         return Promise.resolve({
           state: lastState,
@@ -229,7 +229,8 @@ describe('credential changes and their audit events', () => {
           url: 'http://localhost:8080/sign-in',
         });
       },
-      completeLogin: () => Promise.resolve({ sub: org.oidcSub, acr: null, amr: [], idToken: null }),
+      completeLogin: () =>
+        Promise.resolve({ sub: org.oidcSub, acr: null, amr: [], idToken: null, authTime: null }),
       endSessionUrl: () => Promise.resolve(null),
       check: () => Promise.resolve(true),
     };

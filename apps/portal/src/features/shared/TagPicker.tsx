@@ -18,6 +18,8 @@ export interface TagPickerProps {
   /** Accessible name of the group. Default "Tags". */
   readonly label?: string;
   readonly disabled?: boolean;
+  /** False when the role may not create tags in this scope: the list searches only. Default true. */
+  readonly allowCreate?: boolean;
   /**
    * Starts as the chosen chips and an "Add or remove tags" button that opens the list, for a
    * form where the list should not take room until it is wanted. Default false: the list is
@@ -45,6 +47,7 @@ export function TagPicker({
   onChange,
   label = 'Tags',
   disabled = false,
+  allowCreate = true,
   collapsible = false,
   testId = 'shared-tag-picker',
   id,
@@ -126,6 +129,7 @@ export function TagPicker({
             onCreated={(tag) => {
               if (!chosenIds.has(tag.id)) onChange([...value, tag.id]);
             }}
+            allowCreate={allowCreate}
             disabled={disabled}
             atLimit={atLimit}
             testId={`${testId}-checklist`}

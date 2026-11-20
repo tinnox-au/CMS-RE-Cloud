@@ -91,6 +91,22 @@ export const ROUTES = Object.freeze({
 
   audit: '/api/audit',
 
+  /** GET: every member, removed ones included (member.read). */
+  members: '/api/members',
+  /** GET: id and name of every member (activity.read). A fixed path, registered beside `:id`. */
+  memberNames: '/api/members/names',
+  /** PATCH: role or display name. */
+  memberPattern: '/api/members/:id',
+  member: (id: string) => `/api/members/${enc(id)}`,
+  memberRemovePattern: '/api/members/:id/remove',
+  memberRemove: (id: string) => `/api/members/${enc(id)}/remove`,
+  memberSignOutPattern: '/api/members/:id/sign-out',
+  memberSignOut: (id: string) => `/api/members/${enc(id)}/sign-out`,
+  /** GET: pending invites (member.read). POST: request an invite (member.manage). */
+  invites: '/api/invites',
+  inviteCancelPattern: '/api/invites/:id/cancel',
+  inviteCancel: (id: string) => `/api/invites/${enc(id)}/cancel`,
+
   playerPairing: '/player/pairing',
   playerPairingPollPattern: '/player/pairing/:id',
   playerPairingPoll: (id: string) => `/player/pairing/${enc(id)}`,

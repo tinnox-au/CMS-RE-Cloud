@@ -2,6 +2,7 @@ import type { PushPlanResponse, PushPlanRow, PushResult } from '@tinnox/contract
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiRequestError } from '../../api/client.ts';
 import { api } from '../../api/index.ts';
+import { useCan } from '../../session/AuthenticatedSession.tsx';
 import {
   CONTENT_KIND_LABEL,
   contentHref,
@@ -159,6 +160,10 @@ export function PushDialog({
   const [query, setQuery] = useState('');
   const [scopeLifted, setScopeLifted] = useState(false);
   const [expanded, setExpanded] = useState<ReadonlySet<PushGroupId>>(new Set());
+  const canAddScreen = useCan('screen.setup');
+  // False once a refusal by role has refreshed the session: the dialog stays open for its
+  // report, but no longer offers a push (a control the role lacks is hidden).
+  const canPush = useCan('push.publish');
 
   // Each plan that arrives is applied once: the first seeds the default selection for the
   // screens the caller asked for, a later one only drops ticks that can no longer be pushed.
@@ -186,7 +191,7 @@ export function PushDialog({
   const loading = plan === null && planError === null;
 
   const push = () => {
-    if (busy || sendIds.length === 0) return;
+    if (busy || !canPush || sendIds.length === 0) return;
     const requestedIds = sendIds;
     const key = keyForPush(state, requestedIds, freshKey);
     setBusy(true);
@@ -234,7 +239,8 @@ export function PushDialog({
   // no listed screen has changes waiting. The one button then closes the dialog.
   const settled = plan !== null && !busy && sendIds.length === 0;
   const answered = report !== null && attempt?.failure === null;
-  const done = settled && (answered || selectableCount === 0);
+  // Without push.publish (the role changed while the dialog was open) only Close is left.
+  const done = (settled && (answered || selectableCount === 0)) || (!canPush && !busy);
   // Why the push button does nothing, while it is the button shown and the list is loaded.
   const hint =
     done || busy || plan === null ? null : pushBlockedReason(selectableCount, sendIds.length);
@@ -249,7 +255,7 @@ export function PushDialog({
       title="Push to screens"
       description="A push hands a new version to the player of each ticked screen. A screen changes when its player has downloaded and verified it."
       footerStart={
-        selectableCount > 0 ? (
+        selectableCount > 0 && canPush ? (
           <span className="tx-num" data-testid="push-selected-count" aria-live="polite">
             {sendIds.length} of {selectableCount} selected
           </span>
@@ -342,13 +348,16 @@ export function PushDialog({
                   icon={Monitor}
                   title="No screens yet"
                   action={
-                    <ButtonLink variant="primary" to="/screens/new" icon={Plus} onClick={onClose}>
-                      Add screen
-                    </ButtonLink>
+                    canAddScreen ? (
+                      <ButtonLink variant="primary" to="/screens/new" icon={Plus} onClick={onClose}>
+                        Add screen
+                      </ButtonLink>
+                    ) : undefined
                   }
                 >
-                  Add a screen and assign a playlist, a schedule or a layout to it, then push from
-                  here.
+                  {canAddScreen
+                    ? 'Add a screen and assign a playlist, a schedule or a layout to it, then push from here.'
+                    : 'An editor adds screens.'}
                 </EmptyState>
               </div>
             ) : (
@@ -450,7 +459,19 @@ export function PushDialog({
 
 /** The failure of a whole request, with what it means for the screens. */
 function AttemptError({ attempt }: { readonly attempt: PushAttempt }) {
-  const unknown = classifyPushFailure(attempt.failure) === 'unknown';
+  const kind = classifyPushFailure(attempt.failure);
+  if (kind === 'role') {
+    // The role may have changed part of the way through, so never "Nothing was pushed".
+    return (
+      <div className="tx-stack tx-stack--tight">
+        <ErrorNotice error={attempt.failure} title="Your role changed during the push" />
+        <p className="tx-small tx-muted">
+          Screens pushed before the change keep their new version. The others were not pushed.
+        </p>
+      </div>
+    );
+  }
+  const unknown = kind === 'unknown';
   return (
     <div className="tx-stack tx-stack--tight">
       <ErrorNotice

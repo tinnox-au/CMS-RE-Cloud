@@ -32,12 +32,15 @@ import {
 } from '../src/index.ts';
 import {
   appPool,
+  asDefiner,
   createOrg,
   hash,
   migratorClient,
   pairingCode,
   PG,
   pgCode,
+  stillWaiting,
+  twoTransactions,
   type TestOrg,
 } from './support.ts';
 
@@ -76,67 +79,17 @@ const claim = (org: TestOrg, code: string, displayId = org.displayId) =>
 const pollOutcome = async (p: { pairingId: string; pollingTokenHash: Buffer }) =>
   (await pairingPoll(db, { ...p, maxWrongAttempts: 5 })).outcome;
 
-/** Runs one statement as the owner of the security functions (non-tenant tables). */
-async function asDefiner<R extends pg.QueryResultRow>(
-  text: string,
-  values: readonly unknown[] = [],
-): Promise<R[]> {
-  await migrator.query('BEGIN');
-  try {
-    await migrator.query('SET LOCAL ROLE tinnox_definer');
-    const { rows } = await migrator.query<R>(text, [...values]);
-    await migrator.query('COMMIT');
-    return rows;
-  } catch (error) {
-    await migrator.query('ROLLBACK');
-    throw error;
-  }
-}
-
-/** Adds a second operator to an organisation; returns the membership id. */
+/** Adds a second member, an Editor, to an organisation; returns the membership id. */
 async function addMember(org: TestOrg): Promise<string> {
   const id = randomUUID();
   await migrator.query('BEGIN');
   await migrator.query("SELECT set_config('app.org_id', $1, true)", [org.orgId]);
-  await migrator.query('INSERT INTO membership (id, org_id, oidc_sub) VALUES ($1, $2, $3)', [
-    id,
-    org.orgId,
-    `sec-test-${id}`,
-  ]);
+  await migrator.query(
+    "INSERT INTO membership (id, org_id, oidc_sub, role) VALUES ($1, $2, $3, 'editor')",
+    [id, org.orgId, `sec-test-${id}`],
+  );
   await migrator.query('COMMIT');
   return id;
-}
-
-/** Resolves to true when the promise is still pending after a short wait. */
-async function stillWaiting(promise: Promise<unknown>): Promise<boolean> {
-  let settled = false;
-  const mark = () => {
-    settled = true;
-  };
-  promise.then(mark, mark);
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  return !settled;
-}
-
-/** Two tinnox_app connections, each in an open transaction for `orgId`. */
-async function twoTransactions(
-  orgId: string,
-  work: (first: pg.PoolClient, second: pg.PoolClient) => Promise<void>,
-): Promise<void> {
-  const first = await pool.connect();
-  const second = await pool.connect();
-  try {
-    for (const client of [first, second]) {
-      await client.query('BEGIN');
-      await client.query("SELECT set_config('app.org_id', $1, true)", [orgId]);
-    }
-    await work(first, second);
-  } finally {
-    for (const client of [first, second]) {
-      await client.query('ROLLBACK').catch(() => undefined);
-      client.release();
-    }
-  }
 }
 
 describe('function hardening', () => {
@@ -155,9 +108,9 @@ describe('function hardening', () => {
        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'sec' ORDER BY 1`,
     );
     // 14 from migration 0002, two lookups from 0003_api_lookups.sql,
-    // heartbeat_log_purge from 0004_review_hardening.sql and pairing_cancel_claims from
-    // 0010_pairing_hardening.sql.
-    expect(rows.length).toBe(18);
+    // heartbeat_log_purge from 0004_review_hardening.sql, pairing_cancel_claims from
+    // 0010_pairing_hardening.sql and session_revoke_membership from 0013_roles_and_members.sql.
+    expect(rows.length).toBe(19);
     for (const r of rows) {
       expect(r, r.proname).toMatchObject({
         prosecdef: true,
@@ -181,7 +134,7 @@ describe('membership and sessions', () => {
     expect(await membershipByOidcSub(db, a.oidcSub)).toEqual({
       membershipId: a.membershipId,
       orgId: a.orgId,
-      role: 'operator',
+      role: 'owner',
       orgName: 'Sec A',
     });
     expect(await membershipByOidcSub(db, 'unknown-subject')).toBeNull();
@@ -251,11 +204,13 @@ describe('membership and sessions', () => {
       csrfToken: 'c'.repeat(43),
       ttlSeconds: 3600,
       idToken: 'header.payload.signature',
+      authTime: new Date(),
     });
     expect(created).toMatchObject({
+      outcome: 'created',
       membershipId: a.membershipId,
       orgId: a.orgId,
-      role: 'operator',
+      role: 'owner',
     });
     const found = await sessionByIdHash(db, idHash, 1800);
     expect(found).toMatchObject({
@@ -264,7 +219,7 @@ describe('membership and sessions', () => {
       oidcSub: a.oidcSub,
       orgName: 'Sec A',
       csrfToken: 'c'.repeat(43),
-      role: 'operator',
+      role: 'owner',
     });
     expect(await sessionByIdHash(db, hash(), 1800)).toBeNull();
 
@@ -287,8 +242,9 @@ describe('membership and sessions', () => {
         csrfToken: 'c'.repeat(43),
         ttlSeconds: 3600,
         idToken: null,
+        authTime: new Date(),
       }),
-    ).toBeNull();
+    ).toEqual({ outcome: 'no_membership' });
     expect(await sessionByIdHash(db, idHash, 1800)).toBeNull();
   });
 
@@ -306,6 +262,7 @@ describe('membership and sessions', () => {
       csrfToken: 'c'.repeat(43),
       ttlSeconds: 3600,
       idToken: null,
+      authTime: new Date(),
     });
     await asDefiner(
       "UPDATE public.session SET expires_at = now() - interval '1 second' WHERE id_hash = $1",
@@ -320,6 +277,7 @@ describe('membership and sessions', () => {
       csrfToken: 'c'.repeat(43),
       ttlSeconds: 3600,
       idToken: null,
+      authTime: new Date(),
     });
     await asDefiner(
       "UPDATE public.session SET last_seen_at = now() - interval '31 minutes' WHERE id_hash = $1",
@@ -351,6 +309,7 @@ describe('membership and sessions', () => {
         csrfToken: 'c'.repeat(43),
         ttlSeconds: 3600,
         idToken: 'header.payload.signature',
+        authTime: new Date(),
       });
     }
     await asDefiner(
@@ -377,6 +336,7 @@ describe('membership and sessions', () => {
           csrfToken: 'c'.repeat(43),
           ttlSeconds: 10,
           idToken: null,
+          authTime: new Date(),
         }),
       ),
     ).toBe('22023');
@@ -775,12 +735,12 @@ describe('pairing', () => {
     const org = await createOrg(migrator, 'Cancel lock');
     const cancel = 'SELECT sec.pairing_cancel_claims($1) AS ids';
     // The second transaction would fail on its lock timeout if it had to wait for the first.
-    await twoTransactions(org.orgId, async (stranger, owner) => {
+    await twoTransactions(pool, org.orgId, async (stranger, owner) => {
       await stranger.query("SELECT set_config('app.org_id', $1, true)", [b.orgId]);
       expect((await stranger.query(cancel, [org.displayId])).rows).toEqual([{ ids: [] }]);
       expect((await owner.query(cancel, [org.displayId])).rows).toEqual([{ ids: [] }]);
     });
-    await twoTransactions(org.orgId, async (owner, stranger) => {
+    await twoTransactions(pool, org.orgId, async (owner, stranger) => {
       await stranger.query("SELECT set_config('app.org_id', $1, true)", [b.orgId]);
       expect((await owner.query(cancel, [org.displayId])).rows).toEqual([{ ids: [] }]);
       expect((await stranger.query(cancel, [org.displayId])).rows).toEqual([{ ids: [] }]);
@@ -816,14 +776,16 @@ describe('pairing', () => {
     ).toBe('completed');
 
     // A claimed session that no later claim cancelled, as one claimed before
-    // migration 0010 could be.
+    // migration 0010 could be. Its claimer is an active member, so the member check
+    // of 0013 passes and the active-registration check is what refuses it.
     const stray = await newPairing();
     await asDefiner(
+      migrator,
       `UPDATE public.pairing_session
        SET status = 'claimed', org_id = $2, display_id = $3, claimed_at = now(),
-           expires_at = now() + interval '5 minutes'
+           claimed_by_membership = $4, expires_at = now() + interval '5 minutes'
        WHERE id = $1`,
-      [stray.pairingId, org.orgId, org.displayId],
+      [stray.pairingId, org.orgId, org.displayId, org.membershipId],
     );
     expect(
       await pairingComplete(db, {
@@ -842,7 +804,7 @@ describe('pairing', () => {
     const p1 = await newPairing();
     const p2 = await newPairing();
     const sql = 'SELECT outcome, cancelled_pairing_ids FROM sec.pairing_claim($1, $2, $3, 5, 600)';
-    await twoTransactions(org.orgId, async (first, second) => {
+    await twoTransactions(pool, org.orgId, async (first, second) => {
       const one = await first.query(sql, [p1.code, org.displayId, org.membershipId]);
       expect(one.rows[0]).toEqual({ outcome: 'claimed', cancelled_pairing_ids: [] });
       const late = second
@@ -863,7 +825,7 @@ describe('pairing', () => {
       expect(await claim(guesser, pairingCode())).toEqual({ outcome: 'invalid_code' });
     const real = await newPairing();
     const sql = 'SELECT outcome FROM sec.pairing_claim($1, $2, $3, 5, 600)';
-    await twoTransactions(guesser.orgId, async (first, second) => {
+    await twoTransactions(pool, guesser.orgId, async (first, second) => {
       // The fifth wrong code, not committed yet.
       const fifth = await first.query(sql, [
         pairingCode(),
@@ -881,6 +843,7 @@ describe('pairing', () => {
       await second.query('COMMIT');
     });
     const failures = await asDefiner<{ n: string }>(
+      migrator,
       'SELECT count(*) AS n FROM public.pairing_claim_failure WHERE membership_id = $1',
       [guesser.membershipId],
     );

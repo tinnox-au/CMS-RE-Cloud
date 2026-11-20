@@ -14,10 +14,10 @@ Run everything from the repository root. You should not need `npm install`; `nod
 | `npm run infra:up` | Builds the media-worker image if needed, starts PostgreSQL, Keycloak and the worker, and waits until all three are healthy. |
 | `npm run infra:down` / `npm run infra:logs` | Stops the containers (data kept) / shows recent logs. |
 | `npm run db:migrate` | Applies `db/migrations` as `tinnox_migrator`. `-- --test` targets `tinnox_test`. |
-| `npm run db:seed` | Creates "TINNOX Internal", site "Melbourne Workshop" (Australia/Melbourne) and the operator's membership. `-- --second-org` also creates "Isolation Test Organisation" for the second test user. |
-| `npm run verify:oidc` | Signs the test operator in to Keycloak over HTTP (PKCE, password, TOTP) and exchanges the code. Prints no secret. |
+| `npm run db:seed` | Creates "TINNOX Internal", site "Melbourne Workshop" (Australia/Melbourne) and one member per role: the operator (Owner, "Dev Owner"), `org-admin` (Admin), `editor` and `viewer`. `-- --second-org` also creates "Isolation Test Organisation" with the second test user as its Owner ("Second Owner"). |
+| `npm run verify:oidc` | Signs the test operator in to Keycloak over HTTP (PKCE, password, TOTP) and exchanges the code; checks `auth_time`, a forced re-authentication (`prompt=login`) and the provisioning reader (`view-users` only). Takes a user key (`operator`, `secondOrgOperator`, `admin`, `editor`, `viewer`). Prints no secret. |
 | `npm run dev` | Runs `dev` in `@tinnox/api`, `@tinnox/portal`, `@tinnox/player-web` together. |
-| `npm run typecheck` / `npm run lint` / `npm run format` / `npm run format:check` | Type check every workspace plus `scripts/`; ESLint; Prettier. |
+| `npm run typecheck` / `npm run lint` / `npm run format` / `npm run format:check` | Type check every workspace plus `scripts/`; ESLint (run with a 4 GB heap: it needs about 2.5 GB, more than Node's 2 GB default on machines with under about 15 GB of memory); Prettier. |
 | `npm test` | Unit tests (vitest project `unit`). |
 | `npm run test:integration` | Integration tests against PostgreSQL. Rebuilds database `tinnox_test` first. |
 | `npm run test:e2e` | Playwright suite in `tests/e2e` (25 tests; rebuilds database `tinnox_e2e_test`, builds and starts portal, player and API itself; evidence to `tests/.run/evidence` unless `E2E_EVIDENCE_DIR` is set). |
@@ -25,7 +25,8 @@ Run everything from the repository root. You should not need `npm install`; `nod
 | `npm run audit` | `scripts/audit.ts`: `npm audit`, failing on high or critical advisories apart from the dated development-only exceptions in `scripts/audit-exceptions.json` (operations checklist section 6). |
 | `npm run scan:secrets` | gitleaks (container, no network) over git history and all non-ignored files. |
 | `npm run reset -- --yes` | Deletes the database volume, the Keycloak container and `./data`. Keeps `.env`. Run `npm run setup -- --quiet` afterwards: it recreates `./data/jobs`, without which the media worker stays unhealthy. |
-| `npm run otp` | Prints the current TOTP code of the development operator (`-- --show-password`, `-- --second`). |
+| `npm run otp` | Prints the current TOTP code of the development operator (`-- --show-password`; `-- --as <user>` for another development user: `operator`, `second`, `admin`, `editor` or `viewer`; `-- --second` as before). |
+| `npm run provision` | TINNOX's membership provisioning (`scripts/provision-member.ts`; `-- --help` lists the commands). Runs as `tinnox_migrator` from a controlled host, with the provisioning reader; see operations checklist section 7. |
 | `npm run fixtures` | Writes synthetic sample media to `apps/api/test-fixtures/out/`. |
 | `npm run backup:verify` | Backup and restore exercise (API must be stopped). |
 | `npm run start:built` | Like `dev`, but with production builds of portal and player (service worker active). |
@@ -52,7 +53,7 @@ To add or change a dependency use `npx npm@11.21.2 install <pkg>@<exact version>
 
 ## 4. Environment variables (`.env`, documented in `.env.example`)
 
-`NODE_ENV`, `LOG_LEVEL`, `POSTGRES_HOST_PORT`, `POSTGRES_SUPERUSER_PASSWORD`, `TINNOX_MIGRATOR_PASSWORD`, `TINNOX_APP_PASSWORD`, `DATABASE_URL`, `DATABASE_MIGRATOR_URL`, `TEST_DATABASE_URL`, `TEST_DATABASE_MIGRATOR_URL`, `API_HOST`, `API_PORT`, `API_PUBLIC_ORIGIN`, `PORTAL_ORIGIN`, `PLAYER_ORIGIN`, `SESSION_SECRET`, `SESSION_TTL_SECONDS`, `SESSION_IDLE_TIMEOUT_SECONDS`, `MEDIA_URL_HMAC_SECRET`, `PAIRING_CLIENT_KEY_SECRET`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`, `OIDC_POST_LOGOUT_REDIRECT_URI`, `KC_BOOTSTRAP_ADMIN_USERNAME`, `KC_BOOTSTRAP_ADMIN_PASSWORD`, `DEV_OPERATOR_OIDC_SUB`, `DEV_SECOND_ORG_OIDC_SUB`, `MEDIA_ROOT`, `MEDIA_JOBS_DIR`, and optional `LIMIT_*` overrides (names in `LIMIT_ENV_VARS`).
+`NODE_ENV`, `LOG_LEVEL`, `POSTGRES_HOST_PORT`, `POSTGRES_SUPERUSER_PASSWORD`, `TINNOX_MIGRATOR_PASSWORD`, `TINNOX_APP_PASSWORD`, `DATABASE_URL`, `DATABASE_MIGRATOR_URL`, `TEST_DATABASE_URL`, `TEST_DATABASE_MIGRATOR_URL`, `API_HOST`, `API_PORT`, `API_PUBLIC_ORIGIN`, `PORTAL_ORIGIN`, `PLAYER_ORIGIN`, `SESSION_SECRET`, `SESSION_TTL_SECONDS`, `SESSION_IDLE_TIMEOUT_SECONDS`, `MEDIA_URL_HMAC_SECRET`, `PAIRING_CLIENT_KEY_SECRET`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`, `OIDC_POST_LOGOUT_REDIRECT_URI`, `KC_BOOTSTRAP_ADMIN_USERNAME`, `KC_BOOTSTRAP_ADMIN_PASSWORD`, `DEV_OPERATOR_OIDC_SUB`, `DEV_SECOND_ORG_OIDC_SUB`, `DEV_ADMIN_OIDC_SUB`, `DEV_EDITOR_OIDC_SUB`, `DEV_VIEWER_OIDC_SUB`, `PROVISION_IDP_CLIENT_ID`, `PROVISION_IDP_CLIENT_SECRET` (and optional `PROVISION_IDP_ISSUER`; read only by `scripts/provision-member.ts`, never set for the API, compose or the worker outside development), `MEDIA_ROOT`, `MEDIA_JOBS_DIR`, and optional `LIMIT_*` overrides (names in `LIMIT_ENV_VARS`).
 
 The API's `dev` and `start` scripts load `../../.env` through tsx's `--env-file`. `MEDIA_ROOT` and `MEDIA_JOBS_DIR` are relative to the repository root; resolve them against it, not against `apps/api`.
 
@@ -129,7 +130,9 @@ The device token is delivered in exactly one response. If that response is lost,
 
 | Table | Privileges | Notes |
 |---|---|---|
-| `organization`, `membership`, `site` | SELECT | Created by seed only. |
+| `organization`, `site` | SELECT | Created by the seed or by TINNOX's `provision-member org-create`. |
+| `membership` | SELECT, UPDATE of `role`, `display_name`, `removed_at`, `removed_by` (migration 0013) | Created only by the seed and `provision-member`. Never `INSERT`, `oidc_sub`, `org_id`, `first_signed_in_at` or `sessions_valid_after`; the last-owner and removal rules are a trigger (`membership_guard`). Sessions end through `sec.session_revoke_membership`. |
+| `member_invite` | SELECT, INSERT, UPDATE of `status`, `closed_by` (migration 0013) | Invite requests. `tinnox_app` may only move `pending` to `cancelled`; TINNOX's script fulfils or expires them; name and e-mail are cleared when an invite closes (trigger `member_invite_guard`). |
 | `display` | SELECT, INSERT, UPDATE of name, canvas, content rectangle, default fit | `route` and `org_id` cannot be updated. |
 | `player_registration` | SELECT, UPDATE of `revoked_at`, `revoked_reason` | Created only by `pairingComplete`. Revocation is permanent (trigger). Reasons: `operator`, `replaced`, `player_reset`. One active row per display. |
 | `media`, `playlist`, `playlist_item` | SELECT, INSERT, UPDATE, DELETE | `media.status = 'ready'` requires all inspection columns. `storage_key` must start with the row's `org_id`. Media referenced by a playlist item or a publication cannot be hard-deleted (foreign key); use `deleted_at`. |
@@ -227,8 +230,9 @@ Keys are `<org uuid>/<object uuid>` and nothing else is accepted. `put` never re
 - Image `quay.io/keycloak/keycloak:26.8.2`, `start-dev --import-realm`, http://localhost:8080. The realm is imported only when it does not exist; after `npm run setup -- --force`, run `npm run reset -- --yes` and start again.
 - Realm `tinnox-dev`. Issuer `http://localhost:8080/realms/tinnox-dev`. Discovery at `<issuer>/.well-known/openid-configuration`.
 - Client `tinnox-portal-bff`: confidential (client secret in `OIDC_CLIENT_SECRET`), standard flow only, PKCE S256 required, no implicit flow, no direct grants, no service account. Redirect URIs, exact: `http://localhost:5173/api/auth/callback` (default, `OIDC_REDIRECT_URI`) and `http://localhost:4000/api/auth/callback`. Post-logout redirect: `http://localhost:5173/`. Scopes: `basic`, `acr`, `profile`.
-- Users: `operator` (organisation "TINNOX Internal") and `second-operator` ("Isolation Test Organisation"). Each has a random password and a pre-provisioned TOTP credential (SHA-1, 6 digits, 30 s). Values are in `infra/.generated/dev-credentials.json` (`operator`, `secondOrgOperator`: `username`, `password`, `oidcSub`, `totpSecretBase32`). New users must configure TOTP (default required action).
-- The user id in the realm import is the `sub` claim; it equals `DEV_OPERATOR_OIDC_SUB` / `DEV_SECOND_ORG_OIDC_SUB` and `membership.oidc_sub`. Verified by `npm run verify:oidc`.
+- Users: `operator` (Owner of organisation "TINNOX Internal"), `second-operator` (Owner of "Isolation Test Organisation"), and, since stage C, `org-admin`, `editor` and `viewer` (Admin, Editor and Viewer of "TINNOX Internal"). Each has a random password and a pre-provisioned TOTP credential (SHA-1, 6 digits, 30 s). Values are in `infra/.generated/dev-credentials.json` (`operator`, `secondOrgOperator`, `admin`, `editor`, `viewer`: `username`, `password`, `oidcSub`, `totpSecretBase32`). Users added to an existing credentials file need a Keycloak container recreate (the command `npm run setup` prints) and a re-seed. New users must configure TOTP (default required action).
+- The user id in the realm import is the `sub` claim; it equals the five subjects `DEV_OPERATOR_OIDC_SUB`, `DEV_SECOND_ORG_OIDC_SUB`, `DEV_ADMIN_OIDC_SUB`, `DEV_EDITOR_OIDC_SUB`, `DEV_VIEWER_OIDC_SUB` and `membership.oidc_sub`. Verified by `npm run verify:oidc` (`-- <user key>` for another user).
+- Client `tinnox-provisioning` (stage C): confidential, service account only, with the realm-management role `view-users` and nothing else; `scripts/provision-member.ts` reads accounts with it (`PROVISION_IDP_CLIENT_ID`, `PROVISION_IDP_CLIENT_SECRET`). `npm run verify:oidc` checks that it finds an account, cannot create one and holds `view-users` and its composites only.
 - The id token contains `sub`, `preferred_username`, `name`, `given_name`, `family_name`, `acr`, `auth_time`, `nonce`, `sid`. It has **no `amr` claim**, and `acr` was `0` when a code was issued from an existing Keycloak session. Do not treat `acr` or `amr` as proof of MFA with this realm as configured; MFA is enforced by Keycloak's browser flow. If the API should verify it, the realm needs an ACR-to-level mapping first.
 - Keycloak rejects a TOTP code that was already used. An automated test that signs the same user in twice within one 30-second window must wait for the next window or reuse the session.
 - Admin console: user from `KC_BOOTSTRAP_ADMIN_USERNAME`, password in `.env`.

@@ -202,6 +202,17 @@ describe('screen status', () => {
     expect(screenStatusGroup(status.kind)).toBe('in_sync');
   });
 
+  it('states why an unpaired screen gets nothing, without telling every role to pair it', () => {
+    const status = screenStatus(
+      view({ summary: 'unpaired', paired: false, registrationId: null, stale: true }),
+      0,
+    );
+    expect(status.kind).toBe('not_paired');
+    expect(status.explanation).toBe(
+      'No player holds a credential for this screen, so it receives no content.',
+    );
+  });
+
   it('maps every summary to a kind, a tone and a counter group', () => {
     const kinds = new Set(DELIVERY_SUMMARIES.map(screenStatusKindOf));
     expect(kinds).toEqual(new Set(SCREEN_STATUS_KINDS));

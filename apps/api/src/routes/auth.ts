@@ -5,11 +5,17 @@
  * (table login_state, one-time, 10 minutes). They are keyed by a hash of the
  * `state` value together with a short-lived random pre-auth cookie, so an
  * authorization response can only be redeemed by the browser that started it.
+ *
+ * After a member's sessions were ended (removal, demotion, sign out everywhere), a sign-in the
+ * provider authenticated before that is refused (sec.session_create answers `reauth`), and the
+ * browser is sent back once with `prompt=login`. That forced sign-in is stored under its own
+ * key, so a provider that does not re-authenticate ends at `reauth_failed` instead of a loop.
  */
 import { createHmac } from 'node:crypto';
 import {
   LoginQuerySchema,
   ROUTES,
+  type AuthErrorCode,
   type LogoutResponse,
   type SessionResponse,
 } from '@tinnox/contracts';
@@ -22,10 +28,14 @@ import {
   sessionCreate,
   sessionRevoke,
   sha256,
+  withOrg,
   withResolvedOrg,
+  type SessionCreateResult,
 } from '@tinnox/db';
+import { permissionsOf } from '@tinnox/domain';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { IdentityProviderError, mfaSatisfied } from '../auth/oidc.ts';
+import { parseRole } from '../auth/permissions.ts';
 import {
   clearSessionCookie,
   operatorOf,
@@ -34,18 +44,24 @@ import {
   sessionCookieOptions,
 } from '../auth/session.ts';
 import { perMinute, type AppContext } from '../context.ts';
-import { HttpError, parseInput } from '../errors.ts';
+import { HttpError, parseInput, pgErrorCode } from '../errors.ts';
 import { randomToken } from '../security.ts';
 
 const LOGIN_STATE_TTL_SECONDS = 600;
 
-/** Reasons the portal may show after a failed sign-in (`?authError=` on the portal root). */
-export type AuthErrorCode =
-  'state' | 'provider' | 'provider_unavailable' | 'no_membership' | 'mfa_required';
-
-function loginStateKey(ctx: AppContext, preAuthCookie: string, state: string): Buffer {
+/**
+ * The login_state key of a sign-in. A forced re-login (`prompt=login`) uses its own label, so
+ * the callback knows it already asked once: the loop guard.
+ */
+function loginStateKey(
+  ctx: AppContext,
+  preAuthCookie: string,
+  state: string,
+  kind: 'normal' | 'reauth',
+): Buffer {
+  const label = kind === 'normal' ? 'login-state' : 'login-state-reauth';
   return createHmac('sha256', ctx.config.sessionSecret)
-    .update(`login-state\n${preAuthCookie}\n${state}`)
+    .update(`${label}\n${preAuthCookie}\n${state}`)
     .digest();
 }
 
@@ -84,7 +100,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
       }
       const preAuth = randomToken();
       await loginStatePut(unscoped, {
-        stateHash: loginStateKey(ctx, preAuth, begin.state),
+        stateHash: loginStateKey(ctx, preAuth, begin.state, 'normal'),
         codeVerifier: begin.codeVerifier,
         nonce: begin.nonce,
         returnTo: query.returnTo ?? null,
@@ -119,7 +135,15 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
       ) {
         return failureRedirect(ctx, reply, 'state');
       }
-      const stored = await loginStateTake(unscoped, loginStateKey(ctx, preAuth, state));
+      // The forced re-login's key first: its answer must never start another one.
+      const reauthStored = await loginStateTake(
+        unscoped,
+        loginStateKey(ctx, preAuth, state, 'reauth'),
+      );
+      const stored =
+        reauthStored ??
+        (await loginStateTake(unscoped, loginStateKey(ctx, preAuth, state, 'normal')));
+      const forced = reauthStored !== null;
       if (stored === null) {
         await auditUnscoped(unscoped, {
           actorType: 'anonymous',
@@ -183,48 +207,113 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
       const csrfToken = randomToken();
       const idToken =
         identity.idToken !== null && identity.idToken.length <= 8192 ? identity.idToken : null;
-      const created = await withResolvedOrg(ctx.pool, async (tx, enterOrg) => {
-        if (typeof previous === 'string' && previous.length <= 100) {
-          await sessionRevoke(tx, sha256(previous));
-        }
-        const session = await sessionCreate(tx, {
-          idHash: sha256(sessionId),
-          oidcSub: identity.sub,
-          csrfToken,
-          ttlSeconds: ctx.config.sessionTtlSeconds,
-          idToken,
+      let created: SessionCreateResult;
+      try {
+        created = await withResolvedOrg(ctx.pool, async (tx, enterOrg) => {
+          // The member row is locked first (sec.session_create), the previous session row after
+          // it: the order a member change uses (stage-c.md 6.8). The other way round, a removal
+          // or sign-out of the member whose old cookie the browser still sends deadlocks.
+          const session = await sessionCreate(tx, {
+            idHash: sha256(sessionId),
+            oidcSub: identity.sub,
+            csrfToken,
+            ttlSeconds: ctx.config.sessionTtlSeconds,
+            idToken,
+            authTime: identity.authTime === null ? null : new Date(identity.authTime * 1000),
+          });
+          // The rotation commits whatever the outcome.
+          if (typeof previous === 'string' && previous.length <= 100) {
+            await sessionRevoke(tx, sha256(previous));
+          }
+          if (session.outcome === 'no_membership') {
+            await auditUnscoped(tx, {
+              actorType: 'anonymous',
+              actorId: null,
+              action: 'auth.login',
+              objectType: null,
+              objectId: null,
+              result: 'denied',
+              detail: { reason: 'no_membership' },
+            });
+            return session;
+          }
+          await enterOrg(session.orgId);
+          if (session.outcome === 'reauth') {
+            await auditScoped(tx, {
+              actorType: 'operator',
+              actorId: session.membershipId,
+              action: 'auth.login',
+              objectType: 'membership',
+              objectId: session.membershipId,
+              result: 'denied',
+              detail: { reason: forced ? 'reauth_failed' : 'reauth_required' },
+            });
+            return session;
+          }
+          await auditScoped(tx, {
+            actorType: 'operator',
+            actorId: session.membershipId,
+            action: 'auth.login',
+            objectType: 'membership',
+            objectId: session.membershipId,
+            result: 'success',
+            detail: {
+              acr: identity.acr,
+              amr: identity.amr,
+              mfaVerifiedFromClaims: mfa.checked,
+            },
+          });
+          return session;
         });
-        if (session === null) {
-          await auditUnscoped(tx, {
+      } catch (error) {
+        // A member change held the member row past lock_timeout: nothing was committed, the
+        // transaction's audit row included, so the failed sign-in is recorded on its own.
+        if (pgErrorCode(error) === '55P03') {
+          request.log.warn({ pgCode: '55P03' }, 'sign-in waited too long for the member row');
+          await auditUnscoped(unscoped, {
             actorType: 'anonymous',
             actorId: null,
             action: 'auth.login',
             objectType: null,
             objectId: null,
-            result: 'denied',
-            detail: { reason: 'no_membership' },
+            result: 'failure',
+            detail: { reason: 'member_locked' },
           });
-          return null;
+          return failureRedirect(ctx, reply, 'provider_unavailable');
         }
-        await enterOrg(session.orgId);
-        await auditScoped(tx, {
-          actorType: 'operator',
-          actorId: session.membershipId,
-          action: 'auth.login',
-          objectType: 'membership',
-          objectId: session.membershipId,
-          result: 'success',
-          detail: {
-            acr: identity.acr,
-            amr: identity.amr,
-            mfaVerifiedFromClaims: mfa.checked,
-          },
-        });
-        return session;
-      });
-      if (created === null) {
+        throw error;
+      }
+
+      if (created.outcome === 'no_membership') {
         clearSessionCookie(ctx, reply);
         return failureRedirect(ctx, reply, 'no_membership');
+      }
+      if (created.outcome === 'reauth') {
+        clearSessionCookie(ctx, reply);
+        // Asked once already: the provider did not sign the person in again.
+        if (forced) return failureRedirect(ctx, reply, 'reauth_failed');
+        let begin;
+        try {
+          begin = await ctx.idp.beginLogin({ reauthenticate: true });
+        } catch (error) {
+          request.log.error({ err: error }, 'identity provider unavailable at re-authentication');
+          return failureRedirect(ctx, reply, 'provider_unavailable');
+        }
+        const nextPreAuth = randomToken();
+        await loginStatePut(unscoped, {
+          stateHash: loginStateKey(ctx, nextPreAuth, begin.state, 'reauth'),
+          codeVerifier: begin.codeVerifier,
+          nonce: begin.nonce,
+          returnTo: stored.returnTo,
+          ttlSeconds: LOGIN_STATE_TTL_SECONDS,
+        });
+        // Replaces the clearing of the pre-auth cookie above (one Set-Cookie per name and path).
+        void reply.setCookie(
+          ctx.config.loginCookieName,
+          nextPreAuth,
+          sessionCookieOptions(ctx, LOGIN_STATE_TTL_SECONDS),
+        );
+        return reply.redirect(begin.url, 303);
       }
 
       void reply.setCookie(
@@ -240,10 +329,28 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     void reply.header('cache-control', 'no-store');
     const session = await readSession(ctx, request);
     if (session === null) return { authenticated: false };
+    // The role is read live from the member row on every request (sec.session_by_id_hash).
+    const role = parseRole(session.role);
+    if (role === null) {
+      request.log.error('session with an unknown role');
+      return { authenticated: false };
+    }
+    const name = await withOrg(ctx.pool, session.orgId, (tx) =>
+      tx.query<{ display_name: string | null }>(
+        'SELECT display_name FROM membership WHERE id = $1 AND org_id = app_org_id()',
+        [session.membershipId],
+      ),
+    );
     return {
       authenticated: true,
-      // No name or e-mail address is stored by the API (data minimisation); the role is shown instead.
-      user: { displayName: 'Operator', role: 'operator' },
+      user: {
+        membershipId: session.membershipId,
+        // The name TINNOX recorded for the member (provision-member); no e-mail address is
+        // stored (D3 a).
+        displayName: name.rows[0]?.display_name ?? null,
+        role,
+        permissions: permissionsOf(role),
+      },
       organization: { id: session.orgId, name: session.orgName },
       csrfToken: session.csrfToken,
       expiresAt: session.expiresAt,

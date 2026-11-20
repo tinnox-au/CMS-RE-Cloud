@@ -21,6 +21,7 @@ import {
   useToast,
 } from '../../../ui/index.ts';
 import { usePush } from '../../push/PushContext.tsx';
+import { ReadOnlyNote } from '../../shared/ReadOnlyNote.tsx';
 import type { SectionSave } from './types.ts';
 
 const FORM_ERROR_ID = 'screen-detail-hours-form-error';
@@ -35,6 +36,8 @@ export interface WorkingHoursTabProps {
   readonly onSaved: (display: DisplayDto) => void;
   /** Kept by the page so a save outlives the tab (FCX-03). */
   readonly save: SectionSave;
+  /** The role may not change working hours: the hours are shown and nothing is sent. */
+  readonly readOnly: boolean;
 }
 
 /** When the screen shows content: always, or on chosen days between two times. */
@@ -45,6 +48,7 @@ export function WorkingHoursTab({
   onDraft,
   onSaved,
   save: saveState,
+  readOnly,
 }: WorkingHoursTabProps) {
   const toast = useToast();
   const push = usePush();
@@ -52,13 +56,14 @@ export function WorkingHoursTab({
   const dirty = draft !== null && workingHoursDirty(draft, display.workingHours);
   const [attempted, setAttempted] = useState(false);
   const { saving, error: saveError, setSaving, setError: setSaveError } = saveState;
+  const locked = saving || readOnly;
   const rootRef = useRef<HTMLDivElement>(null);
   const result = validateWorkingHours(value);
   const errors = attempted && !result.ok ? result.errors : null;
   const formError = errors?.form ?? null;
 
   const change = (next: WorkingHoursDraft) => {
-    if (!saving) onDraft(next);
+    if (!locked) onDraft(next);
   };
   const changeDay = (index: number, day: Partial<WorkingDayDraft>) => {
     change({
@@ -68,7 +73,7 @@ export function WorkingHoursTab({
   };
 
   const save = () => {
-    if (saving || !dirty) return;
+    if (readOnly || saving || !dirty) return;
     setAttempted(true);
     if (!result.ok) {
       // Once the messages have rendered, take focus to the first problem so it is read.
@@ -101,6 +106,7 @@ export function WorkingHoursTab({
 
   return (
     <div ref={rootRef} className="tx-screen-detail-hours" data-testid="screen-detail-working-hours">
+      {readOnly && <ReadOnlyNote>Editors change working hours.</ReadOnlyNote>}
       {saveError !== null && (
         <ErrorNotice
           error={saveError}
@@ -113,6 +119,7 @@ export function WorkingHoursTab({
       <Switch
         label="Always on"
         checked={value.alwaysOn}
+        disabled={readOnly}
         data-testid="screen-detail-always-on"
         onChange={(alwaysOn) => {
           change({ ...value, alwaysOn });
@@ -133,6 +140,7 @@ export function WorkingHoursTab({
                 <Checkbox
                   label={name}
                   checked={day.open}
+                  disabled={readOnly}
                   // Save focuses Monday when no day is chosen; this makes the message read.
                   aria-describedby={index === 0 && formError !== null ? FORM_ERROR_ID : undefined}
                   onChange={(open) => {
@@ -146,7 +154,7 @@ export function WorkingHoursTab({
                     aria-label={`${name} start`}
                     value={day.start}
                     disabled={!day.open}
-                    readOnly={saving}
+                    readOnly={locked}
                     aria-invalid={error !== null || undefined}
                     aria-describedby={error === null ? undefined : errorId}
                     onChange={(event) => {
@@ -159,7 +167,7 @@ export function WorkingHoursTab({
                     aria-label={`${name} end`}
                     value={day.end}
                     disabled={!day.open}
-                    readOnly={saving}
+                    readOnly={locked}
                     aria-invalid={error !== null || undefined}
                     aria-describedby={error === null ? undefined : errorId}
                     onChange={(event) => {
@@ -184,30 +192,32 @@ export function WorkingHoursTab({
           )}
         </FieldGroup>
       )}
-      <div className="tx-screen-detail-form__actions">
-        <Button
-          variant="primary"
-          busy={saving}
-          aria-disabled={!dirty || undefined}
-          onClick={save}
-          data-testid="screen-detail-working-hours-save"
-        >
-          Save working hours
-        </Button>
-        {dirty && (
+      {!readOnly && (
+        <div className="tx-screen-detail-form__actions">
           <Button
-            variant="ghost"
-            onClick={() => {
-              onDraft(null);
-              setAttempted(false);
-              setSaveError(null);
-            }}
+            variant="primary"
+            busy={saving}
+            aria-disabled={!dirty || undefined}
+            onClick={save}
+            data-testid="screen-detail-working-hours-save"
           >
-            Discard changes
+            Save working hours
           </Button>
-        )}
-        {dirty && <span className="tx-screen-detail-unsaved">Unsaved changes</span>}
-      </div>
+          {dirty && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                onDraft(null);
+                setAttempted(false);
+                setSaveError(null);
+              }}
+            >
+              Discard changes
+            </Button>
+          )}
+          {dirty && <span className="tx-screen-detail-unsaved">Unsaved changes</span>}
+        </div>
+      )}
     </div>
   );
 }

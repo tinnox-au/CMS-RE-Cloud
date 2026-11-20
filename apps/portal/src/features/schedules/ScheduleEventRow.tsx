@@ -19,8 +19,10 @@ export interface ScheduleEventRowProps {
   readonly errors: ScheduleEventErrors | undefined;
   readonly playlists: readonly PlaylistSummaryDto[];
   readonly knownNames: ReadonlyMap<string, string>;
-  /** A save is running: nothing can be changed. */
+  /** A save is running, or the role may not change schedules: nothing can be changed. */
   readonly disabled: boolean;
+  /** The role may not change schedules: no move or remove buttons. */
+  readonly readOnly: boolean;
   /** `slot` is the message the change makes stale. */
   readonly onChange: (change: Partial<ScheduleEventDraft>, slot: keyof ScheduleEventErrors) => void;
   readonly onMove: (delta: -1 | 1) => void;
@@ -39,7 +41,8 @@ function ErrorText({ id, message }: { readonly id: string; readonly message: str
 /**
  * One weekly event of the schedule editor: a fieldset named "Event N", so every control in it
  * has a name of its own however many events the page holds. In tab order: the playlist and
- * the link to it, the days, start and end, then move up, move down and remove.
+ * the link to it, the days, start and end, then move up, move down and remove (not shown
+ * read-only).
  */
 export function ScheduleEventRow({
   index,
@@ -49,6 +52,7 @@ export function ScheduleEventRow({
   playlists,
   knownNames,
   disabled,
+  readOnly,
   onChange,
   onMove,
   onRemove,
@@ -152,33 +156,35 @@ export function ScheduleEventRow({
               )}
             </Field>
           </div>
-          <div className="tx-schedule-event__actions">
-            <IconButton
-              icon={ArrowUp}
-              label={`Move event ${String(number)} up`}
-              aria-disabled={index === 0 || disabled || undefined}
-              data-testid={`${testId}-up`}
-              onClick={() => {
-                onMove(-1);
-              }}
-            />
-            <IconButton
-              icon={ArrowDown}
-              label={`Move event ${String(number)} down`}
-              aria-disabled={index === count - 1 || disabled || undefined}
-              data-testid={`${testId}-down`}
-              onClick={() => {
-                onMove(1);
-              }}
-            />
-            <IconButton
-              icon={Trash}
-              label={`Remove event ${String(number)}`}
-              aria-disabled={disabled || undefined}
-              data-testid={`${testId}-remove`}
-              onClick={onRemove}
-            />
-          </div>
+          {!readOnly && (
+            <div className="tx-schedule-event__actions">
+              <IconButton
+                icon={ArrowUp}
+                label={`Move event ${String(number)} up`}
+                aria-disabled={index === 0 || disabled || undefined}
+                data-testid={`${testId}-up`}
+                onClick={() => {
+                  onMove(-1);
+                }}
+              />
+              <IconButton
+                icon={ArrowDown}
+                label={`Move event ${String(number)} down`}
+                aria-disabled={index === count - 1 || disabled || undefined}
+                data-testid={`${testId}-down`}
+                onClick={() => {
+                  onMove(1);
+                }}
+              />
+              <IconButton
+                icon={Trash}
+                label={`Remove event ${String(number)}`}
+                aria-disabled={disabled || undefined}
+                data-testid={`${testId}-remove`}
+                onClick={onRemove}
+              />
+            </div>
+          )}
         </div>
         {nextDay && (
           <p id={nextDayId} className="tx-field__hint" data-testid={`${testId}-next-day`}>

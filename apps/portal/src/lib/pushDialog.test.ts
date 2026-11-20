@@ -288,9 +288,16 @@ describe('idempotency key', () => {
     expect(classifyPushFailure(apiError(404, 'not_found'))).toBe('refused');
     expect(classifyPushFailure(apiError(400, 'validation_failed'))).toBe('refused');
     expect(classifyPushFailure(apiError(403, 'csrf_failed'))).toBe('refused');
+    expect(classifyPushFailure(apiError(403, 'origin_not_allowed'))).toBe('refused');
     expect(classifyPushFailure(apiError(401, 'unauthenticated'))).toBe('refused');
     // Never sent: there was no session token to send it with.
     expect(classifyPushFailure(apiError(0, 'no_session', false))).toBe('refused');
+  });
+
+  it('treats a refusal by role as its own kind, never retried', () => {
+    expect(classifyPushFailure(apiError(403, 'forbidden'))).toBe('role');
+    // Not from the API's envelope: not a decision by role.
+    expect(classifyPushFailure(apiError(403, 'forbidden', false))).toBe('refused');
   });
 
   it('batches a push larger than one request may carry', () => {

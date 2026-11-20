@@ -53,7 +53,13 @@ describe('navigation data', () => {
       ['Users', '/users'],
       ['Audit log', '/audit'],
     ]);
-    expect(ACCOUNT_NAV.find((item) => item.to === '/users')?.planned).toBe(true);
+    const users = ACCOUNT_NAV.find((item) => item.to === '/users');
+    // Built in stage C: only members whose role reads people see it.
+    expect(users?.planned).toBeUndefined();
+    expect(users?.permission).toBe('member.read');
+    expect(
+      ACCOUNT_NAV.filter((item) => item.to !== '/users').map((item) => item.permission),
+    ).toEqual([undefined, undefined]);
   });
 
   it('gives every link a unique id and a route without a trailing slash', () => {

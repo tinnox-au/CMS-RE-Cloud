@@ -77,6 +77,7 @@ import {
   useToast,
   type DataTableColumn,
 } from '../../../ui/index.ts';
+import { useCan } from '../../../session/AuthenticatedSession.tsx';
 import { Page } from '../../../shell/Page.tsx';
 import { usePush } from '../../push/PushContext.tsx';
 import {
@@ -143,6 +144,14 @@ export function ScreensList() {
   const tags = useTags('display');
   const { plan, planError, refresh: refreshPush, openDialog: openPushDialog } = usePush();
   const toast = useToast();
+  const canSetup = useCan('screen.setup');
+  const canAssign = useCan('screen.assign');
+  const canPush = useCan('push.publish');
+  const canDetails = useCan('screen.details');
+  const canPair = useCan('screen.pair');
+  // Selection is offered while one bulk action is left; the row menu while one row action is.
+  const canSelect = canAssign || canDetails || canPush;
+  const hasRowMenu = canSelect || canPair;
 
   const [params, setParams] = useSearchParams();
   const statusParam = params.get('status');
@@ -456,16 +465,28 @@ export function ScreensList() {
   const menuFor = (row: ScreenRow) => (
     <ScreenRowMenu
       row={row}
-      onAssign={(display) => {
-        openAssign([display]);
-      }}
-      onPush={(display) => {
-        pushTo([display]);
-      }}
-      onEditTags={(display) => {
-        openTags([display]);
-      }}
-      onRevoke={askRevoke}
+      onAssign={
+        canAssign
+          ? (display) => {
+              openAssign([display]);
+            }
+          : undefined
+      }
+      onPush={
+        canPush
+          ? (display) => {
+              pushTo([display]);
+            }
+          : undefined
+      }
+      onEditTags={
+        canDetails
+          ? (display) => {
+              openTags([display]);
+            }
+          : undefined
+      }
+      onRevoke={canPair ? askRevoke : undefined}
     />
   );
 
@@ -545,18 +566,22 @@ export function ScreensList() {
             icon={Monitor}
             title="No screens yet"
             action={
-              <ButtonLink
-                variant="primary"
-                size="lg"
-                to="/screens/new"
-                icon={Plus}
-                data-testid="screens-add"
-              >
-                Add screen
-              </ButtonLink>
+              canSetup ? (
+                <ButtonLink
+                  variant="primary"
+                  size="lg"
+                  to="/screens/new"
+                  icon={Plus}
+                  data-testid="screens-add"
+                >
+                  Add screen
+                </ButtonLink>
+              ) : undefined
             }
           >
-            Add a screen to set its canvas, pair its player, and assign a playlist to it.
+            {canSetup
+              ? 'Add a screen to set its canvas, pair its player, and assign a playlist to it.'
+              : 'An editor adds screens.'}
           </EmptyState>
         </div>
       </Page>
@@ -618,17 +643,19 @@ export function ScreensList() {
         </span>
       }
       actions={
-        <ButtonLink
-          variant="secondary"
-          to="/screens/new"
-          icon={Plus}
-          className="tx-screens-add"
-          title="Add screen"
-          data-testid="screens-add"
-        >
-          {/* Under 1100 px only the icon shows; the name stays for assistive technology. */}
-          <span className="tx-screens-add__label">Add screen</span>
-        </ButtonLink>
+        canSetup ? (
+          <ButtonLink
+            variant="secondary"
+            to="/screens/new"
+            icon={Plus}
+            className="tx-screens-add"
+            title="Add screen"
+            data-testid="screens-add"
+          >
+            {/* Under 1100 px only the icon shows; the name stays for assistive technology. */}
+            <span className="tx-screens-add__label">Add screen</span>
+          </ButtonLink>
+        ) : undefined
       }
     >
       <div className="tx-stack tx-screens">
@@ -805,12 +832,16 @@ export function ScreensList() {
               setSort(next);
               setPage(1);
             }}
-            selection={{
-              selected,
-              onChange: setSelected,
-              rowLabel: (row) => row.display.name,
-            }}
-            rowActions={menuFor}
+            selection={
+              canSelect
+                ? {
+                    selected,
+                    onChange: setSelected,
+                    rowLabel: (row) => row.display.name,
+                  }
+                : undefined
+            }
+            rowActions={hasRowMenu ? menuFor : undefined}
             loading={tableLoading}
             empty={empty}
             footer={list.matched.length > 0 ? pagination : undefined}
@@ -843,14 +874,18 @@ export function ScreensList() {
                       {contentCell(row)}
                     </span>
                   }
-                  actions={menuFor(row)}
-                  selection={{
-                    selected: selected.has(row.display.id),
-                    label: row.display.name,
-                    onChange: () => {
-                      setSelected(toggleOne(selected, row.display.id));
-                    },
-                  }}
+                  actions={hasRowMenu ? menuFor(row) : undefined}
+                  selection={
+                    canSelect
+                      ? {
+                          selected: selected.has(row.display.id),
+                          label: row.display.name,
+                          onChange: () => {
+                            setSelected(toggleOne(selected, row.display.id));
+                          },
+                        }
+                      : undefined
+                  }
                 />
               ))}
             </TileGrid>
@@ -863,47 +898,55 @@ export function ScreensList() {
           is not proof of what the screen shows.
         </p>
 
-        <SelectionBar
-          count={selected.size}
-          label="Selected screens"
-          onClear={() => {
-            setSelected(new Set());
-          }}
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={ListVideo}
-            data-testid="screens-bulk-assign"
-            onClick={() => {
-              openAssign(selectedDisplays());
+        {canSelect && (
+          <SelectionBar
+            count={selected.size}
+            label="Selected screens"
+            onClear={() => {
+              setSelected(new Set());
             }}
           >
-            Assign content
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={Tags}
-            data-testid="screens-bulk-tags"
-            onClick={() => {
-              openTags(selectedDisplays());
-            }}
-          >
-            Add tags
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={Send}
-            data-testid="screens-bulk-push"
-            onClick={() => {
-              pushTo(selectedDisplays());
-            }}
-          >
-            Push
-          </Button>
-        </SelectionBar>
+            {canAssign && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={ListVideo}
+                data-testid="screens-bulk-assign"
+                onClick={() => {
+                  openAssign(selectedDisplays());
+                }}
+              >
+                Assign content
+              </Button>
+            )}
+            {canDetails && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={Tags}
+                data-testid="screens-bulk-tags"
+                onClick={() => {
+                  openTags(selectedDisplays());
+                }}
+              >
+                Add tags
+              </Button>
+            )}
+            {canPush && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={Send}
+                data-testid="screens-bulk-push"
+                onClick={() => {
+                  pushTo(selectedDisplays());
+                }}
+              >
+                Push
+              </Button>
+            )}
+          </SelectionBar>
+        )}
 
         <PlaylistPickerDialog
           open={assign.open}
@@ -950,6 +993,7 @@ export function ScreensList() {
           }}
           items={tagsDialog.targets}
           tags={tags}
+          allowCreate={canSetup}
           onSaved={reloadDisplays}
           testId="screens-tags"
         />

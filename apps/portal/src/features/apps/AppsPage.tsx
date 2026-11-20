@@ -12,6 +12,7 @@ import {
 import { formatTimestamp } from '../../lib/format.ts';
 import { countLabel, sortRows, type SortState } from '../../lib/listView.ts';
 import { modifiedLabel } from '../../lib/playlistsList.ts';
+import { useCan } from '../../session/AuthenticatedSession.tsx';
 import { Page } from '../../shell/Page.tsx';
 import { Blocks, Ellipsis, Plus, RefreshCw, SearchX, SquarePen, Trash } from '../../ui/icons.ts';
 import {
@@ -46,6 +47,8 @@ const NO_APPS: readonly AppDto[] = [];
 // shortcut: no grid, bulk selection or pagination; add when an organisation has over 100 apps.
 export function AppsPage() {
   const toast = useToast();
+  const canCreate = useCan('content.write');
+  const canDelete = useCan('content.delete');
   const { state, reload } = useLoad(loadApps);
   const [query, setQuery] = useState('');
   const [type, setType] = useState<AppType | null>(null);
@@ -209,9 +212,14 @@ export function AppsPage() {
               onRetry={refresh}
             />
           )}
-          <EmptyState icon={Blocks} title="No apps yet" action={createButton('lg')}>
-            Apps show a clock, the date, a countdown, scrolling text, a QR code or a message, drawn
-            by the screen itself.
+          <EmptyState
+            icon={Blocks}
+            title="No apps yet"
+            action={canCreate ? createButton('lg') : undefined}
+          >
+            {canCreate
+              ? 'Apps show a clock, the date, a countdown, scrolling text, a QR code or a message, drawn by the screen itself.'
+              : 'An editor creates apps.'}
           </EmptyState>
         </div>
         {dialogs}
@@ -255,7 +263,7 @@ export function AppsPage() {
               data-testid="apps-refresh"
             />
           </div>
-          <div className="tx-filter-row__end">{createButton('md')}</div>
+          {canCreate && <div className="tx-filter-row__end">{createButton('md')}</div>}
         </div>
 
         {ready && state.refreshError !== null && (
@@ -287,7 +295,8 @@ export function AppsPage() {
           rowId={(app) => app.id}
           sort={sort}
           onSortChange={setSort}
-          rowActions={rowMenu}
+          // Edit alone is the name's link: no menu without Delete.
+          rowActions={canDelete ? rowMenu : undefined}
           rowTestId={(app) => `apps-row-${app.id}`}
           loading={loading || refreshing}
           empty={

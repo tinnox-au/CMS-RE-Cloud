@@ -9,12 +9,18 @@ import {
   FolderDtoSchema,
   FolderListResponseSchema,
   HEADERS,
+  InviteDtoSchema,
+  InviteListResponseSchema,
   LayoutDtoSchema,
   LayoutListResponseSchema,
   LogoutResponseSchema,
   MediaDtoSchema,
   MediaListResponseSchema,
   MediaUsageResponseSchema,
+  MemberChangeResponseSchema,
+  MemberListResponseSchema,
+  MemberNameListResponseSchema,
+  MemberSignOutResponseSchema,
   OverviewResponseSchema,
   PairingClaimResponseSchema,
   PlaylistDtoSchema,
@@ -42,6 +48,8 @@ import {
   type DisplayDto,
   type DisplayPatch,
   type FolderDto,
+  type InviteCreate,
+  type InviteDto,
   type LayoutDto,
   type LayoutInput,
   type LogoutResponse,
@@ -49,6 +57,11 @@ import {
   type MediaListResponse,
   type MediaPatch,
   type MediaUsageResponse,
+  type MemberChangeResponse,
+  type MemberDto,
+  type MemberNameDto,
+  type MemberPatch,
+  type MemberSignOutResponse,
   type OverviewResponse,
   type PairingClaimResponse,
   type PlaylistDto,
@@ -176,6 +189,28 @@ export interface Endpoints {
   getOverview(signal?: AbortSignal): Promise<OverviewResponse>;
 
   listAudit(query: AuditQuery, signal?: AbortSignal): Promise<AuditListResponse>;
+
+  /** Every member of the organisation, removed ones included. Never an e-mail address. */
+  listMembers(signal?: AbortSignal): Promise<MemberDto[]>;
+  /** Id and name of every member, removed ones included: what activity needs to name actors. */
+  listMemberNames(signal?: AbortSignal): Promise<MemberNameDto[]>;
+  /** Invites waiting for TINNOX, expired ones included until TINNOX closes them. */
+  listInvites(signal?: AbortSignal): Promise<InviteDto[]>;
+  /** Requests an invite; TINNOX sets the person up. The inviter comes from the session. */
+  createInvite(input: InviteCreate): Promise<InviteDto>;
+  /** Deletes the person's name and work e-mail address from the invite. */
+  cancelInvite(id: string): Promise<void>;
+  /**
+   * Changes the role or corrects the name. A demotion ends the person's sessions and cancels
+   * the invites they sent that their new role could not send. 409 `last_owner` when it would
+   * leave no active Owner.
+   */
+  patchMember(id: string, patch: MemberPatch): Promise<MemberChangeResponse>;
+  /** Ends the person's sessions and cancels their pending invites. Final: invite them again. */
+  removeMember(id: string): Promise<MemberChangeResponse>;
+  /** Ends every session the person has open; their next sign-in asks for the one-time code. */
+  signOutMember(id: string): Promise<MemberSignOutResponse>;
+
   logout(): Promise<LogoutResponse>;
 }
 
@@ -408,6 +443,42 @@ export function createEndpoints(client: ApiClient): Endpoints {
         AuditListResponseSchema,
       );
     },
+
+    async listMembers(signal) {
+      return (await client.request(get(ROUTES.members, signal), MemberListResponseSchema)).items;
+    },
+    async listMemberNames(signal) {
+      return (await client.request(get(ROUTES.memberNames, signal), MemberNameListResponseSchema))
+        .items;
+    },
+    async listInvites(signal) {
+      return (await client.request(get(ROUTES.invites, signal), InviteListResponseSchema)).items;
+    },
+    createInvite(input) {
+      return client.request({ method: 'POST', path: ROUTES.invites, body: input }, InviteDtoSchema);
+    },
+    cancelInvite(id) {
+      return client.requestNoContent({ method: 'POST', path: ROUTES.inviteCancel(id) });
+    },
+    patchMember(id, patch) {
+      return client.request(
+        { method: 'PATCH', path: ROUTES.member(id), body: patch },
+        MemberChangeResponseSchema,
+      );
+    },
+    removeMember(id) {
+      return client.request(
+        { method: 'POST', path: ROUTES.memberRemove(id) },
+        MemberChangeResponseSchema,
+      );
+    },
+    signOutMember(id) {
+      return client.request(
+        { method: 'POST', path: ROUTES.memberSignOut(id) },
+        MemberSignOutResponseSchema,
+      );
+    },
+
     logout() {
       return client.request({ method: 'POST', path: ROUTES.authLogout }, LogoutResponseSchema);
     },

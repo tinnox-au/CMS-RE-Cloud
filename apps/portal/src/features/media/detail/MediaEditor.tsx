@@ -20,11 +20,12 @@ import {
   saveRefusalNeedsReload,
   staleListsAfterSave,
 } from '../../../lib/mediaDetailState.ts';
-import { useSession } from '../../../session/SessionContext.tsx';
+import { useCan, useCanAtMount, useSession } from '../../../session/AuthenticatedSession.tsx';
 import { EditorPage } from '../../../shell/EditorPage.tsx';
 import { CircleCheck, CircleDashed, ListPlus } from '../../../ui/icons.ts';
 import { Button, Icon, MenuItem, useToast } from '../../../ui/index.ts';
 import { useFolders, useTags } from '../../shared/index.ts';
+import { ReadOnlyNote } from '../../shared/ReadOnlyNote.tsx';
 import { MediaDetailForm } from './MediaDetailForm.tsx';
 import { MediaDetailsCard } from './MediaDetailsCard.tsx';
 import { SaveSplit } from './SaveSplit.tsx';
@@ -51,7 +52,9 @@ export interface MediaEditorProps {
  * draft has changes: like the playlist editor's Discard, nothing is thrown away unasked. The draft lives here; the pure
  * rules (what changed, what is sent, what is refused before sending) are in
  * `lib/mediaDetailDraft.ts`. The server stays the authority: its refusal is shown with the
- * error code, and at the field when it names one.
+ * error code, and at the field when it names one. Without `content.write` (decided when the
+ * page opens) it is read-only: no header actions, every field locked, nothing submits; Delete
+ * stays for a role that holds `media.delete`.
  */
 export function MediaEditor({ media, onSaved, notice }: MediaEditorProps) {
   const { limits } = useSession();
@@ -60,6 +63,8 @@ export function MediaEditor({ media, onSaved, notice }: MediaEditorProps) {
   const navigate = useNavigate();
   const tags = useTags('media');
   const folders = useFolders();
+  const readOnly = !useCanAtMount('content.write');
+  const canDelete = useCan('media.delete');
 
   const [draft, setDraft] = useState<MediaDetailDraft>(() => draftFromMedia(media));
   const [base, setBase] = useState(media);
@@ -85,7 +90,7 @@ export function MediaEditor({ media, onSaved, notice }: MediaEditorProps) {
   const usageData = usage.state.status === 'ready' ? usage.state.data : null;
 
   // Until the save answers, the changes are not safe: it can still fail (FCX-04).
-  const guard = useLeaveGuard(dirty, media.name, saving);
+  const guard = useLeaveGuard(dirty && !readOnly, media.name, saving);
   const remove = useMediaDelete({
     media,
     usage: usageData,
@@ -100,6 +105,7 @@ export function MediaEditor({ media, onSaved, notice }: MediaEditorProps) {
   });
 
   const change = (field: MediaDetailField, next: MediaDetailDraft) => {
+    if (readOnly) return;
     setDraft(next);
     // The order message sits on Available until but is fixed from either side.
     setErrors((current) =>
@@ -119,7 +125,7 @@ export function MediaEditor({ media, onSaved, notice }: MediaEditorProps) {
 
   /** Saves the draft. Resolves true when the item as saved matches the draft. */
   const save = async (): Promise<boolean> => {
-    if (saving) return false;
+    if (readOnly || saving) return false;
     const result = validateMediaDraft(draft, media, limits);
     if (!result.ok) {
       setErrors(result.errors);
@@ -169,51 +175,60 @@ export function MediaEditor({ media, onSaved, notice }: MediaEditorProps) {
       title={media.name}
       back={{ to: '/media', label: 'All media' }}
       status={
-        <span className="tx-media-detail-status" data-state={dirty ? 'unsaved' : 'saved'}>
-          <Icon icon={dirty ? CircleDashed : CircleCheck} size={16} />
-          <span role="status" data-testid="media-detail-save-state" data-dirty={dirty}>
-            {headerStatusLabel(dirty)}
+        readOnly ? undefined : (
+          <span className="tx-media-detail-status" data-state={dirty ? 'unsaved' : 'saved'}>
+            <Icon icon={dirty ? CircleDashed : CircleCheck} size={16} />
+            <span role="status" data-testid="media-detail-save-state" data-dirty={dirty}>
+              {headerStatusLabel(dirty)}
+            </span>
           </span>
-        </span>
+        )
       }
       actions={
-        <>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              void navigate('/media');
-            }}
-            data-testid="media-detail-cancel"
-          >
-            Cancel
-          </Button>
-          <SaveSplit
-            busy={saving}
-            unavailableReason={dirty ? null : 'There are no changes to save'}
-            onSave={() => {
-              void save();
-            }}
-            menu={
-              <MenuItem
-                icon={ListPlus}
-                onSelect={() => {
-                  void saveAndAdd();
-                }}
-              >
-                Save and add to playlist
-              </MenuItem>
-            }
-          />
-        </>
+        readOnly ? undefined : (
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                void navigate('/media');
+              }}
+              data-testid="media-detail-cancel"
+            >
+              Cancel
+            </Button>
+            <SaveSplit
+              busy={saving}
+              unavailableReason={dirty ? null : 'There are no changes to save'}
+              onSave={() => {
+                void save();
+              }}
+              menu={
+                <MenuItem
+                  icon={ListPlus}
+                  onSelect={() => {
+                    void saveAndAdd();
+                  }}
+                >
+                  Save and add to playlist
+                </MenuItem>
+              }
+            />
+          </>
+        )
       }
     >
       <div className="tx-media-detail" data-testid="media-detail" data-status={media.status}>
+        {readOnly && <ReadOnlyNote>You can view this file. Editors make changes.</ReadOnlyNote>}
         {notice}
         <div className="tx-editor">
           <MediaDetailsCard
             media={media}
             name={media.name}
-            usage={{ state: usage.state, onRetry: usage.reload, onAddToPlaylist: addition.open }}
+            usage={{
+              state: usage.state,
+              onRetry: usage.reload,
+              onAddToPlaylist: readOnly ? undefined : addition.open,
+            }}
           />
           <MediaDetailForm
             media={media}
@@ -227,12 +242,13 @@ export function MediaEditor({ media, onSaved, notice }: MediaEditorProps) {
             folders={folders}
             limits={limits}
             saving={saving}
+            readOnly={readOnly}
             saveError={saveError}
             onDismissSaveError={() => {
               setSaveError(null);
             }}
             summaryRef={summaryRef}
-            onDelete={remove.ask}
+            onDelete={canDelete ? remove.ask : undefined}
           />
         </div>
       </div>

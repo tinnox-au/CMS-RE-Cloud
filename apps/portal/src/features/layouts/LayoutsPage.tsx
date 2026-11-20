@@ -12,6 +12,7 @@ import {
 } from '../../lib/layouts.ts';
 import { countLabel, sortRows, type SortState } from '../../lib/listView.ts';
 import { assignedScreensLabel, modifiedLabel } from '../../lib/playlistsList.ts';
+import { useCan } from '../../session/AuthenticatedSession.tsx';
 import { Page } from '../../shell/Page.tsx';
 import {
   Ellipsis,
@@ -52,6 +53,8 @@ const NO_LAYOUTS: readonly LayoutDto[] = [];
 // shortcut: no grid, bulk selection or pagination; add when an organisation has over 100 layouts.
 export function LayoutsPage() {
   const toast = useToast();
+  const canCreate = useCan('content.write');
+  const canDelete = useCan('content.delete');
   const { state, reload } = useLoad(loadLayouts);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortState>(DEFAULT_LAYOUT_SORT);
@@ -225,9 +228,14 @@ export function LayoutsPage() {
               onRetry={refresh}
             />
           )}
-          <EmptyState icon={LayoutTemplate} title="No layouts yet" action={createButton('lg')}>
-            A layout splits a screen into a main zone and a band along the bottom, each with its own
-            playlist.
+          <EmptyState
+            icon={LayoutTemplate}
+            title="No layouts yet"
+            action={canCreate ? createButton('lg') : undefined}
+          >
+            {canCreate
+              ? 'A layout splits a screen into a main zone and a band along the bottom, each with its own playlist.'
+              : 'An editor creates layouts.'}
           </EmptyState>
         </div>
         {dialogs}
@@ -255,7 +263,7 @@ export function LayoutsPage() {
               data-testid="layouts-refresh"
             />
           </div>
-          <div className="tx-filter-row__end">{createButton('md')}</div>
+          {canCreate && <div className="tx-filter-row__end">{createButton('md')}</div>}
         </div>
 
         {ready && state.refreshError !== null && (
@@ -288,7 +296,8 @@ export function LayoutsPage() {
             rowId={(layout) => layout.id}
             sort={sort}
             onSortChange={setSort}
-            rowActions={rowMenu}
+            // Edit alone is the name's link: no menu without Delete.
+            rowActions={canDelete ? rowMenu : undefined}
             rowTestId={(layout) => `layouts-row-${layout.id}`}
             loading={loading || refreshing}
             empty={

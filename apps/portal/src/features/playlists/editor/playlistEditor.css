@@ -267,6 +267,12 @@
   cursor: grabbing;
 }
 
+/* A read-only tile cannot be dragged, so it shows no grab cursor. */
+.tx-playlist-editor-tile__handle[draggable='false'],
+.tx-playlist-editor-tile__handle[draggable='false']:active {
+  cursor: auto;
+}
+
 .tx-playlist-editor-tile__position {
   position: absolute;
   inset-block-start: calc(var(--s-2) + 6px);

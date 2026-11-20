@@ -18,7 +18,7 @@ export interface DevUser {
   readonly totpSecretBase32: string;
 }
 
-export type DevUserName = 'operator' | 'secondOrgOperator';
+export type DevUserName = 'operator' | 'secondOrgOperator' | 'admin' | 'editor' | 'viewer';
 
 export function devUser(name: DevUserName = 'operator'): DevUser {
   const path = join(repoRoot, 'infra', '.generated', 'dev-credentials.json');

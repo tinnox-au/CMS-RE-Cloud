@@ -31,7 +31,7 @@ const PRESENTATIONS: { readonly [K in PushState]: Omit<PushStatePresentation, 's
   changes: {
     tone: 'warn',
     label: 'Changes waiting',
-    detail: 'What is assigned differs from what this screen was last given. Push to send it.',
+    detail: 'What is assigned differs from what this screen was last given. A push sends it.',
   },
   up_to_date: {
     tone: 'neutral',

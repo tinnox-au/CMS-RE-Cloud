@@ -1,8 +1,9 @@
-import type { DisplayDto, PlaylistSummaryDto, TagDto } from '@tinnox/contracts';
+import type { DisplayDto, PlaylistSummaryDto, Role, TagDto } from '@tinnox/contracts';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
+import { WithSession } from '../../../session/session.test-support.tsx';
 import { ToastProvider } from '../../../ui/index.ts';
 import { PushContext, type PushContextValue } from '../../push/PushContext.tsx';
 import { ScreensList } from './ScreensList.tsx';
@@ -16,9 +17,18 @@ const { patchDisplay, listPlaylists, listTags } = vi.hoisted(() => ({
 vi.mock('../../../api/index.ts', () => ({ api: { patchDisplay, listPlaylists, listTags } }));
 vi.mock('./useScreensData.ts', () => ({ useScreensData: vi.fn() }));
 vi.mock('../../../shell/Page.tsx', () => ({
-  Page: ({ title, children }: { readonly title: string; readonly children: ReactNode }) => (
+  Page: ({
+    title,
+    actions,
+    children,
+  }: {
+    readonly title: string;
+    readonly actions?: ReactNode;
+    readonly children: ReactNode;
+  }) => (
     <main>
       <h1>{title}</h1>
+      {actions}
       {children}
     </main>
   ),
@@ -77,16 +87,22 @@ function screensData(displays: DisplayDto[]): ScreensData {
   };
 }
 
-async function unassignFromLobby() {
-  const screen = await render(
+function renderList(role: Role) {
+  return render(
     <MemoryRouter>
-      <ToastProvider>
-        <PushContext value={PUSH}>
-          <ScreensList />
-        </PushContext>
-      </ToastProvider>
+      <WithSession role={role}>
+        <ToastProvider>
+          <PushContext value={PUSH}>
+            <ScreensList />
+          </PushContext>
+        </ToastProvider>
+      </WithSession>
     </MemoryRouter>,
   );
+}
+
+async function unassignFromLobby() {
+  const screen = await renderList('owner');
   await screen.getByRole('button', { name: 'Actions for Lobby' }).click();
   await screen.getByRole('menuitem', { name: 'Assign content' }).click();
   await screen.getByRole('radio', { name: /No playlist/ }).click();
@@ -162,5 +178,29 @@ describe('ScreensList: "No playlist" for one screen', () => {
       .toBeVisible();
     expect(toasts.element().textContent).toContain('Playlist unassigned from Lobby');
     expect(toasts.element().textContent).not.toContain('now has a schedule');
+  });
+});
+
+describe('ScreensList: what each role is offered', () => {
+  it('offers an Owner "Add screen", the row menu and selection', async () => {
+    const screen = await renderList('owner');
+    await expect.element(screen.getByRole('link', { name: 'Add screen' })).toBeVisible();
+    await expect.element(screen.getByRole('button', { name: 'Actions for Lobby' })).toBeVisible();
+    await expect.element(screen.getByRole('checkbox', { name: 'Select Lobby' })).toBeVisible();
+  });
+
+  it('tells a Viewer with no screens that an editor adds them, with no button', async () => {
+    mockedScreensData.mockReturnValue(screensData([]));
+    const screen = await renderList('viewer');
+    await expect.element(screen.getByText('An editor adds screens.')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Add screen' }).query()).toBeNull();
+  });
+
+  it('shows a Viewer the screens with no "Add screen", no row menu and no selection', async () => {
+    const screen = await renderList('viewer');
+    await expect.element(screen.getByRole('link', { name: 'Lobby' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Add screen' }).query()).toBeNull();
+    expect(screen.getByRole('button', { name: 'Actions for Lobby' }).query()).toBeNull();
+    expect(screen.getByRole('checkbox').query()).toBeNull();
   });
 });

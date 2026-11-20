@@ -5,7 +5,12 @@
 // Also proves that MFA does not depend on the user already having an authenticator: a
 // temporary user with a password and no one-time-code credential is created through the
 // local admin API, must be sent to authenticator set-up instead of receiving a code, and is
-// deleted again. Prints no secret. Usage: node scripts/verify-oidc-login.mjs [operator|secondOrgOperator]
+// deleted again. Stage C (CMS-13): the ID token carries auth_time; prompt=login makes a browser
+// that is still signed in at Keycloak enter the password and a fresh one-time code again (the
+// re-sign-in after a removal, demotion or "sign out everywhere"); the tinnox-provisioning client
+// reads accounts, cannot create one and holds no realm-management role but view-users. Prints no
+// secret.
+// Usage: node scripts/verify-oidc-login.mjs [operator|secondOrgOperator|admin|editor|viewer]
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -16,9 +21,19 @@ process.loadEnvFile(join(root, '.env'));
 const credentials = JSON.parse(
   readFileSync(join(root, 'infra', '.generated', 'dev-credentials.json'), 'utf8'),
 );
+/** dev-credentials.json key → the .env variable that holds its subject (setup-dev.mjs). */
+const SUBJECT_ENV = {
+  operator: 'DEV_OPERATOR_OIDC_SUB',
+  secondOrgOperator: 'DEV_SECOND_ORG_OIDC_SUB',
+  admin: 'DEV_ADMIN_OIDC_SUB',
+  editor: 'DEV_EDITOR_OIDC_SUB',
+  viewer: 'DEV_VIEWER_OIDC_SUB',
+};
 const who = process.argv[2] ?? 'operator';
-const user = credentials[who];
-if (!user) throw new Error(`unknown user ${who}`);
+const user = Object.hasOwn(SUBJECT_ENV, who) ? credentials[who] : undefined;
+if (!user) {
+  throw new Error(`unknown user ${who}; one of ${Object.keys(SUBJECT_ENV).join(', ')}`);
+}
 
 const issuer = process.env.OIDC_ISSUER;
 if (!/^http:\/\/(localhost|127\.0\.0\.1):\d+\//.test(issuer ?? '')) {
@@ -112,10 +127,13 @@ const wrongOtp = await request(formAction(otpPage), {
   body: new URLSearchParams({ otp: '000000' === totp(user.totpSecret) ? '111111' : '000000' }),
 });
 check(wrongOtp.status === 200, 'wrong one-time code does not complete the sign-in');
+// Keycloak accepts each code once: the re-authentication below waits for the next step.
+const otpAt = Date.now();
+const otpStep = Math.floor(otpAt / 30_000);
 const afterOtp = await request(formAction(await wrongOtp.text()), {
   method: 'POST',
   headers: { 'content-type': 'application/x-www-form-urlencoded' },
-  body: new URLSearchParams({ otp: totp(user.totpSecret) }),
+  body: new URLSearchParams({ otp: totp(user.totpSecret, otpAt) }),
 });
 const location = afterOtp.headers.get('location') ?? '';
 check(
@@ -172,9 +190,11 @@ check(
   claims.sub === user.oidcSub,
   'id_token subject equals the subject recorded by setup (membership key)',
 );
-const expectedEnv =
-  who === 'operator' ? process.env.DEV_OPERATOR_OIDC_SUB : process.env.DEV_SECOND_ORG_OIDC_SUB;
-check(claims.sub === expectedEnv, 'subject matches the DEV_*_OIDC_SUB value in .env');
+check(claims.sub === process.env[SUBJECT_ENV[who]], `subject matches ${SUBJECT_ENV[who]} in .env`);
+check(
+  typeof claims.auth_time === 'number',
+  "id_token carries a numeric auth_time (the API compares it with the member's cut-off)",
+);
 console.log(`claims present in id_token: ${Object.keys(claims).sort().join(', ')}`);
 const personal = ['name', 'given_name', 'family_name', 'preferred_username', 'email'].filter(
   (claim) => claim in claims,
@@ -189,7 +209,58 @@ const replay = await exchange(
   process.env.OIDC_CLIENT_SECRET,
 );
 check(replay.status === 400, 'an authorization code cannot be redeemed twice');
-// 5. A user who has no one-time-code credential must not get a session with a password only
+
+// 5. Forced re-authentication (prompt=login, sent after a removal, demotion or sign-out
+//    everywhere): with the Keycloak session above still alive, the password and a fresh one-time
+//    code are asked for again, and the new ID token's auth_time is later.
+const reVerifier = randomBytes(32).toString('base64url');
+const reChallenge = createHash('sha256').update(reVerifier).digest('base64url');
+const reLogin = await request(
+  authUrl({ code_challenge: reChallenge, code_challenge_method: 'S256', prompt: 'login' }),
+);
+const reLoginPage = reLogin.status === 200 ? await reLogin.text() : '';
+check(
+  reLogin.status === 200 && /id="password"/.test(reLoginPage),
+  'prompt=login with a live identity-provider session shows the password form, not a code',
+);
+// Keycloak may show the username read-only during a re-authentication (unverified).
+const reForm = new URLSearchParams({ password: user.password });
+if (/id="username"/.test(reLoginPage)) reForm.set('username', user.username);
+const reAfterPassword = await request(formAction(reLoginPage), {
+  method: 'POST',
+  headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  body: reForm,
+});
+const reOtpPage = reAfterPassword.status === 200 ? await reAfterPassword.text() : '';
+check(/name="otp"/.test(reOtpPage), 'the re-authentication asks for a one-time code again');
+while (Math.floor(Date.now() / 30_000) <= otpStep) {
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+}
+const reAfterOtp = await request(formAction(reOtpPage), {
+  method: 'POST',
+  headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  body: new URLSearchParams({ otp: totp(user.totpSecret) }),
+});
+const reLocation = reAfterOtp.headers.get('location') ?? '';
+check(
+  reAfterOtp.status === 302 && reLocation.startsWith(`${redirectUri}?`),
+  'a fresh one-time code completes the re-authentication',
+);
+const reCode = new URL(reLocation).searchParams.get('code');
+const reTokens = await exchange(
+  { code: reCode, code_verifier: reVerifier },
+  process.env.OIDC_CLIENT_SECRET,
+);
+check(reTokens.status === 200, 'the re-authentication code is exchanged');
+const reClaims = JSON.parse(
+  Buffer.from((await reTokens.json()).id_token.split('.')[1], 'base64url').toString('utf8'),
+);
+check(
+  typeof reClaims.auth_time === 'number' && reClaims.auth_time > claims.auth_time,
+  'the new id_token has a later auth_time',
+);
+
+// 6. A user who has no one-time-code credential must not get a session with a password only
 //    (for example a new user, or one who removed the authenticator in the account console).
 const adminBase = issuer.replace(/\/realms\/[^/]+$/, '');
 const realmName = issuer.slice(issuer.lastIndexOf('/') + 1);
@@ -267,5 +338,75 @@ try {
   const removed = await admin(`/users/${probeId}`, { method: 'DELETE' });
   check(removed.status === 204, 'temporary MFA probe user deleted');
 }
+
+// 7. The provisioning reader (scripts/provision-member.ts): view-users only.
+const provisionResponse = await fetch(`${issuer}/protocol/openid-connect/token`, {
+  method: 'POST',
+  headers: {
+    'content-type': 'application/x-www-form-urlencoded',
+    authorization: `Basic ${Buffer.from(`${encodeURIComponent(process.env.PROVISION_IDP_CLIENT_ID ?? '')}:${encodeURIComponent(process.env.PROVISION_IDP_CLIENT_SECRET ?? '')}`).toString('base64')}`,
+  },
+  body: new URLSearchParams({ grant_type: 'client_credentials' }),
+});
+check(
+  provisionResponse.status === 200,
+  'the provisioning client gets a token (client_credentials)',
+);
+const provisionToken = (await provisionResponse.json()).access_token;
+const asProvisioner = (path, init = {}) =>
+  fetch(`${adminBase}/admin/realms/${realmName}${path}`, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${provisionToken}`,
+      'content-type': 'application/json',
+      ...init.headers,
+    },
+  });
+const found = await asProvisioner(
+  `/users?${new URLSearchParams({ username: credentials.operator.username, exact: 'true' })}`,
+);
+const foundUsers = found.status === 200 ? await found.json() : [];
+check(
+  foundUsers.length === 1 &&
+    foundUsers[0].id === credentials.operator.oidcSub &&
+    typeof foundUsers[0].email === 'string' &&
+    foundUsers[0].email !== '',
+  'the provisioning client finds one account by exact username, with its e-mail address and subject',
+);
+const provisionCreate = await asProvisioner('/users', {
+  method: 'POST',
+  body: JSON.stringify({ username: `provision-probe-${randomBytes(4).toString('hex')}` }),
+});
+if (provisionCreate.status === 201) {
+  const strayId = (provisionCreate.headers.get('location') ?? '').split('/').pop();
+  await admin(`/users/${strayId}`, { method: 'DELETE' });
+}
+check(provisionCreate.status === 403, 'the provisioning client cannot create an account');
+// The 403 proves only that manage-users is missing. Read the service account's effective
+// realm-management roles (composites, groups and realm roles included) as the local admin: a
+// role added later, such as view-clients, fails here.
+const onlyId = async (path) => {
+  const response = await admin(path);
+  const rows = response.status === 200 ? await response.json() : [];
+  return rows.length === 1 ? rows[0].id : 'none';
+};
+const provisionClient = await onlyId(
+  `/clients?${new URLSearchParams({ clientId: process.env.PROVISION_IDP_CLIENT_ID ?? '' })}`,
+);
+const realmManagement = await onlyId(
+  `/clients?${new URLSearchParams({ clientId: 'realm-management' })}`,
+);
+const serviceAccount = await admin(`/clients/${provisionClient}/service-account-user`);
+const serviceAccountId = serviceAccount.status === 200 ? (await serviceAccount.json()).id : 'none';
+const effective = await admin(
+  `/users/${serviceAccountId}/role-mappings/clients/${realmManagement}/composite`,
+);
+const readerRoles = effective.status === 200 ? (await effective.json()).map((r) => r.name) : [];
+// view-users and its composites (query-users, query-groups); nothing else.
+const READER_ROLES = new Set(['view-users', 'query-users', 'query-groups']);
+check(
+  readerRoles.includes('view-users') && readerRoles.every((name) => READER_ROLES.has(name)),
+  `the provisioning client holds view-users only in realm-management (has: ${readerRoles.sort().join(', ') || 'none'})`,
+);
 
 console.log('\nAll identity-provider checks passed.');

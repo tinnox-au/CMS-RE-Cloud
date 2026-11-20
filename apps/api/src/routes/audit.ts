@@ -6,7 +6,9 @@ import {
   type AuditListResponse,
 } from '@tinnox/contracts';
 import { withOrg } from '@tinnox/db';
+import { ACTIVITY_CATEGORIES, can } from '@tinnox/domain';
 import type { FastifyInstance } from 'fastify';
+import { forbidden, parseRole } from '../auth/permissions.ts';
 import { operatorOf } from '../auth/session.ts';
 import type { AppContext } from '../context.ts';
 import { iso } from '../db-helpers.ts';
@@ -27,12 +29,24 @@ interface AuditRow {
 /**
  * Organisation-scoped audit trail, newest first, optionally narrowed to one
  * category (the part of the action before the first dot) and one result.
- * Events without an organisation are not exposed here.
+ * Events without an organisation are not exposed here. Without `audit.read` (Editors and
+ * Viewers) only the activity categories are returned (stage-c.md 1.5): content and screen
+ * events, never sign-ins, security refusals, invites or membership changes.
  */
 export function registerAuditRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get(ROUTES.audit, async (request): Promise<AuditListResponse> => {
     const session = operatorOf(request);
     const query = parseInput(AuditListQuerySchema, request.query, 'query');
+    // The guard has already refused an unknown role.
+    const role = parseRole(session.role);
+    if (role === null) throw forbidden();
+    const fullLog = can(role, 'audit.read');
+    // shortcut: the activity filter is per category; split by action if pairing.lock must leave
+    // the Editors' view.
+    const activity: readonly string[] = ACTIVITY_CATEGORIES;
+    if (!fullLog && query.category !== undefined && !activity.includes(query.category)) {
+      return { items: [], nextBefore: null };
+    }
     // A filter is part of the statement only when it was asked for, so the planner
     // sees a plain equality on a column and can use the index made for it. The
     // category is a column the database computes from the action (migration 0005):
@@ -45,6 +59,9 @@ export function registerAuditRoutes(app: FastifyInstance, ctx: AppContext): void
     if (query.before !== undefined) conditions.push(`id < ${parameter(query.before)}::bigint`);
     if (query.category !== undefined) {
       conditions.push(`category = ${parameter(query.category)}`);
+    } else if (!fullLog) {
+      // A plain column comparison, leakproof under row-level security (0005).
+      conditions.push(`category = ANY(${parameter([...ACTIVITY_CATEGORIES])}::text[])`);
     }
     if (query.result !== undefined) conditions.push(`result = ${parameter(query.result)}`);
     const where = ['org_id = app_org_id()', ...conditions].join(' AND ');

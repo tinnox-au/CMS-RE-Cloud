@@ -1,11 +1,11 @@
 import {
-  MEDIA_ERROR_MESSAGES,
   type MediaDto,
   type MediaErrorCode,
   type MediaKind,
   type MediaStatus,
 } from '@tinnox/contracts';
 import { countLabel, type SortAccessors } from './listView.ts';
+import { mediaFailureMessage } from './mediaDetailFacts.ts';
 import { mediaDisplayName } from './mediaName.ts';
 import {
   LIBRARY_ROOT_FILTER,
@@ -119,7 +119,7 @@ export function folderCounts(items: readonly Pick<MediaDto, 'folderId'>[]): Fold
 }
 
 export interface MediaFailureText {
-  /** The actionable explanation from the shared message table. */
+  /** The explanation from the shared message table; without what to do next when read-only. */
   readonly message: string;
   /** The API's error code, shown as text. Null when none was recorded. */
   readonly code: MediaErrorCode | null;
@@ -129,16 +129,15 @@ export interface MediaFailureText {
 
 /**
  * Why a file failed its check, worded as M0 words it. Null for a file that has not failed.
+ * `readOnly` (a role that cannot upload) keeps what went wrong and drops what to do next.
  */
 export function mediaFailureText(
   media: Pick<MediaDto, 'status' | 'errorCode' | 'errorDetail'>,
+  readOnly = false,
 ): MediaFailureText | null {
   if (media.status !== 'failed') return null;
   return {
-    message:
-      media.errorCode !== null
-        ? MEDIA_ERROR_MESSAGES[media.errorCode]
-        : 'The file was rejected. No reason was recorded.',
+    message: mediaFailureMessage(media.errorCode, readOnly),
     code: media.errorCode,
     detail: media.errorDetail,
   };

@@ -18,6 +18,7 @@ import {
 } from '../../lib/settingsView.ts';
 import { tagColourLabel } from '../../lib/tagColours.ts';
 import { elementByTestId, rowByTestId } from '../shared/index.ts';
+import { useCan } from '../../session/AuthenticatedSession.tsx';
 import { Page } from '../../shell/Page.tsx';
 import {
   Ellipsis,
@@ -74,6 +75,12 @@ export function TagsPage() {
   const [params, setParams] = useSearchParams();
   const scope = parseTagScope(params.get('scope'));
   const words = tagScopeWords(scope);
+  // Media tags are content (content.write, content.delete); screen tags are screen set-up.
+  const canWriteContent = useCan('content.write');
+  const canDeleteContent = useCan('content.delete');
+  const canSetUpScreens = useCan('screen.setup');
+  const canEdit = scope === 'media' ? canWriteContent : canSetUpScreens;
+  const canDelete = scope === 'media' ? canDeleteContent : canSetUpScreens;
 
   const loadTags = useCallback((signal: AbortSignal) => api.listTags(undefined, signal), []);
   const { state, reload } = useLoad<TagDto[]>(loadTags);
@@ -187,6 +194,8 @@ export function TagsPage() {
 
   const rowActions = (tag: TagDto) => {
     const path = tagItemsPath(tag);
+    const showFiles = path !== null && tag.usageCount > 0;
+    if (!canEdit && !canDelete && !showFiles) return null;
     return (
       <Menu
         placement="bottom-end"
@@ -199,37 +208,43 @@ export function TagsPage() {
           />
         )}
       >
-        <MenuItem
-          icon={Pencil}
-          onSelect={() => {
-            setFormTarget({ mode: 'edit', tag, focus: 'name' });
-          }}
-        >
-          Rename
-        </MenuItem>
-        <MenuItem
-          icon={Palette}
-          onSelect={() => {
-            setFormTarget({ mode: 'edit', tag, focus: 'colour' });
-          }}
-        >
-          Change colour
-        </MenuItem>
-        {path !== null && tag.usageCount > 0 && (
+        {canEdit && (
+          <MenuItem
+            icon={Pencil}
+            onSelect={() => {
+              setFormTarget({ mode: 'edit', tag, focus: 'name' });
+            }}
+          >
+            Rename
+          </MenuItem>
+        )}
+        {canEdit && (
+          <MenuItem
+            icon={Palette}
+            onSelect={() => {
+              setFormTarget({ mode: 'edit', tag, focus: 'colour' });
+            }}
+          >
+            Change colour
+          </MenuItem>
+        )}
+        {showFiles && path !== null && (
           <MenuItem icon={Images} to={path}>
             Show files
           </MenuItem>
         )}
-        <MenuSeparator />
-        <MenuItem
-          icon={Trash}
-          tone="danger"
-          onSelect={() => {
-            setDeleteTarget(tag);
-          }}
-        >
-          Delete
-        </MenuItem>
+        {canDelete && (canEdit || showFiles) && <MenuSeparator />}
+        {canDelete && (
+          <MenuItem
+            icon={Trash}
+            tone="danger"
+            onSelect={() => {
+              setDeleteTarget(tag);
+            }}
+          >
+            Delete
+          </MenuItem>
+        )}
       </Menu>
     );
   };
@@ -262,10 +277,17 @@ export function TagsPage() {
   } else if (state.status === 'ready' && scopeTags.length === 0) {
     panel = (
       <Card flush>
-        <EmptyState icon={Tags} title={`No ${words.tag}s yet`} action={newButton('lg')} level={3}>
-          {scope === 'media'
-            ? 'Media tags label files in the library, so they can be found and filtered.'
-            : 'Screen tags label screens, so a group of them can be found and filtered.'}
+        <EmptyState
+          icon={Tags}
+          title={`No ${words.tag}s yet`}
+          action={canEdit ? newButton('lg') : undefined}
+          level={3}
+        >
+          {!canEdit
+            ? 'An editor adds tags.'
+            : scope === 'media'
+              ? 'Media tags label files in the library, so they can be found and filtered.'
+              : 'Screen tags label screens, so a group of them can be found and filtered.'}
         </EmptyState>
       </Card>
     );
@@ -285,7 +307,7 @@ export function TagsPage() {
               data-testid="settings-tags-search"
             />
           </div>
-          <div className="tx-filter-row__end">{newButton('md')}</div>
+          {canEdit && <div className="tx-filter-row__end">{newButton('md')}</div>}
         </div>
         <div className="tx-toolbar">
           <p className="tx-toolbar__count" aria-live="polite" data-testid="settings-tags-count">
@@ -314,7 +336,8 @@ export function TagsPage() {
             setSort(next);
             setPage(1);
           }}
-          rowActions={rowActions}
+          // Screen tags have no "Show files": without the scope's keys there is no menu at all.
+          rowActions={canEdit || canDelete || scope === 'media' ? rowActions : undefined}
           loading={state.status === 'loading'}
           loadingRows={4}
           empty={noMatch}

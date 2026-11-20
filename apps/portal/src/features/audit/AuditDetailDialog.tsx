@@ -2,8 +2,9 @@ import type { AuditEventDto } from '@tinnox/contracts';
 import { useState } from 'react';
 import {
   auditActionLabel,
+  auditActor,
   auditActorIdLabel,
-  auditActorLabel,
+  auditActorText,
   auditAllTargets,
   auditDetailJson,
   auditReasonCodes,
@@ -23,7 +24,8 @@ export interface AuditDetailDialogProps {
 }
 
 /**
- * Everything one audit event recorded: when (local and UTC), what, the result, who, the
+ * Everything one audit event recorded: when (local and UTC), what, the result, who (the
+ * person's name from the member list, marked when they were removed or renamed since), the
  * objects it names, and its structured detail as JSON. Every value is put on the page as
  * text; nothing from an event is ever read as markup.
  */
@@ -80,7 +82,9 @@ export function AuditDetailDialog({ event, names, onClose }: AuditDetailDialogPr
                 </span>
               </Fact>
             )}
-            <Fact label="Actor">{auditActorLabel(current.actorType)}</Fact>
+            <Fact label="Actor" testId="audit-detail-actor">
+              {auditActorText(auditActor(current, names))}
+            </Fact>
             {current.actorId !== null && (
               <Fact label={auditActorIdLabel(current.actorType)}>
                 <span className="tx-mono tx-break">{current.actorId}</span>

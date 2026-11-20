@@ -48,7 +48,8 @@ export const e2eMediaRoot = join(runDir, 'media');
 
 /**
  * Creates the database once (as the cluster superuser, the only role allowed to), then
- * empties it, applies every migration and seeds both organisations.
+ * empties it, applies every migration and seeds both organisations (the first one with one
+ * member per role: Owner, Admin, Editor and Viewer).
  */
 export async function prepareE2eDatabase(): Promise<void> {
   const admin = new URL(need('DATABASE_MIGRATOR_URL'));
@@ -82,7 +83,8 @@ export async function prepareE2eDatabase(): Promise<void> {
     ['--import', 'tsx', join(repoRoot, 'scripts', 'seed.ts'), '--second-org'],
     {
       cwd: repoRoot,
-      stdio: 'ignore',
+      // The seed's notes stay quiet; a failure prints its reason (stderr) in the run's output.
+      stdio: ['ignore', 'ignore', 'inherit'],
       env: { ...process.env, DATABASE_MIGRATOR_URL: urls.migrator },
     },
   );

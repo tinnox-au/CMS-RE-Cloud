@@ -24,6 +24,7 @@ import {
   type ScheduleEventDraft,
   type ScheduleEventErrors,
 } from '../../lib/schedules.ts';
+import { useCan, useCanAtMount } from '../../session/AuthenticatedSession.tsx';
 import { EditorPage } from '../../shell/EditorPage.tsx';
 import { CircleCheck, CircleDashed, Ellipsis, Plus, Trash } from '../../ui/icons.ts';
 import {
@@ -45,6 +46,7 @@ import {
 } from '../../ui/index.ts';
 import { usePush } from '../push/PushContext.tsx';
 import { PlaylistSelect } from '../shared/index.ts';
+import { ReadOnlyNote } from '../shared/ReadOnlyNote.tsx';
 import { useLeaveGuard } from '../shared/useLeaveGuard.tsx';
 import { DeleteScheduleDialog } from './DeleteScheduleDialog.tsx';
 import { ScheduleEventRow } from './ScheduleEventRow.tsx';
@@ -73,7 +75,9 @@ function usedPlaylistNames(schedule: ScheduleDto): ReadonlyMap<string, string> {
  * Save in the header, Delete in its menu. Events are a plain list, not a grid and not a
  * dialog: the order is the priority, and "Move up" and "Move down" change it. The pure rules
  * (what changed, what is sent, the plain-words checks) are in `lib/schedules.ts`; the server
- * stays the authority.
+ * stays the authority. Without `content.write` (decided when the page opens) it is read-only:
+ * no Cancel or Save, no adding, moving or removing events, nothing submits; Delete stays for a
+ * role that holds `content.delete`.
  */
 // shortcut: no warning for an event that can never play because events above it cover its times; add a week summary if operators report hidden events.
 export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
@@ -81,6 +85,8 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
   const push = usePush();
   const navigate = useNavigate();
   const baseId = useId();
+  const readOnly = !useCanAtMount('content.write');
+  const canDelete = useCan('content.delete');
 
   const [saved, setSaved] = useState(initial);
   const [draft, setDraft] = useState<ScheduleDraft>(() => scheduleDraftFromDto(initial));
@@ -97,7 +103,8 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
   const knownNames = useMemo(() => usedPlaylistNames(saved), [saved]);
 
   const dirty = scheduleIsDirty(saved, draft);
-  const guard = useLeaveGuard(dirty, saved.name);
+  const guard = useLeaveGuard(dirty && !readOnly, saved.name);
+  const locked = saving || readOnly;
   const entries = scheduleErrorEntries(errors, draft);
   const full = draft.events.length >= MAX_SCHEDULE_EVENTS;
   const limitHintId = `${baseId}-limit`;
@@ -126,6 +133,7 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
     field: 'name' | 'description' | 'defaultPlaylistId',
     change: Partial<ScheduleDraft>,
   ) => {
+    if (locked) return;
     setDraft({ ...draft, ...change });
     setErrors(withoutScheduleError(errors, field));
   };
@@ -135,6 +143,7 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
     change: Partial<ScheduleEventDraft>,
     slot: keyof ScheduleEventErrors,
   ) => {
+    if (locked) return;
     setDraft({
       ...draft,
       events: draft.events.map((event) => (event.key === key ? { ...event, ...change } : event)),
@@ -143,21 +152,21 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
   };
 
   const addEvent = () => {
-    if (full || saving) return;
+    if (full || locked) return;
     focusRequest.current = `schedule-event-${String(draft.events.length)}-playlist`;
     setDraft({ ...draft, events: [...draft.events, newEventDraft(crypto.randomUUID())] });
   };
 
   const moveEventBy = (index: number, delta: -1 | 1) => {
     const events = moveEvent(draft.events, index, delta);
-    if (events === draft.events || saving) return;
+    if (events === draft.events || locked) return;
     // The same button of the same event, at its new place.
     focusRequest.current = `schedule-event-${String(index + delta)}-${delta < 0 ? 'up' : 'down'}`;
     setDraft({ ...draft, events });
   };
 
   const removeEvent = (index: number) => {
-    if (saving) return;
+    if (locked) return;
     const left = draft.events.length - 1;
     // The event that takes its place, else the one before it, else "Add event".
     focusRequest.current =
@@ -168,7 +177,7 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
   };
 
   const save = () => {
-    if (saving || !dirty) return;
+    if (readOnly || saving || !dirty) return;
     const result = validateScheduleDraft(draft);
     if (!result.ok) {
       setErrors(result.errors);
@@ -213,6 +222,7 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
 
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
+    if (readOnly || saving) return;
     save();
   };
 
@@ -221,55 +231,65 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
       title={draft.name.trim() === '' ? saved.name : draft.name.trim()}
       back={SCHEDULES_BACK}
       status={
-        <span className="tx-schedule-editor-status" data-state={dirty ? 'unsaved' : 'saved'}>
-          <Icon icon={dirty ? CircleDashed : CircleCheck} size={16} />
-          <span role="status" data-testid="schedule-save-state" data-dirty={dirty}>
-            {headerStatusLabel(dirty)}
+        readOnly ? undefined : (
+          <span className="tx-schedule-editor-status" data-state={dirty ? 'unsaved' : 'saved'}>
+            <Icon icon={dirty ? CircleDashed : CircleCheck} size={16} />
+            <span role="status" data-testid="schedule-save-state" data-dirty={dirty}>
+              {headerStatusLabel(dirty)}
+            </span>
           </span>
-        </span>
+        )
       }
       actions={
-        <>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              void navigate('/schedules');
-            }}
-            data-testid="schedule-cancel"
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            busy={saving}
-            aria-disabled={!dirty || undefined}
-            onClick={save}
-            data-testid="schedule-save"
-          >
-            Save
-          </Button>
-          <Menu
-            placement="bottom-end"
-            trigger={(props) => (
-              <IconButton
-                {...props}
-                icon={Ellipsis}
-                label={`More actions for ${saved.name}`}
-                data-testid="schedule-menu"
-              />
+        readOnly && !canDelete ? undefined : (
+          <>
+            {!readOnly && (
+              <>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    void navigate('/schedules');
+                  }}
+                  data-testid="schedule-cancel"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  busy={saving}
+                  aria-disabled={!dirty || undefined}
+                  onClick={save}
+                  data-testid="schedule-save"
+                >
+                  Save
+                </Button>
+              </>
             )}
-          >
-            <MenuItem
-              icon={Trash}
-              tone="danger"
-              onSelect={() => {
-                setDeleting(saved);
-              }}
-            >
-              Delete schedule
-            </MenuItem>
-          </Menu>
-        </>
+            {canDelete && (
+              <Menu
+                placement="bottom-end"
+                trigger={(props) => (
+                  <IconButton
+                    {...props}
+                    icon={Ellipsis}
+                    label={`More actions for ${saved.name}`}
+                    data-testid="schedule-menu"
+                  />
+                )}
+              >
+                <MenuItem
+                  icon={Trash}
+                  tone="danger"
+                  onSelect={() => {
+                    setDeleting(saved);
+                  }}
+                >
+                  Delete schedule
+                </MenuItem>
+              </Menu>
+            )}
+          </>
+        )
       }
     >
       <form
@@ -280,6 +300,7 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
         aria-busy={saving || undefined}
         data-testid="schedule-editor"
       >
+        {readOnly && <ReadOnlyNote>You can view this schedule. Editors make changes.</ReadOnlyNote>}
         {saveError !== null && (
           <ErrorNotice
             error={saveError}
@@ -341,7 +362,7 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
                       value={draft.name}
                       maxLength={ABSOLUTE.maxNameLength}
                       autoComplete="off"
-                      readOnly={saving}
+                      readOnly={locked}
                       data-testid="schedule-name"
                       onChange={(event) => {
                         changeField('name', { name: event.target.value });
@@ -361,7 +382,7 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
                       rows={3}
                       value={draft.description}
                       maxLength={ABSOLUTE.maxDescriptionLength}
-                      readOnly={saving}
+                      readOnly={locked}
                       data-testid="schedule-description"
                       onChange={(event) => {
                         changeField('description', { description: event.target.value });
@@ -384,7 +405,12 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
               <Field
                 label="Default playlist"
                 error={errors.defaultPlaylistId}
-                hint="Plays whenever no event applies. Keep at least one item in it that has no availability window, so the screen is never empty."
+                // The advice is for whoever changes the playlist; read-only, only the fact stays.
+                hint={
+                  readOnly
+                    ? 'Plays whenever no event applies.'
+                    : 'Plays whenever no event applies. Keep at least one item in it that has no availability window, so the screen is never empty.'
+                }
                 required
               >
                 {(control) => (
@@ -393,7 +419,7 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
                     value={draft.defaultPlaylistId}
                     playlists={options}
                     knownNames={knownNames}
-                    disabled={saving}
+                    disabled={locked}
                     testId="schedule-default-playlist"
                     openTestId="schedule-default-open"
                     onChange={(defaultPlaylistId) => {
@@ -439,7 +465,8 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
                     errors={errors.events.get(event.key)}
                     playlists={options}
                     knownNames={knownNames}
-                    disabled={saving}
+                    disabled={locked}
+                    readOnly={readOnly}
                     onChange={(change, slot) => {
                       changeEvent(event.key, change, slot);
                     }}
@@ -453,22 +480,25 @@ export function ScheduleEditor({ initial, playlists }: ScheduleEditorProps) {
                 ))}
               </ol>
             )}
-            <div className="tx-schedule-editor__add">
-              <Button
-                icon={Plus}
-                aria-disabled={full || saving || undefined}
-                aria-describedby={full ? limitHintId : undefined}
-                onClick={addEvent}
-                data-testid="schedule-add-event"
-              >
-                Add event
-              </Button>
-              {full && (
-                <p id={limitHintId} className="tx-field__hint">
-                  A schedule holds at most {MAX_SCHEDULE_EVENTS} events. Remove one to add another.
-                </p>
-              )}
-            </div>
+            {!readOnly && (
+              <div className="tx-schedule-editor__add">
+                <Button
+                  icon={Plus}
+                  aria-disabled={full || saving || undefined}
+                  aria-describedby={full ? limitHintId : undefined}
+                  onClick={addEvent}
+                  data-testid="schedule-add-event"
+                >
+                  Add event
+                </Button>
+                {full && (
+                  <p id={limitHintId} className="tx-field__hint">
+                    A schedule holds at most {MAX_SCHEDULE_EVENTS} events. Remove one to add
+                    another.
+                  </p>
+                )}
+              </div>
+            )}
           </Card>
         </div>
       </form>

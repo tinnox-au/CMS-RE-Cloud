@@ -1,4 +1,6 @@
+import type { AuthErrorCode } from '@tinnox/contracts';
 import { isRouteErrorResponse, useRouteError } from 'react-router-dom';
+import { authErrorMessage } from '../lib/authError.ts';
 import { Banner, ButtonLink, ErrorNotice, Skeleton, SkeletonGroup, Spinner } from '../ui/index.ts';
 import { HOME_PATH } from './nav.ts';
 import { useDocumentTitle } from './useDocumentTitle.ts';
@@ -13,17 +15,19 @@ import { PROTOTYPE_NOTE, Wordmark } from './Wordmark.tsx';
 export interface SignInScreenProps {
   /** Why the person is not signed in: they signed out, the session ended, or neither. */
   readonly reason: 'signed_out' | 'ended' | 'none';
+  /** Why the last sign-in failed, from `?authError=`; null when it did not. */
+  readonly authError?: AuthErrorCode | null;
   /** The API address that starts sign-in. A full-page navigation, not an in-app route. */
   readonly loginHref: string;
 }
 
-export function SignInScreen({ reason, loginHref }: SignInScreenProps) {
+export function SignInScreen({ reason, authError = null, loginHref }: SignInScreenProps) {
   useDocumentTitle('Sign in');
   return (
     <main className="tx-screen">
       <div className="tx-screen__card">
         <Wordmark size="lg" />
-        <h1 className="tx-screen__title">Operator sign-in</h1>
+        <h1 className="tx-screen__title">Sign in to TINNOX CMS</h1>
         {reason === 'ended' && (
           <Banner tone="warn" live="polite">
             <p>Your session has ended. Sign in again to continue.</p>
@@ -38,6 +42,11 @@ export function SignInScreen({ reason, loginHref }: SignInScreenProps) {
           Sign-in happens at your organisation&apos;s identity provider and needs your password and
           a one-time code from your authenticator app.
         </p>
+        {authError !== null && (
+          <Banner tone="danger" live="assertive">
+            <p>{authErrorMessage(authError)}</p>
+          </Banner>
+        )}
         <ButtonLink
           variant="primary"
           size="lg"

@@ -19,9 +19,11 @@ import {
   type AuditActorType,
   type AuditEventDto,
   type AuditResult,
+  type MemberNameDto,
 } from '@tinnox/contracts';
 import { CONTENT_KIND_LABEL, type ContentKind } from './assignedContent.ts';
 import { formatAge } from './format.ts';
+import { memberName } from './users.ts';
 
 /** The kinds of object an activity sentence can name. */
 export const ACTIVITY_OBJECT_KINDS = [
@@ -82,8 +84,8 @@ interface Wording {
 }
 
 const WORDING: { readonly [K in AuditAction]: Wording } = {
-  'auth.login': { done: 'Operator signed in', attempt: 'Sign-in', icon: 'account' },
-  'auth.logout': { done: 'Operator signed out', attempt: 'Sign-out', icon: 'account' },
+  'auth.login': { done: 'Person signed in', attempt: 'Sign-in', icon: 'account' },
+  'auth.logout': { done: 'Person signed out', attempt: 'Sign-out', icon: 'account' },
   'auth.session_expired': { done: 'Session expired', attempt: 'Session expiry', icon: 'account' },
   'display.create': { done: 'Screen added', attempt: 'Adding a screen', icon: 'screen' },
   'display.update': { done: 'Screen updated', attempt: 'Screen update', icon: 'screen' },
@@ -147,6 +149,26 @@ const WORDING: { readonly [K in AuditAction]: Wording } = {
   'layout.update': { done: 'Layout updated', attempt: 'Layout update', icon: 'other' },
   'layout.delete': { done: 'Layout deleted', attempt: 'Layout deletion', icon: 'other' },
   'publication.create': { done: 'Pushed to screen', attempt: 'Push to screen', icon: 'push' },
+  'invite.create': { done: 'Invite requested', attempt: 'Invite request', icon: 'account' },
+  'invite.cancel': { done: 'Invite cancelled', attempt: 'Invite cancellation', icon: 'account' },
+  'membership.create': {
+    done: 'Person added by TINNOX',
+    attempt: 'Adding a person',
+    icon: 'account',
+  },
+  'membership.role_change': { done: 'Role changed', attempt: 'Role change', icon: 'account' },
+  'membership.update': { done: 'Name corrected', attempt: 'Name correction', icon: 'account' },
+  'membership.remove': { done: 'Person removed', attempt: 'Removing a person', icon: 'account' },
+  'membership.sessions_end': {
+    done: 'Signed out everywhere',
+    attempt: 'Signing out everywhere',
+    icon: 'account',
+  },
+  'membership.mfa_reset': {
+    done: 'Sign-in reset by TINNOX',
+    attempt: 'Sign-in reset',
+    icon: 'account',
+  },
   'security.cross_org_denied': {
     done: 'Cross-organisation request recorded',
     attempt: 'Access to another organisation’s data',
@@ -155,6 +177,12 @@ const WORDING: { readonly [K in AuditAction]: Wording } = {
   'security.csrf_rejected': {
     done: 'Security token check recorded',
     attempt: 'Request without a valid security token',
+    icon: 'security',
+  },
+  'security.permission_denied': {
+    done: 'Refused by role',
+    // Every such row is 'denied', so this is what people read, with " refused" after it.
+    attempt: 'Request outside the person’s role',
     icon: 'security',
   },
 };
@@ -179,6 +207,8 @@ const CATEGORY_ICONS: { readonly [category: string]: ActivityIcon } = {
   folder: 'folder',
   playlist: 'playlist',
   publication: 'push',
+  invite: 'account',
+  membership: 'account',
   security: 'security',
 };
 
@@ -196,6 +226,8 @@ const CATEGORY_LABELS: { readonly [category: string]: string } = {
   schedule: 'Schedule',
   layout: 'Layout',
   publication: 'Push',
+  invite: 'Invites',
+  membership: 'People',
   security: 'Security',
 };
 
@@ -437,10 +469,11 @@ export function describeActivity(event: AuditEventDto): ActivityDescription {
 /**
  * Names by object kind and id. A kind that is missing has not been loaded, so nothing is
  * known about its objects; a kind that is present lists every object that exists now.
+ * `member` holds every member of the organisation, removed ones included, by membership id.
  */
 export type ActivityNames = {
   readonly [K in ActivityObjectKind]?: ReadonlyMap<string, string>;
-};
+} & { readonly member?: ReadonlyMap<string, MemberNameDto> };
 
 /** Where an object can be opened, or null when it has no page of its own. */
 export function activityHref(target: ActivityRef): string | null {
@@ -493,7 +526,10 @@ export interface ActivityItem {
   /** "Failed" or "Refused"; null for a success, which needs no label. */
   readonly resultLabel: string | null;
   readonly tone: ActivityTone;
-  /** Who did it, by kind. An event never carries a person's name. */
+  /**
+   * Who did it: a member's name when the member list knows them, else the kind of actor.
+   * An event never carries a name; it comes from the member list at read time.
+   */
   readonly actor: string;
   readonly reasonCodes: readonly string[];
   /** The raw action, shown as text when `known` is false. */
@@ -501,15 +537,39 @@ export interface ActivityItem {
   readonly known: boolean;
 }
 
+/** `operator` is a customer's person; "Operator" is a TINNOX staff role, so it is never shown. */
 const ACTOR_LABELS: { readonly [K in AuditActorType]: string } = {
-  operator: 'Operator',
+  operator: 'Person',
   player: 'Player software',
   system: 'System',
   anonymous: 'Not signed in',
 };
 
-export function activityActorLabel(actorType: AuditActorType): string {
+/** Who acted, by kind only: "Person", "Player software". */
+export function activityActorKindLabel(actorType: AuditActorType): string {
   return ACTOR_LABELS[actorType];
+}
+
+/** The member who acted, when the member list is known and has them. */
+export function activityActorMember(
+  event: Pick<AuditEventDto, 'actorType' | 'actorId'>,
+  members: ReadonlyMap<string, MemberNameDto> | null | undefined,
+): MemberNameDto | null {
+  if (event.actorType !== 'operator' || event.actorId === null) return null;
+  return members?.get(event.actorId.toLowerCase()) ?? null;
+}
+
+/**
+ * Who acted: for a person, the member's name when the member list knows them ("Unnamed person"
+ * until TINNOX names them), "Person" when the list is unknown or lacks the id; any other actor
+ * by kind. Nothing is guessed.
+ */
+export function activityActorLabel(
+  event: Pick<AuditEventDto, 'actorType' | 'actorId'>,
+  names: { readonly member?: ReadonlyMap<string, MemberNameDto> | null },
+): string {
+  const member = activityActorMember(event, names.member);
+  return member === null ? ACTOR_LABELS[event.actorType] : memberName(member);
 }
 
 const RESULT_LABELS: { readonly [K in AuditResult]: string | null } = {
@@ -553,7 +613,7 @@ export function presentActivity(event: AuditEventDto, names: ActivityNames): Act
     result: event.result,
     resultLabel: RESULT_LABELS[event.result],
     tone: RESULT_TONES[event.result],
-    actor: activityActorLabel(event.actorType),
+    actor: activityActorLabel(event, names),
     reasonCodes: description.reasonCodes,
     action: event.action,
     known: description.known,

@@ -52,6 +52,22 @@ export const STAGE_B_CONSTRAINTS = Object.freeze({
   displayAssignedLayout: 'display_assigned_layout_fk',
 });
 
+/** The names of db/migrations/0013_roles_and_members.sql that a caller has to tell apart. */
+export const STAGE_C_CONSTRAINTS = Object.freeze({
+  /** 23001: the change would leave the organisation without an active Owner. */
+  lastOwner: 'membership_last_owner',
+  /** 23001: a removed member's removal or role was changed (only TINNOX's scripts reactivate). */
+  removedFinal: 'membership_removed_final',
+  /** 23505: another member of the organisation has, or had, this name, ignoring case. */
+  memberNameTaken: 'membership_org_display_name_key',
+  /** 23505: a pending invite of the organisation has this e-mail address, ignoring case. */
+  inviteEmailTaken: 'member_invite_pending_email_key',
+  /** 23505: a pending invite of the organisation has this name, ignoring case. */
+  inviteNameTaken: 'member_invite_pending_name_key',
+  /** 23001: an invite change the guard refuses (closed, request changed, wrong status for the role). */
+  inviteGuard: 'member_invite_guard',
+});
+
 /** The constraint a PostgreSQL error names, or null when it names none. */
 export function violatedConstraint(error: unknown): string | null {
   if (typeof error !== 'object' || error === null) return null;

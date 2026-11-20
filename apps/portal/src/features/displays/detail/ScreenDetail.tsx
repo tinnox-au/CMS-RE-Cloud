@@ -18,6 +18,7 @@ import {
   type WorkingHoursDraft,
 } from '../../../lib/screenDetail.ts';
 import { canvasFormDirty } from '../../../lib/screenDetailCanvas.ts';
+import { useCanAtMount } from '../../../session/AuthenticatedSession.tsx';
 import { EditorPage } from '../../../shell/EditorPage.tsx';
 import { ConfirmDialog, ErrorNotice } from '../../../ui/index.ts';
 import { usePush } from '../../push/PushContext.tsx';
@@ -52,6 +53,17 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
   const assigned = useAssignedPlaylist(display);
   const [params, setParams] = useSearchParams();
   const tab = screenDetailTabOf(params.get('tab'));
+
+  // ---- What the role may change, decided per section when the page opens ----
+  const readOnly = {
+    details: !useCanAtMount('screen.details'),
+    canvas: !useCanAtMount('screen.setup'),
+    pairing: !useCanAtMount('screen.pair'),
+    // Putting tags on a screen is part of its details; creating one needs screen.setup.
+    tags: !useCanAtMount('screen.details'),
+    workingHours: !useCanAtMount('screen.hours'),
+  };
+  const allReadOnly = readOnly.details && readOnly.canvas && readOnly.tags && readOnly.workingHours;
 
   const selectTab = (next: ScreenDetailOpenTabId) => {
     setParams(new URLSearchParams(screenDetailSearch(window.location.search.slice(1), next)), {
@@ -96,7 +108,7 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
     (tagsDraft !== null && !sameTagIds(tagsDraft, display.tagIds)) ||
     (workingHoursDraft !== null && workingHoursDirty(workingHoursDraft, display.workingHours));
 
-  const leaveGuard = useLeaveGuard(dirty, display.name, saving);
+  const leaveGuard = useLeaveGuard(dirty && !allReadOnly, display.name, saving);
 
   const changed = (next: DisplayDto) => {
     onChanged({ display: next, site });
@@ -171,6 +183,7 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
               onShowPairing={() => {
                 selectTab('pairing');
               }}
+              canPair={!readOnly.pairing}
               revoke={revoke?.origin === 'summary' ? revoke : null}
               onDismissRevoke={dismissRevoke}
             />
@@ -179,6 +192,7 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
             <DetailsCard
               display={display}
               site={site}
+              readOnly={readOnly.details}
               draft={detailsDraft}
               onDraft={setDetailsDraft}
               onSaved={(next) => {
@@ -218,6 +232,7 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
               }}
               revoke={revoke?.origin === 'pairing' ? revoke : null}
               onDismissRevoke={dismissRevoke}
+              readOnly={readOnly}
             />
           </div>
         </div>

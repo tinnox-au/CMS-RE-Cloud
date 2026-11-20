@@ -12,7 +12,7 @@ import {
   pairingCodeMinutes,
   pairingRefusalAdvice,
 } from '../../../lib/screenWizard.ts';
-import { useSession } from '../../../session/SessionContext.tsx';
+import { useCan, useSession } from '../../../session/AuthenticatedSession.tsx';
 import { ArrowLeft, ArrowRight, ExternalLink, KeyRound } from '../../../ui/icons.ts';
 import { Banner, Button, ErrorNotice, Field, Icon, TextInput } from '../../../ui/index.ts';
 import { ScreenStatusPill } from '../../shared/index.ts';
@@ -71,7 +71,9 @@ function PlayerStatus({ displayId }: { readonly displayId: string }) {
  * Step 2: pair the screen's player. The player shows a one-time code; the operator types it
  * here and the server ties the player to this screen (`POST /api/displays/:id/pairing`).
  * The M0 messages for a malformed code and for each refusal stay. "Skip for now" is allowed:
- * the screen exists and can be paired later from its page.
+ * the screen exists and can be paired later from its page. Without `screen.pair` (which goes
+ * with `screen.setup`, the page's own key, today) there is no form and "Skip for now" is the
+ * only way on.
  */
 export function PairStep({
   display,
@@ -82,6 +84,7 @@ export function PairStep({
   onNext,
 }: PairStepProps) {
   const { limits } = useSession();
+  const canPair = useCan('screen.pair');
   const [code, setCode] = useState('');
   const [fieldError, setFieldError] = useState<string | undefined>(undefined);
   const [error, setError] = useState<unknown>(null);
@@ -107,7 +110,7 @@ export function PairStep({
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (busy) return;
+    if (!canPair || busy) return;
     setError(null);
     setAccepted(null);
     const normalised = normalisePairingCode(code);
@@ -205,7 +208,7 @@ export function PairStep({
 
         {paired && <PlayerStatus displayId={display.id} />}
 
-        {showForm ? (
+        {!canPair ? null : showForm ? (
           <form
             noValidate
             onSubmit={submit}
@@ -297,7 +300,7 @@ export function PairStep({
           </Button>
         }
       >
-        {paired ? (
+        {paired && canPair ? (
           <Button
             variant="primary"
             size="lg"

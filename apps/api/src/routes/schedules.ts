@@ -20,6 +20,7 @@ import {
 } from '@tinnox/contracts';
 import { auditScoped, withOrg, type Tx } from '@tinnox/db';
 import type { FastifyInstance } from 'fastify';
+import { withOrgAllowed } from '../auth/permissions.ts';
 import { operatorOf, type OperatorSession } from '../auth/session.ts';
 import type { AppContext } from '../context.ts';
 import { bigintToNumber, iso } from '../db-helpers.ts';
@@ -252,7 +253,7 @@ export function registerScheduleRoutes(app: FastifyInstance, ctx: AppContext): v
     const session = operatorOf(request);
     const input = parseInput(ScheduleInputSchema, request.body, 'schedule');
     try {
-      const dto = await withOrg(pool, session.orgId, (tx) =>
+      const dto = await withOrgAllowed(ctx, request, (tx) =>
         saveSchedule(tx, session, null, input),
       );
       if (dto === null) throw new Error('created schedule is not visible');
@@ -281,7 +282,7 @@ export function registerScheduleRoutes(app: FastifyInstance, ctx: AppContext): v
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     const input = parseInput(ScheduleInputSchema, request.body, 'schedule');
     try {
-      return await withOrg(pool, session.orgId, async (tx) => {
+      return await withOrgAllowed(ctx, request, async (tx) => {
         const dto = await saveSchedule(tx, session, id, input);
         if (dto === null) throw notFound('The schedule');
         return dto;
@@ -298,7 +299,7 @@ export function registerScheduleRoutes(app: FastifyInstance, ctx: AppContext): v
     const session = operatorOf(request);
     const { id } = parseInput(IdParamSchema, request.params, 'address');
     try {
-      await withOrg(pool, session.orgId, async (tx) => {
+      await withOrgAllowed(ctx, request, async (tx) => {
         const locked = await tx.query<{ event_count: string }>(
           `SELECT (SELECT count(*) FROM schedule_event e
                    WHERE e.schedule_id = s.id AND e.org_id = s.org_id) AS event_count

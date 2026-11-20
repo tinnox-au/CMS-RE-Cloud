@@ -53,6 +53,33 @@ export async function signIn(page: Page, name: DevUserName = 'operator'): Promis
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
 }
 
+/**
+ * Signs in again from the portal's sign-in screen after the member's sessions were ended
+ * (a demotion, "Sign out everywhere"). Keycloak's own session is still alive, so the API
+ * refuses its silent answer and asks again with `prompt=login` (docs/portal-v2/stage-c.md,
+ * section 6.5): the password form must show, then the one-time code. Keycloak may show the
+ * username as text instead of a field during a re-authentication, so `#username` is filled
+ * only when it is there to fill. Ends on the portal page the member was on.
+ */
+export async function reauthenticate(page: Page, name: DevUserName): Promise<void> {
+  const user = devUser(name);
+  await page.getByRole('link', { name: 'Sign in' }).click();
+  await page.waitForURL(/\/realms\/tinnox-dev\//);
+  const password = page.locator('#password');
+  await expect(password, 'the identity provider asks for the password again').toBeVisible();
+  const username = page.locator('#username');
+  if ((await username.isVisible()) && (await username.isEditable())) {
+    await username.fill(user.username);
+  }
+  await password.fill(user.password);
+  await page.locator('#kc-login').click();
+  const otp = page.locator('#otp');
+  await expect(otp, 'the identity provider asks for a one-time code again').toBeVisible();
+  await otp.fill(await freshTotp(name));
+  await page.locator('#kc-login').click();
+  await page.waitForURL(`${PORTAL_URL}/**`);
+}
+
 export interface MediaItem {
   readonly id: string;
   readonly status: string;
@@ -182,6 +209,18 @@ export class OperatorApi {
       headers: await this.#headers(),
       data,
     });
+  }
+
+  /** The membership id of the person with this name (`GET /api/members`, needs `member.read`). */
+  async memberIdByName(name: string): Promise<string> {
+    const response = await this.get('/api/members');
+    expect(response.status(), await response.text()).toBe(200);
+    const body = (await response.json()) as {
+      items: { id: string; displayName: string | null }[];
+    };
+    const member = body.items.find((item) => item.displayName === name);
+    if (member === undefined) throw new Error(`no member is named "${name}"`);
+    return member.id;
   }
 
   async siteId(): Promise<string> {

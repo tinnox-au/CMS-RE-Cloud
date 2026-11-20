@@ -6,6 +6,7 @@ import { assignedContent } from '../../lib/assignedContent.ts';
 import { countOf } from '../../lib/bulkOutcome.ts';
 import { matchesSearch } from '../../lib/listView.ts';
 import { setMany, summariseSelection, toggleOne } from '../../lib/selection.ts';
+import { useCan } from '../../session/AuthenticatedSession.tsx';
 import { Monitor, SearchX } from '../../ui/icons.ts';
 import {
   Banner,
@@ -119,6 +120,7 @@ export function ScreenPickerDialog({
   testId = 'shared-screen-picker',
 }: ScreenPickerDialogProps) {
   const groupName = useId();
+  const canAddScreen = useCan('screen.setup');
   const { state, reload } = useLoadWhileOpen(open, loadScreens);
   const [selected, setSelected] = useState<ReadonlySet<string>>(
     () => new Set(initialSelectedIds ?? []),
@@ -238,12 +240,16 @@ export function ScreenPickerDialog({
             icon={Monitor}
             title="No screens yet"
             action={
-              <ButtonLink variant="secondary" to="/screens/new">
-                Add screen
-              </ButtonLink>
+              canAddScreen ? (
+                <ButtonLink variant="secondary" to="/screens/new">
+                  Add screen
+                </ButtonLink>
+              ) : undefined
             }
           >
-            Add a screen first, then come back to choose it.
+            {canAddScreen
+              ? 'Add a screen first, then come back to choose it.'
+              : 'An editor adds screens.'}
           </EmptyState>
         )}
         {state.status === 'ready' && displays.length > 0 && (

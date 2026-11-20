@@ -1,14 +1,19 @@
-import type { TagScope } from '@tinnox/contracts';
+import type { MemberNameDto, TagScope } from '@tinnox/contracts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/index.ts';
 import { isAbort } from '../../api/client.ts';
 import type { AuditNames, AuditTargetKind } from '../../lib/auditView.ts';
 import { mediaDisplayName } from '../../lib/mediaName.ts';
+import { memberName } from '../../lib/users.ts';
 
 interface Loaded {
   readonly names: ReadonlyMap<string, string>;
   readonly tagScopes?: ReadonlyMap<string, TagScope>;
+  readonly members?: ReadonlyMap<string, MemberNameDto>;
 }
+
+/** Read for every page of events: it names the actors, and the people events are about. */
+const ALWAYS: readonly AuditTargetKind[] = ['membership'];
 
 async function loadKind(kind: AuditTargetKind, signal: AbortSignal): Promise<Loaded> {
   switch (kind) {
@@ -49,12 +54,20 @@ async function loadKind(kind: AuditTargetKind, signal: AbortSignal): Promise<Loa
       const list = await api.listLayouts(signal);
       return { names: new Map(list.map((item) => [item.id.toLowerCase(), item.name])) };
     }
+    case 'membership': {
+      const list = await api.listMemberNames(signal);
+      return {
+        names: new Map(list.map((item) => [item.id.toLowerCase(), memberName(item)])),
+        members: new Map(list.map((item) => [item.id.toLowerCase(), item])),
+      };
+    }
   }
 }
 
 /**
  * The names of the objects the audit events point at. An event names its object by id only,
- * so each kind's list is read once, and only for the kinds the events on the page need. A
+ * so each kind's list is read once, and only for the kinds the events on the page need. The
+ * members are always read (once per page load and per Refresh): they name every actor. A
  * list that cannot be read stays unknown (null): the page then shows the id, never a guess.
  * `generation` reads the lists again (the page's Refresh), as objects may have been renamed
  * or deleted since.
@@ -74,7 +87,7 @@ export function useAuditNames(kinds: readonly AuditTargetKind[], generation: num
     if (requested.current.generation !== generation) {
       requested.current = { generation, kinds: new Set() };
     }
-    for (const kind of kinds) {
+    for (const kind of [...ALWAYS, ...kinds]) {
       if (requested.current.kinds.has(kind)) continue;
       requested.current.kinds.add(kind);
       const controller = new AbortController();
@@ -82,14 +95,19 @@ export function useAuditNames(kinds: readonly AuditTargetKind[], generation: num
       loadKind(kind, controller.signal)
         .then((result) => {
           setLoaded((previous) => {
+            // A late answer from before a Refresh must not replace the newer names.
+            if (previous.generation > generation) return previous;
             const byKind = new Map(previous.generation === generation ? previous.byKind : []);
             byKind.set(kind, result);
             return { generation, byKind };
           });
         })
         .catch((error: unknown) => {
-          // Unknown stays unknown; a later Refresh asks again.
-          if (!isAbort(error)) requested.current.kinds.delete(kind);
+          // Unknown stays unknown; a later Refresh asks again. A failure from before a Refresh
+          // leaves the newer generation's requests alone.
+          if (!isAbort(error) && requested.current.generation === generation) {
+            requested.current.kinds.delete(kind);
+          }
         });
     }
   }, [kinds, generation]);
@@ -118,6 +136,7 @@ export function useAuditNames(kinds: readonly AuditTargetKind[], generation: num
       schedule: names('schedule'),
       layout: names('layout'),
       tagScopes: byKind.get('tag')?.tagScopes ?? null,
+      member: byKind.get('membership')?.members ?? null,
     };
   }, [loaded]);
 }

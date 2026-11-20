@@ -260,7 +260,11 @@ export function appErrorsFromApi(details: readonly ApiErrorDetail[]): AppErrors 
 /** WCAG text contrast that reads well from a distance; under it the editor warns, never blocks. */
 export const CONTRAST_THRESHOLD = 4.5;
 
-export function contrastWarning(text: string, background: string): string | null {
+/**
+ * The warning under the colours, or null when they contrast enough. `readOnly` (a role that
+ * cannot change the app) keeps the fact and drops the instruction to choose other colours.
+ */
+export function contrastWarning(text: string, background: string, readOnly = false): string | null {
   const a = parseColour(text);
   const b = parseColour(background);
   if (a === null || b === null) return null;
@@ -268,7 +272,10 @@ export function contrastWarning(text: string, background: string): string | null
   if (ratio >= CONTRAST_THRESHOLD) return null;
   // Rounded down, so a ratio just under the threshold never reads as 4.5.
   const shown = (Math.floor(ratio * 10) / 10).toFixed(1);
-  return `The text and background colours are hard to tell apart (${shown}:1). Choose colours with more contrast; 4.5:1 or more reads well from a distance.`;
+  const fact = `The text and background colours are hard to tell apart (${shown}:1).`;
+  return readOnly
+    ? `${fact} 4.5:1 or more reads well from a distance.`
+    : `${fact} Choose colours with more contrast; 4.5:1 or more reads well from a distance.`;
 }
 
 export interface PreviewShapeOption {
