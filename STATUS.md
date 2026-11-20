@@ -47,14 +47,13 @@ None.
 
 ## In review
 
-| Id | Card | Agreed | PR | Since |
-|---|---|---|---|---|
-| CMS-13 | Roles and user management (stage C): owner, admin, editor, viewer; invite and remove people; a permission matrix to decide first | - | #31 | 20 Nov |
+None.
 
 ## Done, last 14 days
 
 | Id | Date | Outcome | PR |
 |---|---|---|---|
+| CMS-13 | 20 Nov | Roles and user management (stage C): owner, admin, editor, viewer; invite and remove people; a permission matrix to decide first | #31 |
 | CMS-12 | 19 Nov | Fix the confirmed PR 29 review findings (logout URL fallback, upload poll retry, sign-out e2e check, plan and control wording) | #30 |
 | CMS-11 | 19 Nov | Fix the gaps from the 2026-11-19 manual user test (sign-out notice, upload summary, Apps note, test plan corrections) | #29 |
 | CMS-9 | 19 Nov | Review picomatch audit exception GHSA-fc5q-39xc-vjpf: upgrade if fixed, else renew or remove (CI fails once its date passes) | #29 |
@@ -141,6 +140,9 @@ PR 30 merged to main after lint, unit, build, audit, integration and secret-scan
 - 19 Nov: Michael answered D1-D7 all a (19 Nov), recorded as DEC-35 in docs/decisions-2026-11.md. Next: build spec, then PRs C1 (roles enforced) and C2 (people).
 - 20 Nov: Built C1 and C2 on one branch, feat/stage-c-roles (spec docs/portal-v2/stage-c.md, As built and review record docs/reviews/2026-11-20-stage-c-review). Every suite, verify:oidc and the e2e suite pass. Not pushed; waiting for Michael's go-ahead to push and open the PR.
 - 20 Nov: Round 6 review (docs/reviews/2026-11-20-stage-c-roles-round-6): verified each finding; fixed RCX-01 (pairing claim after reactivation), RCX-02 (incident script cut-off timing) and RCX-03 (role matrix accepted 5xx) on the PR; RCU-03 needs no change. All suites and e2e pass. Not merged.
+
+**Evidence**
+Merged to main; CI green; all suites, verify:oidc and the full e2e suite (143) pass; round 6 findings fixed
 
 ### CMS-18
 from: CMS-3
