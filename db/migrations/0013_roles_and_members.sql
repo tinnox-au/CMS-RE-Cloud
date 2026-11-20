@@ -518,10 +518,10 @@ BEGIN
 
   -- The member who claimed the code must still be in the organisation (0013), and a claim
   -- made before their sessions were ended (removal, demotion, sign out everywhere, mfa-reset,
-  -- owner recovery, the incident script) never completes. A reactivation keeps the cut-off, so
-  -- a claim from before a removal stays dead. Both are database times and every cut-off is
-  -- stamped after the member lock, so a claim that committed first is earlier; a tie is
-  -- refused. FOR SHARE waits for a change that is committing and re-reads the row (the
+  -- the owner recovery that replaces an Owner, the incident script) never completes; a
+  -- promotion ends no session. A reactivation keeps the cut-off, so a claim from before a
+  -- removal stays dead. Both are database times and every cut-off is stamped after the member
+  -- lock, so a claim that committed first is earlier; a tie is refused. FOR SHARE waits for a change that is committing and re-reads the row (the
   -- definer's 0013 UPDATE grant allows the lock). Order: pairing row, then member row; a
   -- member change never locks pairing rows.
   PERFORM 1 FROM public.membership m
