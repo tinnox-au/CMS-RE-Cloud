@@ -26,7 +26,10 @@ import {
 } from '../../scripts/lib/provision.ts';
 import {
   addMember,
+  createDisplay,
   createOrg,
+  newPairing,
+  pollPairing,
   repoRoot,
   signIn,
   startTestApp,
@@ -513,6 +516,49 @@ describe('provision-member fulfil', () => {
       signIn(t, casey, { authTime: new Date(cutOff.getTime() - 60_000) }),
     ).rejects.toThrow(/reauth/);
     expect((await (await signIn(t, casey)).fetch('/api/displays')).status).toBe(200);
+  });
+
+  it('a pairing code claimed before the removal cannot be collected after the return', async () => {
+    const org = await createOrg('Provision return pairing');
+    const owner = await signIn(t, org);
+    const display = await createDisplay(owner, org);
+    const robin = await addMember(org, 'editor', 'Robin Example');
+    const pairing = await newPairing(t);
+    const claim = await (
+      await signIn(t, robin)
+    ).fetch(`/api/displays/${display.id}/claim`, { method: 'POST', json: { code: pairing.code } });
+    expect(claim.status).toBe(200);
+
+    // No poll from here on: one while Robin is removed would expire the claim anyway.
+    const removed = await owner.fetch(`/api/members/${robin.membershipId}/remove`, {
+      method: 'POST',
+    });
+    expect(removed.status).toBe(200);
+    const invited = await owner.fetch('/api/invites', {
+      method: 'POST',
+      json: { name: 'Robin Example', email: 'robin@example.com', role: 'viewer' },
+    });
+    expect(invited.status).toBe(201);
+    const { id } = (await invited.json()) as { id: string };
+    expect(
+      await fulfil(pool, directory({ robin: account('robin@example.com', robin.oidcSub) }), {
+        inviteId: id,
+        username: 'robin',
+        confirmedWith: 'TICKET-5',
+        executedBy: STAFF,
+      }),
+    ).toMatchObject({ membershipId: robin.membershipId, role: 'viewer', reactivated: true });
+
+    const poll = await pollPairing(t, pairing);
+    expect(poll.status).toBe(200);
+    expect(await poll.json()).toEqual({ status: 'consumed' });
+    const registrations = await withOrg(pool, org.orgId, async (tx) => {
+      const { rows } = await tx.query('SELECT id FROM player_registration WHERE display_id = $1', [
+        display.id,
+      ]);
+      return rows;
+    });
+    expect(registrations).toEqual([]);
   });
 });
 

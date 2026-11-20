@@ -16,10 +16,15 @@ BEGIN;
 -- cut-off, INSERT on audit_event, and past row-level security on every table.
 SET LOCAL ROLE tinnox_definer;
 
+-- The member row first, in a statement of its own, as the API does. The cut-off is then taken
+-- after any wait for the row, so a sign-in authenticated during that wait is refused too.
+SELECT 1 AS locked FROM public.membership WHERE oidc_sub = :'subject' FOR NO KEY UPDATE;
+
 -- The cut-off (0013, the definer's UPDATE (sessions_valid_after) grant): sessions created, and
 -- sign-ins authenticated, before it are refused. greatest() never moves an existing one back.
+-- clock_timestamp(): a file sent as one message gives every statement one statement_timestamp().
 WITH cut AS (
-  UPDATE public.membership SET sessions_valid_after = greatest(sessions_valid_after, statement_timestamp())
+  UPDATE public.membership SET sessions_valid_after = greatest(sessions_valid_after, clock_timestamp())
   WHERE oidc_sub = :'subject'
   RETURNING id, org_id
 )

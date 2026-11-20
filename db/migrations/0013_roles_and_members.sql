@@ -495,8 +495,9 @@ BEGIN
 END $$;
 
 -- Same contract as 0010, plus: the member who claimed the code must still be in the
--- organisation, so a removal closes the window between a claim and its collection. Same
--- signature and OUT columns, so owner and grants stay.
+-- organisation and the claim must be later than their session cut-off, so a removal (even one
+-- later undone) closes the window between a claim and its collection. Same signature and OUT
+-- columns, so owner and grants stay.
 CREATE OR REPLACE FUNCTION sec.pairing_complete(p_pairing_id uuid, p_polling_token_hash bytea, p_device_token_hash bytea)
   RETURNS TABLE (outcome text, registration_id uuid, org_id uuid, display_id uuid)
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER
@@ -515,11 +516,17 @@ BEGIN
     RETURN;
   END IF;
 
-  -- The member who claimed the code must still be in the organisation (0013). FOR SHARE
-  -- waits for a removal that is committing (the definer's 0013 UPDATE grant allows the
-  -- lock). Order: pairing row, then member row; a member change never locks pairing rows.
+  -- The member who claimed the code must still be in the organisation (0013), and a claim
+  -- made before their sessions were ended (removal, demotion, sign out everywhere, mfa-reset,
+  -- owner recovery, the incident script) never completes. A reactivation keeps the cut-off, so
+  -- a claim from before a removal stays dead. Both are database times and every cut-off is
+  -- stamped after the member lock, so a claim that committed first is earlier; a tie is
+  -- refused. FOR SHARE waits for a change that is committing and re-reads the row (the
+  -- definer's 0013 UPDATE grant allows the lock). Order: pairing row, then member row; a
+  -- member change never locks pairing rows.
   PERFORM 1 FROM public.membership m
   WHERE m.id = v.claimed_by_membership AND m.org_id = v.org_id AND m.removed_at IS NULL
+    AND (m.sessions_valid_after IS NULL OR v.claimed_at > m.sessions_valid_after)
   FOR SHARE;
   IF NOT FOUND THEN
     UPDATE public.pairing_session ps SET status = 'expired' WHERE ps.id = v.id;

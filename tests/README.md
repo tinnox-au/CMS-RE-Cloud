@@ -58,7 +58,7 @@ probes in `cross-org.test.ts`; the API's own schedule tests are
 `packages/db/test/stage-b-schedules.integration.test.ts`.
 
 Stage C (roles and people, `docs/portal-v2/stage-c.md` section 9) added `e2e/14-roles.spec.ts`
-(written, not run yet; covers ISO-05: each role signed in through Keycloak, what it sees and what
+(runs and passes, 7 tests in the full e2e suite of 143; covers ISO-05: each role signed in through Keycloak, what it sees and what
 the API refuses, an invite request and its cancellation, a demotion that ends a session, "Sign out
 everywhere" and the forced sign-in with a fresh one-time code, and the seeded roles restored). New integration files: `integration/roles-matrix.test.ts` (all 59 operator routes as
 each of the four roles, against an oracle written in the test), `integration/reauth.test.ts`

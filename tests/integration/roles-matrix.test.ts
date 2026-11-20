@@ -69,6 +69,13 @@ async function refusal(
   };
 }
 
+/**
+ * What an allowed probe (empty body, random id) may answer: the handler ran, past the role
+ * guard. A 429 is answered in onRequest, before the guard, and a 5xx is a failure: neither
+ * proves access.
+ */
+const ALLOWED_STATUSES = new Set([200, 400, 404, 415]);
+
 const FORBIDDEN = {
   status: 403,
   code: 'forbidden',
@@ -115,7 +122,7 @@ describe('the role-by-route matrix', () => {
       const what = `${method} ${pattern}`;
       const response = await operator(role).fetch(pattern.replace(':id', id), { method });
       if (allowed(role, method, pattern)) {
-        if (response.status === 401 || response.status === 403) {
+        if (!ALLOWED_STATUSES.has(response.status)) {
           wrong.push(`${what}: ${response.status}, expected to be allowed`);
         }
         await response.body?.cancel();

@@ -843,13 +843,18 @@ describe('sessions and the cut-off', () => {
   });
 });
 
-describe('pairing by a removed member', () => {
+describe('pairing by a removed member, or one whose sessions were ended', () => {
   let org: TestOrg;
   beforeAll(async () => {
     org = await createOrg(clients().migrator, 'Pairing');
   });
 
-  async function newPairing() {
+  interface Pairing {
+    readonly code: string;
+    readonly pollingTokenHash: Buffer;
+    readonly pairingId: string;
+  }
+  async function newPairing(): Promise<Pairing> {
     const pollingTokenHash = hash();
     const code = pairingCode();
     const created = await pairingCreate(db, {
@@ -873,6 +878,28 @@ describe('pairing by a removed member', () => {
         windowSeconds: 600,
       }),
     );
+  const collect = (p: Pairing) =>
+    pairingComplete(db, {
+      pairingId: p.pairingId,
+      pollingTokenHash: p.pollingTokenHash,
+      deviceTokenHash: hash(),
+    });
+  /** The collection is refused for good: the claim is spent and the display has no player. */
+  async function expectRefused(p: Pairing): Promise<void> {
+    expect(await collect(p)).toEqual({ outcome: 'not_claimable' });
+    expect(
+      await asDefinerRows(
+        'SELECT status, registration_id FROM public.pairing_session WHERE id = $1',
+        [p.pairingId],
+      ),
+    ).toEqual([{ status: 'expired', registration_id: null }]);
+    expect(
+      await asDefinerRows(
+        'SELECT id FROM public.player_registration WHERE display_id = $1 AND revoked_at IS NULL',
+        [org.displayId],
+      ),
+    ).toEqual([]);
+  }
 
   it('cannot claim a code', async () => {
     const member = await addMember(org.orgId, 'editor');
@@ -886,16 +913,42 @@ describe('pairing by a removed member', () => {
     const p = await newPairing();
     expect((await claim(p.code, member.id)).outcome).toBe('claimed');
     await asApp(org.orgId, REMOVE, [member.id, org.membershipId]);
-    expect(
-      await pairingComplete(db, {
-        pairingId: p.pairingId,
-        pollingTokenHash: p.pollingTokenHash,
-        deviceTokenHash: hash(),
-      }),
-    ).toEqual({ outcome: 'not_claimable' });
-    expect(
-      await asDefinerRows('SELECT status FROM public.pairing_session WHERE id = $1', [p.pairingId]),
-    ).toEqual([{ status: 'expired' }]);
+    await expectRefused(p);
+  });
+
+  it('keeps a claim made before a removal dead after the member is brought back', async () => {
+    const member = await addMember(org.orgId, 'editor');
+    const p = await newPairing();
+    expect((await claim(p.code, member.id)).outcome).toBe('claimed');
+    // As the people route removes: the removal and the cut-off in one transaction.
+    await withOrg(clients().pool, org.orgId, async (tx) => {
+      await tx.query(REMOVE, [member.id, org.membershipId]);
+      await sessionRevokeMembership(tx, member.id);
+    });
+    // As provision-member fulfil reactivates: the same row, the cut-off kept. No poll between.
+    await asMigratorIn(org.orgId, (client) =>
+      client.query(
+        "UPDATE membership SET removed_at = NULL, removed_by = NULL, role = 'viewer' WHERE id = $1",
+        [member.id],
+      ),
+    );
+    await expectRefused(p);
+  });
+
+  it('refuses a claim made before a demotion or a sign out everywhere', async () => {
+    const member = await addMember(org.orgId, 'editor');
+    const p = await newPairing();
+    expect((await claim(p.code, member.id)).outcome).toBe('claimed');
+    await withOrg(clients().pool, org.orgId, (tx) => sessionRevokeMembership(tx, member.id));
+    await expectRefused(p);
+  });
+
+  it('completes a claim made after the cut-off, however soon after', async () => {
+    const member = await addMember(org.orgId, 'editor');
+    await withOrg(clients().pool, org.orgId, (tx) => sessionRevokeMembership(tx, member.id));
+    const p = await newPairing();
+    expect((await claim(p.code, member.id)).outcome).toBe('claimed');
+    expect(await collect(p)).toMatchObject({ outcome: 'completed', displayId: org.displayId });
   });
 });
 

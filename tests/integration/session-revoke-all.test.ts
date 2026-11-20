@@ -22,18 +22,40 @@ import {
   type TestOrg,
 } from './support.ts';
 
-/** The database administrator, as in the runbook. */
-async function asSuperuser<T>(work: (client: pg.Client) => Promise<T>): Promise<T> {
+/** One connection as the database administrator, as in the runbook. */
+async function superuserClient(): Promise<pg.Client> {
   const url = new URL(process.env['TEST_DATABASE_MIGRATOR_URL'] ?? '');
   url.username = 'postgres';
   url.password = encodeURIComponent(process.env['POSTGRES_SUPERUSER_PASSWORD'] ?? '');
   const client = new pg.Client({ connectionString: url.toString() });
   await client.connect();
+  return client;
+}
+
+async function asSuperuser<T>(work: (client: pg.Client) => Promise<T>): Promise<T> {
+  const client = await superuserClient();
   try {
     return await work(client);
   } finally {
     await client.end();
   }
+}
+
+/** Waits, at most ten seconds, until backend `pid` waits for a lock. */
+async function waitForLockWait(pid: number): Promise<void> {
+  // A superuser sees every role's backends; outside a transaction each poll reads afresh.
+  await asSuperuser(async (client) => {
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      const { rows } = await client.query<{ waiting: boolean }>(
+        "SELECT wait_event_type = 'Lock' AS waiting FROM pg_stat_activity WHERE pid = $1",
+        [pid],
+      );
+      if (rows[0]?.waiting === true) return;
+      if (Date.now() > deadline) throw new Error(`backend ${pid} never waited for a lock`);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  });
 }
 
 /** A runbook script as psql would run it, with its `-v name=value` variables filled in. */
@@ -165,6 +187,45 @@ describe('signing every operator out', () => {
     const again = await cutOff(idle);
     expect(again.cutOff).toEqual(later);
     expect(again.events).toEqual([incidentCutOff(idle), incidentCutOff(idle)]);
+  });
+
+  it("the incident script's cut-off is taken after it waits for the member row", async () => {
+    const suspect = await createOrg('Revoke one, row held');
+    const holder = await superuserClient();
+    const script = await superuserClient();
+    let running: Promise<void> | undefined;
+    try {
+      // The suspect's own write (assertStillAllowed) only locks the row FOR SHARE. A holder that
+      // changed the row would make PostgreSQL recompute the cut-off and hide the defect.
+      await holder.query('BEGIN');
+      await holder.query('SELECT 1 FROM public.membership WHERE id = $1 FOR SHARE', [
+        suspect.membershipId,
+      ]);
+      const pid = (await script.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]
+        ?.pid;
+      if (pid === undefined) throw new Error('no backend pid');
+      // Sent as one message, where every statement shares one statement_timestamp().
+      running = runScript(script, 'revoke-subject-sessions.sql', { subject: suspect.oidcSub });
+      await waitForLockWait(pid);
+      // Past a whole second, so a cut-off stamped when the script started is an earlier second.
+      await new Promise((resolve) => setTimeout(resolve, 2_200));
+      const t1 = (await holder.query<{ t1: Date }>('SELECT clock_timestamp() AS t1')).rows[0]?.t1;
+      if (t1 === undefined) throw new Error('no clock');
+      await holder.query('ROLLBACK');
+      await running;
+
+      const cut = await cutOff(suspect);
+      expect(cut.cutOff?.getTime()).toBeGreaterThanOrEqual(t1.getTime());
+      expect(cut.events).toEqual([incidentCutOff(suspect)]);
+      // A sign-in authenticated at the identity provider while the script waited is refused.
+      const duringWait = new Date(Math.floor(t1.getTime() / 1000) * 1000);
+      await expect(signIn(t, suspect, { authTime: duringWait })).rejects.toThrow(/reauth/);
+    } finally {
+      // Ending the holder releases the row, so the script finishes before its client ends.
+      await holder.end();
+      await running?.catch(() => undefined);
+      await script.end();
+    }
   });
 
   it('rotating the session secret signs nobody out; the runbook script signs everyone out and audits it', async () => {
