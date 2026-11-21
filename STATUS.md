@@ -40,13 +40,13 @@ None.
 
 ## In progress
 
-| Id | Card | Agreed | PR | Since |
-|---|---|---|---|---|
-| CMS-15 | E-mail alerts when a screen stops reporting (stage C) | Michael 21 Nov | - | 21 Nov |
+None.
 
 ## In review
 
-None.
+| Id | Card | Agreed | PR | Since |
+|---|---|---|---|---|
+| CMS-15 | E-mail alerts when a screen stops reporting (stage C) | Michael 21 Nov | #34 | 21 Nov |
 
 ## Done, last 14 days
 
