@@ -3,7 +3,7 @@ contract: status/v2
 repo: tinnox-au/tinnox-cms
 initiative: TINNOX CMS
 key: CMS
-next_id: 21
+next_id: 22
 phase: Not written yet: one sentence on what this project is and where it stands
 gate: -
 seeded: 17 Nov 2026 by status init
@@ -33,6 +33,7 @@ None.
 | CMS-17 | Audio and PDF media (stage C): the Planned Audio and Documents entries in Media | proposed | - | 19 Nov |
 | CMS-18 | Web pages on screens (stage C): sandboxed, off by default per organisation; needs the P2-06 threat review first, like CMS-3 | proposed | - | 19 Nov |
 | CMS-20 | Self-service sign-up with payment (like Yodeck): new customers sign up and pay, invites complete without TINNOX | proposed | - | 19 Nov |
+| CMS-21 | Text app line fit fails on Linux fonts in e2e 07-apps-player (EAU-03): run it on ubuntu-24.04 and fix the fitter or the check | proposed | - | 21 Nov |
 
 ## To do
 
@@ -159,3 +160,6 @@ from: CMS-13
 **Notes**
 - 19 Nov: Needs the production sign-in service (A3), an e-mail service and a payment provider. Reverses DEC-27 (no self-serve sign-up in release 1) for a later release. See DEC-35.
 - 19 Nov: Placeholder only (Michael, 19 Nov: no clear info yet). Unknown: pricing and plans, payment provider, trial or not, what a new sign-up gets.
+
+### CMS-21
+from: CMS-15
