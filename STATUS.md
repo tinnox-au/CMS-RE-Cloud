@@ -40,9 +40,7 @@ None.
 
 ## In progress
 
-| Id | Card | Agreed | PR | Since |
-|---|---|---|---|---|
-| CMS-22 | Keyboard focus after cancelling an invite lands on the first row; reuse useRowFocusReturn as the Alerts page does (EAX-14) | Michael 21 Nov | - | 21 Nov |
+None.
 
 ## In review
 
@@ -50,6 +48,7 @@ None.
 |---|---|---|---|---|
 | CMS-15 | E-mail alerts when a screen stops reporting (stage C) | Michael 21 Nov | #34 | 21 Nov |
 | CMS-21 | Text app line fit fails on Linux fonts in e2e 07-apps-player (EAU-03): run it on ubuntu-24.04 and fix the fitter or the check | Michael 21 Nov | #34 | 22 Nov |
+| CMS-22 | Keyboard focus after cancelling an invite lands on the first row; reuse useRowFocusReturn as the Alerts page does (EAX-14) | Michael 21 Nov | #34 | 22 Nov |
 
 ## Done, last 14 days
 
