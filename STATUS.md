@@ -46,13 +46,13 @@ None.
 
 | Id | Card | Agreed | PR | Since |
 |---|---|---|---|---|
-| CMS-21 | Text app line fit fails on Linux fonts in e2e 07-apps-player (EAU-03): run it on ubuntu-24.04 and fix the fitter or the check | Michael 21 Nov | #34 | 22 Nov |
 | CMS-22 | Keyboard focus after cancelling an invite lands on the first row; reuse useRowFocusReturn as the Alerts page does (EAX-14) | Michael 21 Nov | #34 | 22 Nov |
 
 ## Done, last 14 days
 
 | Id | Date | Outcome | PR |
 |---|---|---|---|
+| CMS-21 | 22 Nov | Text app line fit fails on Linux fonts in e2e 07-apps-player (EAU-03): run it on ubuntu-24.04 and fix the fitter or the check | #34 |
 | CMS-15 | 22 Nov | E-mail alerts when a screen stops reporting (stage C) | #34 |
 | CMS-19 | 20 Nov | Re-run manual tests T11.1, T11.3, T12.1 and T12.3 after PR 29 (schedule and layout create and play) | - |
 | CMS-13 | 20 Nov | Roles and user management (stage C): owner, admin, editor, viewer; invite and remove people; a permission matrix to decide first | #31 |
@@ -169,6 +169,9 @@ from: CMS-13
 
 ### CMS-21
 from: CMS-15
+
+**Evidence**
+Text app check fixed in PR 34; passed in the Linux end-to-end job
 
 ### CMS-22
 from: CMS-15
