@@ -86,4 +86,4 @@ The sections above are the review record as written and are unchanged. Each find
 
 ### Checks after the fixes
 
-typecheck, lint (0 warnings), format:check and build pass. `npm test`: 92 files, 1960 tests. `npm run test:component`: 18 files, 81 tests. `npm run test:integration` (`tinnox_cms15_test`): 41 files, 527 tests. Mutation runs: removing the address recheck, the lost-lock check or the `alert_back_online` condition each fails exactly its new test. End-to-end was not run again.
+typecheck, lint (0 warnings), format:check and build pass. `npm test`: 92 files, 1960 tests. `npm run test:component`: 18 files, 81 tests. `npm run test:integration` (`tinnox_cms15_test`): 41 files, 527 tests. Mutation runs: removing the address recheck, the lost-lock check or the `alert_back_online` condition each fails exactly its new test. End-to-end: `15-alerts`, `11-accessibility` and `14-roles`, 56 of 56 passed.
