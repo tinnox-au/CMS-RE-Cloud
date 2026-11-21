@@ -71,9 +71,13 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-async function renderAs(role: Role, extra: readonly MemberDto[] = []) {
+async function renderAs(
+  role: Role,
+  extra: readonly MemberDto[] = [],
+  invites: readonly InviteDto[] = [EDITOR_INVITE],
+) {
   listMembers.mockResolvedValue([...people(role), ...extra]);
-  listInvites.mockResolvedValue([EDITOR_INVITE]);
+  listInvites.mockResolvedValue([...invites]);
   const screen = await render(
     <WithSession role={role}>
       <ToastProvider>
@@ -150,6 +154,30 @@ describe('UsersPage: as an Admin', () => {
     await expect.element(dialog.getByRole('button', { name: 'Keep invite' })).toHaveFocus();
     await expect.element(dialog.getByRole('button', { name: 'Cancel invite' })).toBeVisible();
     expect(cancelInvite).not.toHaveBeenCalled();
+  });
+
+  it('puts focus on the next invite after a cancellation, else the previous one, else Invite person', async () => {
+    const first: InviteDto = { ...EDITOR_INVITE, id: ID(11), name: 'Fay First' };
+    const last: InviteDto = { ...EDITOR_INVITE, id: ID(12), name: 'Lou Last' };
+    cancelInvite.mockResolvedValue();
+    const screen = await renderAs('admin', [], [first, EDITOR_INVITE, last]);
+    const dialog = screen.getByTestId('users-invite-cancel-dialog');
+    const cancel = async (who: InviteDto, after: InviteDto[]) => {
+      await screen.getByRole('button', { name: `Cancel invite for ${who.name}` }).click();
+      listInvites.mockResolvedValue(after);
+      await screen.getByTestId('users-invite-cancel-dialog-confirm').click();
+      await expect.element(dialog).not.toBeVisible();
+    };
+    await cancel(EDITOR_INVITE, [first, last]);
+    await expect
+      .element(screen.getByRole('button', { name: 'Cancel invite for Lou Last' }))
+      .toHaveFocus();
+    await cancel(last, [first]);
+    await expect
+      .element(screen.getByRole('button', { name: 'Cancel invite for Fay First' }))
+      .toHaveFocus();
+    await cancel(first, []);
+    await expect.element(screen.getByTestId('users-invite')).toHaveFocus();
   });
 });
 

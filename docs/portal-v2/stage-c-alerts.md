@@ -125,6 +125,8 @@ Built in three stages on `feat/cms-15-email-alerts`: backend, portal, then end-t
 | 24 | Section 6: the Alerts tab saves the delay and the back-online choice | It sends only the settings the editor changed; the API keeps an omitted one | A tab opened before another editor's save must not write back the other setting (round 8, EAX-07) |
 | 25 | Section 3: `offlineDue` | Each 5-minute step counts its exact overlap with that day's hours, so hours off the 5-minute marks (08:00 to 18:02, 09:01 to 09:04) count exactly. A delay that needs more working hours than the last 14 days hold fires at the first open moment after 14 silent days. An alert can come due in the last minute before closing; the check runs about once a minute, so it is then sent just after closing (Michael, 2026-11-21: kept, so a screen that dies at 4:29 pm on a Friday is reported that afternoon) | Round 8, EAX-02, EAU-01, EAU-02 and EAX-03 |
 
+**Invites list focus (CMS-22, follow-up of round 8 EAX-14).** Cancelling a pending invite on the Users page now puts focus on the next invite's Cancel button, else the previous one's, else Invite person, through `useRowFocusReturn` as on Settings → Alerts (`UsersPage.tsx` `CancelInviteDialog`; component test in `UsersPage.test.tsx`).
+
 **Release (round 8, EAX-10).** Migrate (0014), then start the new API and the new portal together. Reload open portal tabs after the deploy: a tab on the previous build cannot read screens (new display fields) and, for Editors and up, the session (new permission keys), and shows `invalid_response` until it is reloaded. Same constraint as stage C (`stage-c.md`, risk 1 and its release note).
 
 **Shortcuts** (each has a `// shortcut:` comment in the code):

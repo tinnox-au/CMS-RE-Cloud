@@ -63,8 +63,8 @@ The sections above are the review record as written and are unchanged. Each find
 | EAX-11 | Medium | Low | b, c and d fixed in tests; a and e no action |
 | EAX-12 | Low | Low | Fixed in 0014 |
 | EAX-13 | Low | Observation | Documented: setup and `.env.example` wording |
-| EAX-14 | Low | Low | Fixed for the alert list |
-| EAU-03 | Info | Info | No action in this PR; follow-up (Text app fit on other fonts) |
+| EAX-14 | Low | Low | Fixed for the alert list, and for the invites list (CMS-22) |
+| EAU-03 | Info | Info | Fixed in the test (CMS-21): the renderer was correct |
 
 ### Per finding
 
@@ -81,8 +81,8 @@ The sections above are the review record as written and are unchanged. Each find
 - **EAX-11** (Low). b: the two 0014 composite foreign keys are in `packages/db/test/rls.integration.test.ts`'s composite-FK case. c: covered by the EAX-01 test. d: "sends no reporting-again e-mail when that choice is off"; with the `alert_back_online` condition removed, it fails. a and e: no action.
 - **EAX-12** (Low). The 0014 sec guard uses `IS NOT TRUE`, so a NULL `proconfig` counts as unsafe. Earlier migrations keep the old guard (merged); `sec.integration.test.ts` remains the backstop.
 - **EAX-13** (Observation). The `scripts/setup-dev.mjs` header and `.env.example` now say setup rewrites the fixed settings, Mailpit SMTP included; to try another relay, set it in the shell.
-- **EAX-14** (Low). `useRowFocusReturn` takes an optional row control selector (`button`), and Settings → Alerts uses the hook: after a removal, focus goes to the next row's Remove, else the previous row's, else Add address. Component test in `AlertsPage.test.tsx`. The invite cancel in `UsersPage.tsx` has the same first-row behaviour but needs its rows' order and test ids from `InvitesCard.tsx`, so it is left for a follow-up.
-- **EAU-03** (Info). Not touched: it is in the Text app (`apps/player-web`, `packages/app-render`), which this PR does not change. Follow-up.
+- **EAX-14** (Low). `useRowFocusReturn` takes an optional row control selector (`button`), and Settings → Alerts uses the hook: after a removal, focus goes to the next row's Remove, else the previous row's, else Add address. Component test in `AlertsPage.test.tsx`. The invite cancel in `UsersPage.tsx` has the same first-row behaviour but needs its rows' order and test ids from `InvitesCard.tsx`, so it is left for a follow-up. CMS-22 then fixed the invites list the same way: `CancelInviteDialog` in `UsersPage.tsx` uses the hook with the invites' order and `users-invite-row-` rows, so focus goes to the next invite's Cancel, else the previous one's, else Invite person; the ad-hoc `inviteFocusAfterCancel` is gone. Component test in `UsersPage.test.tsx` (it fails on the earlier code).
+- **EAU-03** (Info). Fixed in this PR as CMS-21, in the test only. The check flagged a line as clipped when its leaf element's `scrollHeight` exceeded `clientHeight`. Chrome counts a glyph box taller than the `line-height: 1.15` line box (Linux sans fonts such as Noto, about 1.36em) as scrollable overflow, although nothing clips it: only the root has `overflow: hidden`, 29 px outside the fitted box. Reproduced on macOS with Linux-like font metrics, the reported rectangle came out almost exactly, and every glyph stayed inside the root. The check now measures each line's glyph box (`Range.getBoundingClientRect`) against the clip edge, which is stricter, and keeps the `scrollWidth` clip test. The renderer (`packages/app-render`) is unchanged.
 
 ### Checks after the fixes
 
