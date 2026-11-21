@@ -138,7 +138,7 @@ export function requireInfrastructure(): void {
   })
     .split('\n')
     .filter((line) => line !== '');
-  for (const service of ['postgres', 'keycloak', 'media-worker']) {
+  for (const service of ['postgres', 'keycloak', 'media-worker', 'mailpit']) {
     if (!names.includes(service)) {
       throw new Error(`docker service "${service}" is not running; run "npm run infra:up" first`);
     }

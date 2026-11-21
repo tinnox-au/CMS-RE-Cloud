@@ -20,8 +20,10 @@ const EDITOR = [
   'screen.hours',
   'screen.setup',
   'screen.pair',
+  'screen.alerts',
 ] as const;
-const ADMIN = [...EDITOR, 'audit.read', 'member.read', 'member.manage'] as const;
+// alerts.manage is Admin and up: adding an outside address collects personal data (DEC-37).
+const ADMIN = [...EDITOR, 'audit.read', 'member.read', 'member.manage', 'alerts.manage'] as const;
 
 /** The one role-to-key table (section 1.3 of docs/portal-v2/stage-c.md). Moving a key is one line here. */
 export const ROLE_PERMISSIONS: { readonly [R in Role]: readonly PermissionKey[] } = Object.freeze({

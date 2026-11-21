@@ -24,6 +24,8 @@ const DISPLAY: DisplayDto = {
   defaultFit: 'contain',
   rotation: 0,
   workingHours: null,
+  alertOfflineMinutes: 30,
+  alertBackOnline: true,
   route: 'browser',
   player: null,
   tagIds: [],

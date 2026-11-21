@@ -436,6 +436,32 @@ export async function deviceByTokenHash(tx: Tx, tokenHash: Buffer): Promise<Devi
     : { registrationId: r.registration_id, orgId: r.org_id, displayId: r.display_id };
 }
 
+/** Every organisation's id, for the alert check (0014); it then enters each with withOrg. */
+export async function displayAlertOrgs(tx: Tx): Promise<string[]> {
+  const { rows } = await tx.query<{ org_id: string }>(
+    'SELECT org_id FROM sec.display_alert_orgs()',
+  );
+  return rows.map((r) => r.org_id);
+}
+
+export interface AlertRecipientLookup {
+  readonly orgId: string;
+  readonly recipientId: string;
+}
+
+/** The unconfirmed, unexpired recipient a confirmation link names; null otherwise (0014). */
+export async function alertRecipientByTokenHash(
+  tx: Tx,
+  tokenHash: Buffer,
+): Promise<AlertRecipientLookup | null> {
+  const { rows } = await tx.query<{ org_id: string; recipient_id: string }>(
+    'SELECT org_id, recipient_id FROM sec.alert_recipient_by_token_hash($1)',
+    [tokenHash],
+  );
+  const r = only(rows);
+  return r === null ? null : { orgId: r.org_id, recipientId: r.recipient_id };
+}
+
 export interface AuditInput {
   readonly actorType: 'operator' | 'player' | 'system' | 'anonymous';
   readonly actorId: string | null;

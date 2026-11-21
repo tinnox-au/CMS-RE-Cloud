@@ -513,6 +513,35 @@ describe('describeActivity', () => {
     ).toEqual({ kind: 'display', id: SCREEN });
   });
 
+  it('words alert rows as the recorded transition, and says when no address received it', () => {
+    const alert = (action: string, detail: AuditEventDto['detail']) =>
+      describeActivity(
+        event({
+          action,
+          actorType: 'system',
+          actorId: null,
+          objectType: 'display',
+          objectId: SCREEN,
+          detail,
+        }),
+      );
+    expect(alert('display.offline_alert', { recipients: 2 })).toMatchObject({
+      text: 'Not-reporting alert recorded for screen',
+      subject: { kind: 'display', id: SCREEN },
+    });
+    expect(alert('display.online_alert', { recipients: 1 }).text).toBe(
+      'Reporting-again alert recorded for screen',
+    );
+    expect(alert('display.offline_alert', { recipients: 0 }).text).toBe(
+      'Not-reporting alert recorded (no confirmed address received it) for screen',
+    );
+    expect(alert('display.online_alert', { recipients: 0 }).text).toBe(
+      'Reporting-again alert recorded (no confirmed address received it) for screen',
+    );
+    // Never claims delivery: the row is written before any e-mail goes out.
+    expect(alert('display.offline_alert', null).text).not.toMatch(/sent/i);
+  });
+
   it('says which kind of tag was created or deleted', () => {
     const tag = { objectType: 'tag', objectId: TAG };
     expect(

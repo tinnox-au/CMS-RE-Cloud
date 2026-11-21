@@ -45,7 +45,7 @@ export const SCREEN_DETAIL_TABS = [
   { id: 'pairing', label: 'Pairing', plannedStage: null },
   { id: 'tags', label: 'Tags', plannedStage: null },
   { id: 'working-hours', label: 'Working hours', plannedStage: null },
-  { id: 'alerts', label: 'Alerts', plannedStage: 'C' },
+  { id: 'alerts', label: 'Alerts', plannedStage: null },
   { id: 'advanced', label: 'Advanced', plannedStage: 'B' },
 ] as const satisfies readonly ScreenDetailTab[];
 
@@ -58,6 +58,7 @@ export const SCREEN_DETAIL_OPEN_TABS = [
   'pairing',
   'tags',
   'working-hours',
+  'alerts',
 ] as const;
 export type ScreenDetailOpenTabId = (typeof SCREEN_DETAIL_OPEN_TABS)[number];
 
@@ -277,6 +278,22 @@ export function workingHoursDirty(draft: WorkingHoursDraft, stored: WorkingHours
     if (other === undefined || day.open !== other.open) return true;
     return day.open && (day.start !== other.start || day.end !== other.end);
   });
+}
+
+// ---------- Alerts ----------
+
+/** The alert settings of a screen, as `PATCH /api/displays/:id` takes them. */
+export type AlertsDraft = Pick<DisplayDto, 'alertOfflineMinutes' | 'alertBackOnline'>;
+
+/** The delays the Alerts tab offers, in minutes (stage-c-alerts.md section 6). */
+export const ALERT_DELAY_PRESETS = [30, 60, 120, 360, 720, 1440, 2880] as const;
+
+/** True when the draft holds other alert settings than those stored. */
+export function alertsDirty(draft: AlertsDraft, stored: DisplayDto): boolean {
+  return (
+    draft.alertOfflineMinutes !== stored.alertOfflineMinutes ||
+    draft.alertBackOnline !== stored.alertBackOnline
+  );
 }
 
 // ---------- Pairing ----------

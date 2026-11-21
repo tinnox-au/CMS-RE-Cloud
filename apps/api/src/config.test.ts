@@ -194,6 +194,63 @@ describe('loadConfig in production (D19)', () => {
   });
 });
 
+describe('e-mail (SMTP)', () => {
+  it('is off without SMTP_HOST', () => {
+    expect(loadConfig(development).mail).toBeNull();
+  });
+
+  it('reads the Mailpit settings setup-dev writes', () => {
+    expect(
+      loadConfig({
+        ...development,
+        SMTP_HOST: '127.0.0.1',
+        SMTP_PORT: '1025',
+        MAIL_FROM: 'alerts@tinnox-dev.invalid',
+      }).mail,
+    ).toEqual({
+      host: '127.0.0.1',
+      port: 1025,
+      secure: false,
+      user: null,
+      password: null,
+      from: 'alerts@tinnox-dev.invalid',
+    });
+  });
+
+  it('needs MAIL_FROM with SMTP_HOST, and the user and password together', () => {
+    const found = problems({ ...development, SMTP_HOST: 'smtp.example.com', SMTP_USER: 'u' });
+    expect(found).toContain('MAIL_FROM is required when SMTP_HOST is set');
+    expect(found).toContain('SMTP_USER and SMTP_PASSWORD must be set together');
+    expect(
+      problems({ ...development, SMTP_HOST: 'h', MAIL_FROM: 'not an address' }).join(' '),
+    ).toContain('MAIL_FROM must be an e-mail address');
+  });
+
+  it('refuses a development SMTP password in production, without printing it', () => {
+    const found = problems({
+      ...production,
+      SMTP_HOST: 'email-smtp.ap-southeast-2.amazonaws.com',
+      MAIL_FROM: 'alerts@signage.example',
+      SMTP_USER: 'AKIAEXAMPLE',
+      SMTP_PASSWORD: 'dev-smtp-password',
+    });
+    expect(found).toEqual(['SMTP_PASSWORD is a development or placeholder value']);
+    expect(found.join(' ')).not.toContain('dev-smtp-password');
+  });
+
+  it('accepts a provider over STARTTLS or implicit TLS in production', () => {
+    const smtp = {
+      ...production,
+      SMTP_HOST: 'email-smtp.ap-southeast-2.amazonaws.com',
+      MAIL_FROM: 'alerts@signage.example',
+      SMTP_USER: 'AKIAEXAMPLE',
+      SMTP_PASSWORD: strong('smtp'),
+    };
+    expect(loadConfig(smtp).mail?.secure).toBe(false);
+    expect(loadConfig({ ...smtp, SMTP_PORT: '465', SMTP_SECURE: 'true' }).mail?.secure).toBe(true);
+  });
+});
+
 describe('TRUST_PROXY', () => {
   it('refuses "true" in every mode, because the client controls the leftmost X-Forwarded-For entry', () => {
     expect(problems({ ...development, TRUST_PROXY: 'true' }).join(' ')).toMatch(/TRUST_PROXY=true/);

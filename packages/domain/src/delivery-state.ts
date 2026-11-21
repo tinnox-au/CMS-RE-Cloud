@@ -1,10 +1,13 @@
-import type {
-  DeliveryStatusView,
-  DeliverySummary,
-  HeartbeatV1,
-  PlayerError,
-  PlayerState,
-  StagingPhase,
+import {
+  localWallClock,
+  withinWorkingHours,
+  type DeliveryStatusView,
+  type DeliverySummary,
+  type HeartbeatV1,
+  type PlayerError,
+  type PlayerState,
+  type StagingPhase,
+  type WorkingHours,
 } from '@tinnox/contracts';
 
 export interface StagingState {
@@ -133,6 +136,45 @@ export function isStale(
   const last = Date.parse(lastHeartbeatAt);
   if (Number.isNaN(last)) return true;
   return now.getTime() - last > staleAfterSeconds * 1000;
+}
+
+const STEP_MS = 5 * 60_000;
+const SCAN_MS = 14 * 24 * 60 * 60_000;
+
+/**
+ * True when a screen silent since `lastReportAt` has passed its offline delay of `minutes`,
+ * counting only the time inside its working hours, read in `timeZone`, between the report and
+ * `now` (DEC-37 A4). Counting runs across days: midnight and closed days pause it, they do not
+ * restart it. A screen off every night therefore does not alert at night, nor at opening time
+ * if it reports within the delay. Null hours (always on) and a zone this runtime does not know
+ * count every minute (fail open, as the player does). Time is real elapsed time, so a
+ * daylight-saving change does not add or remove an hour.
+ */
+// shortcut: the walk samples the wall clock once per 5-minute step (aligned to UTC 5-minute marks), so hours that do not start or end on a 5-minute mark can count up to 5 minutes early or late at each boundary; sample per minute if customers set such hours.
+// shortcut: only the last 14 days are scanned (at most 4032 steps, about 10 ms), so a delay needing more than 14 days of working hours never fires; raise SCAN_MS or count whole periods if delays grow.
+export function offlineDue(
+  lastReportAt: Date,
+  now: Date,
+  minutes: number,
+  hours: WorkingHours | null,
+  timeZone: string,
+): boolean {
+  const needMs = minutes * 60_000;
+  const end = now.getTime();
+  // Time inside working hours never exceeds the elapsed time, so most screens stop here.
+  if (end - lastReportAt.getTime() < needMs) return false;
+  if (hours === null || localWallClock(end, timeZone) === null) {
+    return end - lastReportAt.getTime() >= needMs;
+  }
+  let insideMs = 0;
+  for (let t = Math.max(lastReportAt.getTime(), end - SCAN_MS); t < end;) {
+    const next = Math.min(end, (Math.floor(t / STEP_MS) + 1) * STEP_MS);
+    const wall = localWallClock(t, timeZone);
+    if (wall === null || withinWorkingHours(hours, wall)) insideMs += next - t;
+    if (insideMs >= needMs) return true;
+    t = next;
+  }
+  return false;
 }
 
 export interface StatusViewInput {

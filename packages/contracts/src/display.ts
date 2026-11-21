@@ -54,6 +54,17 @@ export const WorkingHoursSchema = z
 export type WorkingHours = z.infer<typeof WorkingHoursSchema>;
 
 /**
+ * Minutes a screen may go without reporting, inside its working hours, before the offline
+ * e-mail; null is off. Twin of display_alert_offline_minutes_range (0014).
+ */
+export const AlertOfflineMinutesSchema = z
+  .number()
+  .int()
+  .min(30)
+  .max(2880)
+  .refine((m) => m % 30 === 0, { message: 'must be a whole number of half hours' });
+
+/**
  * The schedule assigned to a display. The default playlist is carried so the screen page can
  * preview it without a second round trip.
  */
@@ -102,6 +113,9 @@ export const DisplayDtoSchema = z
     rotation: RotationSchema,
     /** Null means always on. */
     workingHours: WorkingHoursSchema.nullable(),
+    /** Null: no offline e-mail. */
+    alertOfflineMinutes: AlertOfflineMinutesSchema.nullable(),
+    alertBackOnline: z.boolean(),
     route: DeliveryRouteIdSchema,
     /** Present when a player registration is currently active for this display. */
     player: z
@@ -164,6 +178,7 @@ export type DisplayCreateInput = z.input<typeof DisplayCreateSchema>;
  *   schedule or a layout: a non-null id clears the other two, null clears its own kind only,
  *   and all three keys null removes all content. Two non-null ids are refused.
  * - `workingHours`: null clears them (always on).
+ * - `alertOfflineMinutes`: null turns the offline e-mail off.
  */
 export const DisplayPatchSchema = z
   .object({
@@ -174,6 +189,8 @@ export const DisplayPatchSchema = z
     defaultFit: FitModeSchema.optional(),
     rotation: RotationSchema.optional(),
     workingHours: WorkingHoursSchema.nullable().optional(),
+    alertOfflineMinutes: AlertOfflineMinutesSchema.nullable().optional(),
+    alertBackOnline: z.boolean().optional(),
     tagIds: TagIdsInputSchema.optional(),
     assignedPlaylistId: PlaylistIdSchema.nullable().optional(),
     assignedScheduleId: ScheduleIdSchema.nullable().optional(),

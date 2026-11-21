@@ -117,6 +117,17 @@ describe('api client: session and CSRF', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('sends the alert confirmation without a session and without a CSRF token', async () => {
+    const { client, calls } = harness(() => new Response(null, { status: 204 }));
+    await client.requestNoContent({
+      method: 'POST',
+      path: ROUTES.alertRecipientConfirm,
+      body: { token: 'a' },
+    });
+    expect(calls).toHaveLength(1);
+    expect(header(calls[0], HEADERS.csrf)).toBeUndefined();
+  });
+
   it('treats an unauthenticated session answer as signed out and holds no token', async () => {
     const { client, onUnauthenticated } = harness(() => json(200, { authenticated: false }));
     expect(await client.loadSession()).toEqual({ authenticated: false });

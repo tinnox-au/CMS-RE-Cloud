@@ -129,7 +129,6 @@ function countValue<T>(state: LoadState<T>, label: (data: T) => string): ReactNo
 
 const PLANNED_ICONS: { readonly [K in PlannedSettingId]: IconComponent } = {
   'working-hours': Clock,
-  alerts: Bell,
   'api-tokens': KeyRound,
 };
 
@@ -174,6 +173,7 @@ function PeopleGroup() {
 export function SettingsPage() {
   const session = useSession();
   const canReadPeople = useCan('member.read');
+  const canManageAlerts = useCan('alerts.manage');
   const fullLog = useCan('audit.read');
   const loadTags = useCallback((signal: AbortSignal) => api.listTags(undefined, signal), []);
   const loadFolders = useCallback((signal: AbortSignal) => api.listFolders(signal), []);
@@ -247,6 +247,18 @@ export function SettingsPage() {
         </SettingsGroup>
 
         {canReadPeople && <PeopleGroup />}
+
+        {canManageAlerts && (
+          <SettingsGroup title="Alerts">
+            <SettingsRow
+              icon={Bell}
+              title="Alert addresses"
+              description="Who receives an e-mail when a screen stops reporting. Each address is confirmed by its owner first."
+              to="/settings/alerts"
+              testId="settings-row-alerts"
+            />
+          </SettingsGroup>
+        )}
 
         <SettingsGroup title="Security">
           <SettingsRow

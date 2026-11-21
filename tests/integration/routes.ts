@@ -6,8 +6,8 @@
 import { ROUTES } from '@tinnox/contracts';
 
 /**
- * Every route of the operator API, as registered (`:id` is a UUID): the 51 of portal v2 and the
- * 8 people routes of stage C (CMS-13). session-csrf.test.ts fails when the application serves
+ * Every route of the operator API, as registered (`:id` is a UUID): the 51 of portal v2, the
+ * 8 people routes of stage C (CMS-13) and the 3 alert address routes (CMS-15). session-csrf.test.ts fails when the application serves
  * an operator route that is not listed here, so a new route cannot skip the session, CSRF,
  * Origin and role checks unnoticed.
  */
@@ -71,6 +71,9 @@ export const OPERATOR_ROUTE_PATTERNS: readonly (readonly [string, string])[] = [
   ['GET', '/api/invites'],
   ['POST', '/api/invites'],
   ['POST', '/api/invites/:id/cancel'],
+  ['GET', '/api/alert-recipients'],
+  ['POST', '/api/alert-recipients'],
+  ['DELETE', '/api/alert-recipients/:id'],
 ];
 
 /** Routes under /api that deliberately work without an operator session. */
@@ -78,6 +81,8 @@ export const PUBLIC_API_ROUTES: readonly (readonly [string, string])[] = [
   ['GET', ROUTES.authLogin],
   ['GET', ROUTES.authCallback],
   ['GET', ROUTES.session],
+  // The confirmation link of an alert address, opened by its owner (CMS-15).
+  ['POST', ROUTES.alertRecipientConfirm],
 ];
 
 /** Signing out needs the session, the token and the Origin, but is not in the operator plugin. */

@@ -89,6 +89,17 @@ const WORDING: { readonly [K in AuditAction]: Wording } = {
   'auth.session_expired': { done: 'Session expired', attempt: 'Session expiry', icon: 'account' },
   'display.create': { done: 'Screen added', attempt: 'Adding a screen', icon: 'screen' },
   'display.update': { done: 'Screen updated', attempt: 'Screen update', icon: 'screen' },
+  // The recorded transition, not delivery: the row is written before any e-mail goes out (DEC-33).
+  'display.offline_alert': {
+    done: 'Not-reporting alert recorded for screen',
+    attempt: 'Not-reporting alert for screen',
+    icon: 'screen',
+  },
+  'display.online_alert': {
+    done: 'Reporting-again alert recorded for screen',
+    attempt: 'Reporting-again alert for screen',
+    icon: 'screen',
+  },
   'pairing.create': {
     done: 'Player asked for a pairing code',
     attempt: 'Pairing code request',
@@ -169,6 +180,21 @@ const WORDING: { readonly [K in AuditAction]: Wording } = {
     attempt: 'Sign-in reset',
     icon: 'account',
   },
+  'alert_recipient.add': {
+    done: 'Alert address added',
+    attempt: 'Adding an alert address',
+    icon: 'account',
+  },
+  'alert_recipient.remove': {
+    done: 'Alert address removed',
+    attempt: 'Removing an alert address',
+    icon: 'account',
+  },
+  'alert_recipient.confirm': {
+    done: 'Alert address confirmed by its owner',
+    attempt: 'Alert address confirmation',
+    icon: 'account',
+  },
   'security.cross_org_denied': {
     done: 'Cross-organisation request recorded',
     attempt: 'Access to another organisation’s data',
@@ -209,6 +235,7 @@ const CATEGORY_ICONS: { readonly [category: string]: ActivityIcon } = {
   publication: 'push',
   invite: 'account',
   membership: 'account',
+  alert_recipient: 'account',
   security: 'security',
 };
 
@@ -228,6 +255,7 @@ const CATEGORY_LABELS: { readonly [category: string]: string } = {
   publication: 'Push',
   invite: 'Invites',
   membership: 'People',
+  alert_recipient: 'Alert addresses',
   security: 'Security',
 };
 
@@ -396,6 +424,13 @@ export function describeActivity(event: AuditEventDto): ActivityDescription {
       }
       break;
     }
+    case 'display.offline_alert':
+    case 'display.online_alert':
+      // No confirmed address on the list when the transition was recorded: nothing was mailed.
+      if (detailValue(event, 'recipients') === 0) {
+        done = done.replace(' for screen', ' (no confirmed address received it) for screen');
+      }
+      break;
     case 'pairing.complete':
       subject = displayOf(event);
       break;

@@ -3,7 +3,7 @@
  * tinnox_app against a real PostgreSQL (the integration-test database).
  * Nothing here goes through the API: these are the policies themselves.
  */
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withOrg, withoutOrg, withResolvedOrg, type Pool } from '../src/index.ts';
@@ -41,11 +41,14 @@ const TENANT_TABLES = [
   'layout',
   'layout_zone',
   'member_invite',
+  'display_alert',
+  'alert_recipient',
 ] as const;
 /**
  * Rows that `createOrg` gives one organisation, where that is not exactly one:
  * registrations and heartbeats come from a player, there is one tag per scope, the
- * layout has two zones, and invites are requests nobody has made yet.
+ * layout has two zones, invites are requests nobody has made yet, and alert episodes and
+ * addresses come from the alert check and an Admin.
  */
 const ROWS_PER_ORG: Partial<Record<(typeof TENANT_TABLES)[number], number>> = {
   player_registration: 0,
@@ -53,6 +56,8 @@ const ROWS_PER_ORG: Partial<Record<(typeof TENANT_TABLES)[number], number>> = {
   tag: 2,
   layout_zone: 2,
   member_invite: 0,
+  display_alert: 0,
+  alert_recipient: 0,
 };
 const LOCKED_TABLES = [
   'session',
@@ -1133,5 +1138,123 @@ describe('member invites (0013)', () => {
       );
       expect(rows).toEqual([{ id: theirs.id, status: 'pending' }]);
     });
+  });
+});
+
+describe('alert episodes and addresses (0014)', () => {
+  /** Arranges one row of each for `org`, as the migrator, and returns the recipient id. */
+  async function arrange(org: TestOrg): Promise<string> {
+    const recipientId = randomUUID();
+    await migrator.query('BEGIN');
+    try {
+      await migrator.query("SELECT set_config('app.org_id', $1, true)", [org.orgId]);
+      await migrator.query(
+        'INSERT INTO display_alert (display_id, org_id, offline_since) VALUES ($1, $2, now())',
+        [org.displayId, org.orgId],
+      );
+      await migrator.query(
+        `INSERT INTO alert_recipient (id, org_id, email, confirm_token_hash, confirm_expires_at)
+         VALUES ($1, $2, $3, $4, now() + interval '7 days')`,
+        [recipientId, org.orgId, `ops-${org.orgId}@example.com`, randomBytes(32)],
+      );
+      await migrator.query('COMMIT');
+    } catch (error) {
+      await migrator.query('ROLLBACK');
+      throw error;
+    }
+    return recipientId;
+  }
+
+  it('are read, written and removed only inside their own organisation', async () => {
+    const mine = await arrange(a);
+    const theirs = await arrange(b);
+    await withOrg(pool, a.orgId, async (tx) => {
+      expect((await tx.query('SELECT display_id FROM display_alert')).rows).toEqual([
+        { display_id: a.displayId },
+      ]);
+      expect((await tx.query('SELECT id FROM alert_recipient')).rows).toEqual([{ id: mine }]);
+      expect(
+        (await tx.query('DELETE FROM display_alert WHERE display_id = $1', [b.displayId])).rowCount,
+      ).toBe(0);
+      expect((await tx.query('DELETE FROM alert_recipient WHERE id = $1', [theirs])).rowCount).toBe(
+        0,
+      );
+      expect(
+        (
+          await tx.query(
+            `UPDATE alert_recipient
+             SET confirmed_at = now(), confirm_token_hash = NULL, confirm_expires_at = NULL
+             WHERE id = $1`,
+            [theirs],
+          )
+        ).rowCount,
+      ).toBe(0);
+    });
+    // Rows filed under organisation B: refused by the policies' WITH CHECK.
+    expect(
+      await pgCode(
+        withOrg(pool, a.orgId, (tx) =>
+          tx.query(
+            `INSERT INTO alert_recipient (org_id, email, confirm_token_hash, confirm_expires_at)
+             VALUES ($1, 'planted@example.com', $2, now() + interval '7 days')`,
+            [b.orgId, randomBytes(32)],
+          ),
+        ),
+      ),
+    ).toBe(PG.rlsViolation);
+    expect(
+      await pgCode(
+        withOrg(pool, a.orgId, (tx) =>
+          tx.query(
+            'INSERT INTO display_alert (display_id, org_id, offline_since) VALUES ($1, $2, now())',
+            [b.displayId, b.orgId],
+          ),
+        ),
+      ),
+    ).toBe(PG.rlsViolation);
+    await withOrg(pool, b.orgId, async (tx) => {
+      expect((await tx.query('SELECT id, confirmed_at FROM alert_recipient')).rows).toEqual([
+        { id: theirs, confirmed_at: null },
+      ]);
+      expect((await tx.query('SELECT 1 FROM display_alert')).rowCount).toBe(1);
+    });
+  });
+
+  it('keep an address lower case and its confirmation state whole', async () => {
+    const insert = (email: string, confirmed: boolean) =>
+      withOrg(pool, a.orgId, (tx) =>
+        tx.query(
+          confirmed
+            ? `INSERT INTO alert_recipient (org_id, email, confirmed_at, confirm_token_hash)
+               VALUES (app_org_id(), $1, now(), $2)`
+            : `INSERT INTO alert_recipient (org_id, email, confirm_token_hash, confirm_expires_at)
+               VALUES (app_org_id(), $1, $2, now() + interval '7 days')`,
+          [email, randomBytes(32)],
+        ),
+      );
+    expect(await pgViolation(insert('Upper@Example.com', false))).toEqual({
+      code: PG.check,
+      constraint: 'alert_recipient_email_shape',
+    });
+    expect(await pgViolation(insert('confirmed@example.com', true))).toEqual({
+      code: PG.check,
+      constraint: 'alert_recipient_confirmation',
+    });
+  });
+
+  it('refuse an offline delay outside 30 minutes to 48 hours in half hours', async () => {
+    for (const minutes of [0, 45, 2910]) {
+      expect(
+        await pgViolation(
+          withOrg(pool, a.orgId, (tx) =>
+            tx.query('UPDATE display SET alert_offline_minutes = $2 WHERE id = $1', [
+              a.displayId,
+              minutes,
+            ]),
+          ),
+        ),
+        String(minutes),
+      ).toEqual({ code: PG.check, constraint: 'display_alert_offline_minutes_range' });
+    }
   });
 });

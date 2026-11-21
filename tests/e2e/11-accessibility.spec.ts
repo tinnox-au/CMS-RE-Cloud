@@ -103,6 +103,7 @@ const PAGES: readonly (readonly [string, () => string, string | RegExp])[] = [
   ['add screen', () => '/screens/new', /screen/i],
   ['settings', () => '/settings', 'Settings'],
   ['tags', () => '/settings/tags', /Tags/],
+  ['alert addresses', () => '/settings/alerts', 'Alerts'],
   ['users', () => '/users', 'Users'],
   ['audit', () => '/audit', /Activity|Audit/],
 ];
@@ -145,7 +146,7 @@ for (const scheme of ['light', 'dark'] as const) {
     test('the screen page tabs and its Change menu', async () => {
       const page = operator.page;
       await open(`/screens/${displayId}`, `ZZ a11y screen ${runId}`);
-      for (const tab of ['Canvas', 'Pairing', 'Working hours']) {
+      for (const tab of ['Canvas', 'Pairing', 'Working hours', 'Alerts']) {
         await page.getByRole('tab', { name: tab }).click();
         await expectAccessible(page, `screen page, ${tab} tab (${scheme})`);
       }
@@ -153,6 +154,29 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.getByRole('menuitem', { name: 'Remove content' })).toBeVisible();
       await expectAccessible(page, `screen page Change menu (${scheme})`);
       await page.keyboard.press('Escape');
+    });
+
+    test('the alert address dialogs and the public confirm page', async ({ browser }) => {
+      const page = operator.page;
+      await open('/settings/alerts', 'Alerts');
+      await page.getByTestId('settings-alerts-add').click();
+      await expect(page.getByTestId('settings-alerts-add-dialog')).toBeVisible();
+      await page.getByTestId('settings-alerts-add-submit').click();
+      await expect(page.getByText('Enter an e-mail address.')).toBeVisible();
+      await expectAccessible(page, `add alert address dialog with an error (${scheme})`);
+      await page.keyboard.press('Escape');
+      await expect(page.getByTestId('settings-alerts-add-dialog')).toBeHidden();
+
+      // Opened from an e-mail by someone with no session: a context without cookies.
+      const context = await browser.newContext({ colorScheme: scheme });
+      try {
+        const visitor = await context.newPage();
+        await visitor.goto(`${PORTAL_URL}/alerts/confirm#not-a-valid-code`);
+        await expect(visitor.getByText('This link is not valid any more')).toBeVisible();
+        await expectAccessible(visitor, `alert confirm page, not valid (${scheme})`);
+      } finally {
+        await context.close();
+      }
     });
 
     test('the Users page invite dialog', async () => {

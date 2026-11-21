@@ -4,6 +4,7 @@ import { assignedContent } from '../../../lib/assignedContent.ts';
 import type { DisplayFormValues } from '../../../lib/displayForm.ts';
 import {
   plannedTabReason,
+  type AlertsDraft,
   SCREEN_DETAIL_TABS,
   type ScreenDetailOpenTabId,
   type ScreenDetailTabId,
@@ -11,6 +12,7 @@ import {
 } from '../../../lib/screenDetail.ts';
 import { Card, TabPanel, Tabs, type TabItem } from '../../../ui/index.ts';
 import type { TagsResource } from '../../shared/index.ts';
+import { AlertsTab } from './AlertsTab.tsx';
 import { CanvasTab } from './CanvasTab.tsx';
 import { OverviewTab } from './OverviewTab.tsx';
 import { PairingTab } from './PairingTab.tsx';
@@ -46,12 +48,15 @@ export interface ScreenTabsProps {
   readonly onTagsDraft: (draft: readonly string[] | null) => void;
   readonly workingHoursDraft: WorkingHoursDraft | null;
   readonly onWorkingHoursDraft: (draft: WorkingHoursDraft | null) => void;
+  readonly alertsDraft: AlertsDraft | null;
+  readonly onAlertsDraft: (draft: AlertsDraft | null) => void;
   readonly onSaved: (display: DisplayDto) => void;
-  /** Save state of the Canvas, Tags and Working hours tabs, kept by the page (FCX-03). */
+  /** Save state of the Canvas, Tags, Working hours and Alerts tabs, kept by the page (FCX-03). */
   readonly saves: {
     readonly canvas: SectionSave;
     readonly tags: SectionSave;
     readonly workingHours: SectionSave;
+    readonly alerts: SectionSave;
   };
   readonly onPaired: () => void;
   readonly onRevoke: () => void;
@@ -63,6 +68,7 @@ export interface ScreenTabsProps {
     readonly pairing: boolean;
     readonly tags: boolean;
     readonly workingHours: boolean;
+    readonly alerts: boolean;
   };
 }
 
@@ -156,6 +162,17 @@ function TabContent(props: ScreenTabsProps) {
           onSaved={props.onSaved}
           save={props.saves.workingHours}
           readOnly={props.readOnly.workingHours}
+        />
+      );
+    case 'alerts':
+      return (
+        <AlertsTab
+          display={props.display}
+          draft={props.alertsDraft}
+          onDraft={props.onAlertsDraft}
+          onSaved={props.onSaved}
+          save={props.saves.alerts}
+          readOnly={props.readOnly.alerts}
         />
       );
   }

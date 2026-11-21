@@ -54,6 +54,7 @@ export const AUDIT_CATEGORY_LABELS: { readonly [K in AuditCategory]: string } = 
   publication: 'Pushes to screens',
   invite: 'Invites',
   membership: 'People',
+  alert_recipient: 'Alert addresses',
   security: 'Security',
 };
 
@@ -150,6 +151,7 @@ const CATEGORY_SUBJECTS: { readonly [K in AuditCategory]: string } = {
   publication: 'Push',
   invite: 'Invite',
   membership: 'Person',
+  alert_recipient: 'Alert address',
   security: 'Security',
 };
 

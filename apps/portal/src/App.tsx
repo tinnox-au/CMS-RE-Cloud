@@ -15,11 +15,13 @@ import { HOME_PATH, screensPathFor } from './shell/nav.ts';
 import { NotFoundPage } from './shell/NotFoundPage.tsx';
 import { RequirePermission } from './shell/RequirePermission.tsx';
 import {
+  LoadingScreen,
   RouteError,
   RouteLoading,
   SessionCheckingScreen,
   SessionErrorScreen,
   SignInScreen,
+  StandaloneErrorBoundary,
 } from './shell/Screens.tsx';
 
 const RETURN_TO_PATTERN = /^\/(?!\/)[A-Za-z0-9\-._~/]*$/;
@@ -66,6 +68,7 @@ const displayWizard = () => import('./features/displays/DisplayWizardPage.tsx');
 const displayDetail = () => import('./features/displays/DisplayDetailPage.tsx');
 const settings = () => import('./features/settings/SettingsPage.tsx');
 const tags = () => import('./features/settings/TagsPage.tsx');
+const alerts = () => import('./features/settings/AlertsPage.tsx');
 const audit = () => import('./features/audit/AuditPage.tsx');
 const users = () => import('./features/users/UsersPage.tsx');
 const planned = () => import('./features/planned/PlannedPage.tsx');
@@ -174,6 +177,11 @@ export const routes: RouteObject[] = [
 
       page('settings', settings, (m) => <m.SettingsPage />),
       page('settings/tags', tags, (m) => <m.TagsPage />),
+      page('settings/alerts', alerts, (m) => (
+        <RequirePermission permission="alerts.manage">
+          <m.AlertsPage />
+        </RequirePermission>
+      )),
       page('audit', audit, (m) => <m.AuditPage />),
 
       { path: '*', element: <NotFoundPage /> },
@@ -211,12 +219,28 @@ const StyleguidePage = import.meta.env.DEV
 
 const STYLEGUIDE_PATH = /^\/styleguide\/?$/;
 
+/** Opened from a confirmation e-mail by someone with no session: outside the session gate. */
+const AlertConfirmPage = lazy(async () => ({
+  default: (await import('./features/alerts/AlertConfirmPage.tsx')).AlertConfirmPage,
+}));
+
+const ALERT_CONFIRM_PATH = /^\/alerts\/confirm\/?$/;
+
 export function App() {
   if (StyleguidePage !== null && STYLEGUIDE_PATH.test(window.location.pathname)) {
     return (
       <Suspense fallback={null}>
         <StyleguidePage />
       </Suspense>
+    );
+  }
+  if (ALERT_CONFIRM_PATH.test(window.location.pathname)) {
+    return (
+      <StandaloneErrorBoundary>
+        <Suspense fallback={<LoadingScreen />}>
+          <AlertConfirmPage />
+        </Suspense>
+      </StandaloneErrorBoundary>
     );
   }
   return (

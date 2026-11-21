@@ -33,9 +33,11 @@ const TABLE: Readonly<Record<PermissionKey, readonly [boolean, boolean, boolean,
   'screen.hours': [false, true, true, true],
   'screen.setup': [false, true, true, true],
   'screen.pair': [false, true, true, true],
+  'screen.alerts': [false, true, true, true],
   'audit.read': [false, false, true, true],
   'member.read': [false, false, true, true],
   'member.manage': [false, false, true, true],
+  'alerts.manage': [false, false, true, true],
 };
 const COLUMN: Readonly<Record<Role, number>> = { viewer: 0, editor: 1, admin: 2, owner: 3 };
 const holds = (role: Role, key: PermissionKey) => TABLE[key][COLUMN[role]];
@@ -72,14 +74,14 @@ describe('ROLE_PERMISSIONS', () => {
 });
 
 describe('can', () => {
-  it('answers all 56 role and key pairs from the table', () => {
+  it('answers all 64 role and key pairs from the table', () => {
     let pairs = 0;
     for (const role of ROLES)
       for (const key of PERMISSION_KEYS) {
         expect(can(role, key), `${role} ${key}`).toBe(holds(role, key));
         pairs += 1;
       }
-    expect(pairs).toBe(56);
+    expect(pairs).toBe(64);
   });
 
   it('refuses a value that is not a role', () => {

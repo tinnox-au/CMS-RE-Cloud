@@ -3,9 +3,10 @@
  * the decision, and not read from the API's route table: a wrong table would otherwise test
  * itself (docs/portal-v2/stage-c.md 15, choice 17).
  *
- * - A Viewer may only read, except the people list and the invites.
- * - An Editor may do everything except the people and invite routes; the names of people
- *   (activity) are the one people route it may read.
+ * - A Viewer may only read, except the people list, the invites and the alert addresses.
+ * - An Editor may do everything except the people, invite and alert address routes; the names
+ *   of people (activity) are the one people route it may read. Its screens' alert settings are
+ *   a field of the display PATCH (CMS-15).
  * - An Admin and an Owner may do everything; the rank rule is tested in
  *   apps/api/test/members.integration.test.ts.
  *
@@ -28,8 +29,11 @@ import {
   type TestOrg,
 } from './support.ts';
 
-/** The people and invite routes an Editor may not use. */
+/** The people, invite and alert address routes an Editor may not use. */
 const MEMBER_MANAGEMENT = new Set([
+  'GET /api/alert-recipients',
+  'POST /api/alert-recipients',
+  'DELETE /api/alert-recipients/:id',
   'GET /api/members',
   'PATCH /api/members/:id',
   'POST /api/members/:id/remove',
@@ -111,8 +115,8 @@ describe('the role-by-route matrix', () => {
     return found;
   };
 
-  it('checks all 59 routes', () => {
-    expect(OPERATOR_ROUTE_PATTERNS).toHaveLength(59);
+  it('checks all 62 routes', () => {
+    expect(OPERATOR_ROUTE_PATTERNS).toHaveLength(62);
   });
 
   it.each(ROLES)('answers every route as the oracle says for an %s', async (role) => {

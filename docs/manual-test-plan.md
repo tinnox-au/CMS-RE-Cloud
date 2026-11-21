@@ -1,10 +1,10 @@
 # TINNOX CMS manual test plan
 
-Version of the software: the roles and people build (stage C, CMS-13; migrations 0001 to 0013; player `player-web/0.5.0`). Written 2026-11-18; revised 2026-11-19 after the first manual run (`docs/reviews/2026-11-19-manual-user-test/`), and 2026-11-20 for roles (section 18).
+Version of the software: the e-mail alerts build (stage C, CMS-13 and CMS-15; migrations 0001 to 0014; player `player-web/0.5.0`). Written 2026-11-18; revised 2026-11-19 after the first manual run (`docs/reviews/2026-11-19-manual-user-test/`), 2026-11-20 for roles (section 18), and 2026-11-21 for e-mail alerts (section 19).
 
-This plan is for a person, not a script. You follow the steps in order, compare what you see with the **Expected** lines, and tick each box that matches. Anything that does not match goes into the issue log at the end (section 21). Nothing here is deployed anywhere: everything runs on your own computer with synthetic data.
+This plan is for a person, not a script. You follow the steps in order, compare what you see with the **Expected** lines, and tick each box that matches. Anything that does not match goes into the issue log at the end (section 22). Nothing here is deployed anywhere: everything runs on your own computer with synthetic data.
 
-Allow **about 3 hours** for the whole plan. Sections 1 to 10 are the core journey and take about 90 minutes; sections 11 to 20 can be done in any order after that.
+Allow **about 3 hours** for the whole plan. Sections 1 to 10 are the core journey and take about 90 minutes; sections 11 to 21 can be done in any order after that.
 
 ## How to use this plan
 
@@ -30,7 +30,7 @@ Allow **about 3 hours** for the whole plan. Sections 1 to 10 are the core journe
 - The README "Walkthrough" section uses old names ("Displays", "Publish to display"). This plan uses the current names.
 - The player shows **no "updating" indicator** while it downloads new content. Progress is visible only in the portal (Overview tab) and in the player's diagnostics overlay.
 - **Video always plays muted.** This is by design.
-- Tabs and settings marked **Planned** (Alerts, Advanced, Stock, Web page, Document, Audio) do nothing. They are not in scope.
+- Tabs and settings marked **Planned** (Advanced, Stock, Web page, Document, Audio) do nothing. They are not in scope.
 - In the development mode used here, the player has **no offline reload**: if you reload the player page while its network is off, it will not load. Keep playing without reloading. (Offline reload exists only in the production build, `npm run start:built`.)
 - Status in the portal is what the **player software** reported. It is evidence, not proof of what a physical screen shows. The portal says so in several places on purpose.
 
@@ -42,7 +42,7 @@ Allow **about 3 hours** for the whole plan. Sections 1 to 10 are the core journe
 
 - A Mac or Linux computer with **Docker Desktop running**, **Node.js 22.13 or newer** and **Google Chrome** (or Chromium).
 - The repository checked out on `main`, with a terminal open at its root folder.
-- Free local ports 4000, 5173, 5174, 8080 and 54329 (or 54330).
+- Free local ports 4000, 5173, 5174, 8080, 1025, 8025 and 54329 (or 54330).
 - About 15 minutes for this section the first time.
 
 ### T1.1 First-time setup (skip if the repository has been set up on this computer before)
@@ -745,7 +745,7 @@ Expected:
 
 Open **Settings**.
 
-- [ ] Groups **Organisation** (name, read-only), **Content** (Media tags "1 tag", Screen tags "1 tag", Folders "1 folder", which opens the media library; the folders themselves, `Campaign B` with its file count, are listed at the bottom of the Media tags page), **People** (Users, "4 people", which opens the Users page; shown to Owners and Admins only), **Security** (Audit log; Sign-in and MFA "Identity provider") and **Planned** (Working hours, Alerts, API tokens), each Planned row saying which stage it is planned for.
+- [ ] Groups **Organisation** (name, read-only), **Content** (Media tags "1 tag", Screen tags "1 tag", Folders "1 folder", which opens the media library; the folders themselves, `Campaign B` with its file count, are listed at the bottom of the Media tags page), **People** (Users, "4 people", which opens the Users page; shown to Owners and Admins only), **Security** (Audit log; Sign-in and MFA "Identity provider") **Alerts** (Alert addresses; shown to Owners and Admins only) and **Planned** (Working hours, API tokens), each Planned row saying which stage it is planned for.
 
 ### T17.2 Tags page
 
@@ -778,7 +778,7 @@ Four people are seeded in "TINNOX Internal", one per role: `operator` (Owner, "D
 - [ ] The header shows no **Push to screens** button; while screens have changes waiting it shows a chip "N screens waiting" that leads to the dashboard. The dashboard has no **Get set up** card.
 - [ ] Media has no **Add media**; Playlists, Schedules, Layouts and Apps have no create button and no delete in their row menus; Screens has no **Add screen**, no row menu and no selection.
 - [ ] Opening a playlist shows "You can view this playlist. Editors make changes." with no Save; nothing on the page can be changed. A media file, an app, a schedule and a layout say the same for their kind.
-- [ ] On a screen's page there is no **Push to this screen** and no Pair or Revoke; the Canvas, Pairing, Tags and Working hours tabs are read-only with a one-line note. Pressing Enter in the Canvas tab's Width changes nothing.
+- [ ] On a screen's page there is no **Push to this screen** and no Pair or Revoke; the Canvas, Pairing, Tags, Working hours and Alerts tabs are read-only with a one-line note. Pressing Enter in the Canvas tab's Width changes nothing.
 - [ ] Opening http://localhost:5173/screens/new and http://localhost:5173/users shows **Your role doesn't allow this** with **Go to dashboard**. The account menu has no **Users**.
 - [ ] The audit log reads "Content and screen events in this organisation: who changed what, and when.", and its Category list has no "Sign-in and sign-out", "Security", "Invites" or "People".
 
@@ -787,6 +787,7 @@ Four people are seeded in "TINNOX Internal", one per role: `operator` (Owner, "D
 - [ ] Create a playlist, add a file and push it to `Reception TV`: everything works as in sections 6 and 9.
 - [ ] **Add screen** and the Pairing tab are available (Editors set up and pair screens).
 - [ ] http://localhost:5173/users shows **Your role doesn't allow this**; the account menu has no **Users**; the audit log has no People category.
+- [ ] A screen's **Alerts** tab can be changed and saved; Settings has no **Alerts** group, and http://localhost:5173/settings/alerts shows **Your role doesn't allow this**.
 
 ### T18.3 Admin (`org-admin`)
 
@@ -807,14 +808,58 @@ Four people are seeded in "TINNOX Internal", one per role: `operator` (Owner, "D
 
 ---
 
-## 19. Layout and keyboard checks (portal)
+## 19. E-mail alerts
 
-### T19.1 Narrow window and dark mode
+E-mails go to **Mailpit**, a local mailbox that catches everything the API sends; nothing leaves your computer. Open http://localhost:8025 in a second tab. Do this pass as the Owner (`operator`), with `Reception TV` paired and playing. Section T19.3 needs the player offline for a little over 30 minutes: do another section while you wait.
+
+### T19.1 Add and confirm an address
+
+1. **Settings → Alert addresses**.
+2. **Add address**, type `alerts.test@example.com`, press **Add address**.
+3. In Mailpit, open the e-mail and its link.
+
+Expected:
+
+- [ ] The page is titled **Alerts**, explains that an address receives nothing until its owner opens the link, and shows **No alert addresses yet** with **Add address**.
+- [ ] In the dialog, pressing **Add address** with the field empty says "Enter an e-mail address."; `not-an-address` is refused at the field.
+- [ ] Toast "Confirmation e-mail sent to alerts.test@example.com"; the row reads **Waiting for confirmation** and the count "1 of 20 addresses". Adding the same address again says "This address is already on the alert list."
+- [ ] Mailpit has one e-mail from `alerts@tinnox-dev.invalid`, subject "Confirm alert e-mails from TINNOX CMS", naming **TINNOX Internal** but not who added the address, with a link to http://localhost:5173/alerts/confirm# followed by a long code.
+- [ ] The link opens a page **Alert e-mails** with "Alerts confirmed" and "This address will now receive screen alerts." without asking you to sign in; the code is gone from the address bar.
+- [ ] Open the same link again (copy it from Mailpit): "This link is not valid any more". Back on Settings → Alerts, after a reload the row reads **Confirmed**.
+
+### T19.2 The screen's Alerts tab
+
+Open **Screens → Reception TV → Alerts**.
+
+- [ ] "E-mail when this screen stops reporting" shows **30 minutes** and "Also e-mail when it reports again" is ticked (the defaults for every screen). Under the select, the hint says the delay counts only time inside the screen's working hours and that closed hours pause it; the note above has an **Alert addresses** link to Settings → Alerts.
+- [ ] Choose **Off**: the checkbox disappears and **Unsaved changes** shows. Press **Discard changes**: back to 30 minutes.
+- [ ] Choose **1 hour**, **Save alerts**: toast "Alerts saved". Set it back to **30 minutes** and save again. Nothing about the push state changes (alerts change nothing on the player).
+
+### T19.3 Offline and reporting-again e-mails
+
+1. In the **player's** window, set developer tools → **Network** → **Offline**, as in section 14. Do not reload the player.
+2. Wait 31 to 32 minutes, then look in Mailpit.
+3. Set the player back online and wait about two minutes.
+
+Expected:
+
+- [ ] Nothing arrives in Mailpit during the first 30 minutes.
+- [ ] Within about a minute after 30 minutes: one e-mail "Screen not reporting: Reception TV" naming the site, the organisation and the last report time in Australia/Melbourne time, saying it was sent because the screen has not reported for 30 minutes, with a link to the screen page and a footer saying how to stop. It never says "offline" or "online".
+- [ ] Only one such e-mail arrives, however long the player stays offline.
+- [ ] After going back online: one e-mail "Screen reporting again: Reception TV" with the time it reported again and the same link.
+- [ ] The audit log (account menu → **Audit log**) lists "Not-reporting alert recorded for screen" and "Reporting-again alert recorded for screen" for Reception TV by **System** (these rows record the change; the e-mails go out after them, and with no confirmed address the row says "(no confirmed address received it)"), and "Alert address added" and "Alert address confirmed by its owner"; no row or detail shows the e-mail address.
+- [ ] **Settings → Alert addresses**, row **Remove** → **Remove address**: toast that the address was removed, and the list is empty again.
+
+---
+
+## 20. Layout and keyboard checks (portal)
+
+### T20.1 Narrow window and dark mode
 
 - [ ] Make the portal window narrow (under 900 px wide, or use the browser's device toolbar at 390 px): the sidebar becomes a drawer behind an **Open navigation** button; pages (Screens, Media, the schedule editor) show no sideways scrolling; the event rows and zone fieldsets stack.
 - [ ] Switch your operating system (or browser) to dark mode: the portal follows, text stays readable, and the status pills keep their meaning.
 
-### T19.2 Keyboard only
+### T20.2 Keyboard only
 
 With the mouse put aside, on the **Schedules** list:
 
@@ -824,7 +869,7 @@ With the mouse put aside, on the **Schedules** list:
 
 ---
 
-## 20. Shut down
+## 21. Shut down
 
 - [ ] In the first terminal press Ctrl+C: the api, portal and player stop. The containers keep running; `npm run infra:down` stops them (data is kept).
 - [ ] To start again later: `npm run dev` only.
@@ -832,7 +877,7 @@ With the mouse put aside, on the **Schedules** list:
 
 ---
 
-## 21. Results
+## 22. Results
 
 ### Summary
 
@@ -855,9 +900,10 @@ With the mouse put aside, on the **Schedules** list:
 | 15 Revoke and reset | | 10 | |
 | 16 Second organisation | | 5 | |
 | 17 Settings, tags, audit | | 11 | |
-| 18 Roles | | 20 | |
-| 19 Layout and keyboard | | 5 | |
-| 20 Shut down | | 3 | |
+| 18 Roles | | 21 | |
+| 19 E-mail alerts | | 15 | |
+| 20 Layout and keyboard | | 5 | |
+| 21 Shut down | | 3 | |
 
 Tester: ______________________  Date: ____________  Browser and version: ______________________  OS: ______________________
 

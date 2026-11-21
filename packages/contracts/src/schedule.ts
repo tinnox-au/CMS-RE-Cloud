@@ -70,6 +70,68 @@ export function eventCovers(
   );
 }
 
+/** A moment as read on a wall clock in some zone. `day` 0 is Monday. */
+export interface WallClock {
+  /** 'YYYY-MM-DDTHH:mm', comparable as a string with manifest windows. */
+  readonly stamp: string;
+  readonly day: number;
+  /** 'HH:mm', comparable as a string with working hours. */
+  readonly time: string;
+}
+
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const formatters = new Map<string, Intl.DateTimeFormat | null>();
+
+function formatterFor(timeZone: string): Intl.DateTimeFormat | null {
+  let formatter = formatters.get(timeZone);
+  if (formatter === undefined) {
+    try {
+      formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hourCycle: 'h23',
+        weekday: 'short',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      // This runtime's ICU does not know the zone.
+      formatter = null;
+    }
+    formatters.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
+/**
+ * Wall clock in `timeZone` at `epochMs`, or null when the runtime refuses the zone. The player
+ * and the alert check share it; both fail open (treat the moment as inside hours) on null.
+ */
+export function localWallClock(epochMs: number, timeZone: string): WallClock | null {
+  const formatter = formatterFor(timeZone);
+  if (formatter === null) return null;
+  const part: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {};
+  for (const { type, value } of formatter.formatToParts(epochMs)) part[type] = value;
+  const time = `${part.hour ?? ''}:${part.minute ?? ''}`;
+  return {
+    stamp: `${part.year ?? ''}-${part.month ?? ''}-${part.day ?? ''}T${time}`,
+    day: WEEKDAYS.indexOf(part.weekday ?? ''),
+    time,
+  };
+}
+
+/** Seven days of `WorkingHoursSchema` (display.ts), structurally, so this file imports no display types. */
+type Hours = readonly ({ readonly start: string; readonly end: string } | null)[] | null;
+
+/** True when `wall` is inside the working hours; null hours mean always on. */
+export function withinWorkingHours(hours: Hours, wall: WallClock): boolean {
+  if (hours === null) return true;
+  const today = hours[wall.day];
+  return today !== null && today !== undefined && today.start <= wall.time && wall.time < today.end;
+}
+
 /** One weekly event of a schedule in a request body. */
 export const ScheduleEventInputSchema = z
   .object({ playlistId: PlaylistIdSchema, ...scheduleRuleShape })

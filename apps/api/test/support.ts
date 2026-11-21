@@ -8,6 +8,8 @@
  *    OIDC flow is exercised by scripts/live-check.mjs against Keycloak.
  *  - The validation worker. `actAsWorker` writes a verdict file into the outbox the
  *    way the worker container does; the API's ingestion code is the real one.
+ *  - E-mail. `ctx.mail` records each message in `sentMail` instead of sending it
+ *    (Mailpit is for local manual checks and the e2e run).
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -37,10 +39,12 @@ import { LocalObjectStorage } from '@tinnox/storage';
 import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import sharp from 'sharp';
+import { runDisplayAlerts, type DisplayAlertDeps, type DisplayAlertResult } from '../src/alerts.ts';
 import { buildApp } from '../src/app.ts';
 import { IdentityProviderError, type IdentityProvider } from '../src/auth/oidc.ts';
 import { loadConfig, type AppConfig } from '../src/config.ts';
 import type { AppContext } from '../src/context.ts';
+import type { MailMessage, Mailer } from '../src/mail.ts';
 import { MediaPipeline } from '../src/media/pipeline.ts';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -76,6 +80,8 @@ export interface TestApp {
   readonly url: string;
   readonly jobsDir: string;
   readonly mediaRoot: string;
+  /** Every message given to `ctx.mail`, in order (the default recording mailer). */
+  readonly sentMail: MailMessage[];
   /** Moves the application clock forward (signed URL expiry, staleness, job deadlines). */
   advanceClock(ms: number): void;
   close(): Promise<void>;
@@ -84,6 +90,8 @@ export interface TestApp {
 export interface TestAppOptions {
   /** Wraps the app's database pool, for example to inject a fault (used by every route and the pipeline). */
   readonly wrapPool?: (pool: Pool) => Pool;
+  /** Replaces the recording mailer; null is a server without SMTP. */
+  readonly mail?: Mailer | null;
 }
 
 export async function startTestApp(
@@ -136,6 +144,13 @@ export async function startTestApp(
     now,
   });
   await media.prepare();
+  const sentMail: MailMessage[] = [];
+  const recording: Mailer = {
+    send: (message) => {
+      sentMail.push(message);
+      return Promise.resolve();
+    },
+  };
   const ctx: AppContext = {
     config,
     pool,
@@ -150,6 +165,7 @@ export async function startTestApp(
     }),
     idp: noIdentityProvider,
     media,
+    mail: options.mail === undefined ? recording : options.mail,
     now,
     rateLimitScale,
   };
@@ -164,6 +180,7 @@ export async function startTestApp(
     url: `http://127.0.0.1:${address.port}`,
     jobsDir,
     mediaRoot,
+    sentMail,
     advanceClock(ms: number): void {
       offsetMs += ms;
     },
@@ -846,6 +863,23 @@ export function statementHolds(): StatementHolds {
       return { reached: atStatement, release };
     },
   };
+}
+
+/** Runs the e-mail alert check once at the app's clock, sending through `ctx.mail` unless given another. */
+export function checkAlerts(
+  t: TestApp,
+  overrides: Partial<Pick<DisplayAlertDeps, 'mail' | 'shouldStop'>> = {},
+): Promise<DisplayAlertResult> {
+  const mail = overrides.mail ?? t.ctx.mail;
+  if (mail === null) throw new Error('this test app has no mailer');
+  return runDisplayAlerts({
+    pool: t.pool,
+    now: t.ctx.now(),
+    mail,
+    portalOrigin: t.config.portalOrigin,
+    logger: { error: () => undefined },
+    shouldStop: overrides.shouldStop,
+  });
 }
 
 /**

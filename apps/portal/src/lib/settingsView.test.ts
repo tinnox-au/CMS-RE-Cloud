@@ -166,10 +166,9 @@ describe('deleting a tag', () => {
 });
 
 describe('planned settings', () => {
-  it('lists the three planned rows with their stage (Users is built in stage C)', () => {
+  it('lists the two planned rows with their stage (Users and Alerts are built in stage C)', () => {
     expect(PLANNED_SETTINGS.map((row) => [row.title, row.stage])).toEqual([
       ['Working hours', 'B'],
-      ['Alerts', 'C'],
       ['API tokens', null],
     ]);
     expect(new Set(PLANNED_SETTINGS.map((row) => row.id)).size).toBe(PLANNED_SETTINGS.length);

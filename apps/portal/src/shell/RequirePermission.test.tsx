@@ -9,6 +9,7 @@ import { ShellContext, type ShellContextValue } from './ShellContext.ts';
 
 // The guarded pages themselves, replaced by their headings: the test is about the guard.
 vi.mock('../features/users/UsersPage.tsx', () => ({ UsersPage: () => <h1>Users</h1> }));
+vi.mock('../features/settings/AlertsPage.tsx', () => ({ AlertsPage: () => <h1>Alerts</h1> }));
 vi.mock('../features/displays/DisplayWizardPage.tsx', () => ({
   DisplayWizardPage: () => <h1>Add a screen</h1>,
 }));
@@ -42,6 +43,7 @@ function appRoute(path: string): RouteObject {
 const GUARDED = [
   { path: '/users', route: 'users', heading: 'Users' },
   { path: '/screens/new', route: 'screens/new', heading: 'Add a screen' },
+  { path: '/settings/alerts', route: 'settings/alerts', heading: 'Alerts' },
 ] as const;
 
 /** Renders App.tsx's guarded routes as `role`, starting at `path`, inside the real page frame. */
@@ -94,12 +96,21 @@ describe('RequirePermission on the routes of App.tsx', () => {
       .toBeVisible();
   });
 
-  it('opens the Users page to an Admin and an Owner', async () => {
+  it('opens the Users and Alerts pages to an Admin and an Owner, not Alerts to an Editor', async () => {
     for (const role of ['admin', 'owner'] as const) {
-      const screen = await renderAt(role, '/users');
-      await expect.element(screen.getByRole('heading', { name: 'Users' })).toBeVisible();
-      expect(screen.getByText("Your role doesn't allow this").query()).toBeNull();
-      await screen.unmount();
+      for (const [path, heading] of [
+        ['/users', 'Users'],
+        ['/settings/alerts', 'Alerts'],
+      ] as const) {
+        const screen = await renderAt(role, path);
+        await expect.element(screen.getByRole('heading', { name: heading })).toBeVisible();
+        expect(screen.getByText("Your role doesn't allow this").query()).toBeNull();
+        await screen.unmount();
+      }
     }
+    const alerts = await renderAt('editor', '/settings/alerts');
+    await expect
+      .element(alerts.getByRole('heading', { name: "Your role doesn't allow this" }))
+      .toBeVisible();
   });
 });

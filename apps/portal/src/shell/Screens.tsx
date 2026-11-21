@@ -1,4 +1,5 @@
 import type { AuthErrorCode } from '@tinnox/contracts';
+import { Component, type ReactNode } from 'react';
 import { isRouteErrorResponse, useRouteError } from 'react-router-dom';
 import { authErrorMessage } from '../lib/authError.ts';
 import { Banner, ButtonLink, ErrorNotice, Skeleton, SkeletonGroup, Spinner } from '../ui/index.ts';
@@ -64,11 +65,51 @@ export function SignInScreen({ reason, authError = null, loginHref }: SignInScre
 
 /** While the portal asks the API whether there is a session. */
 export function SessionCheckingScreen() {
+  return <LoadingScreen label="Checking your session…" />;
+}
+
+/** While a page outside the shell loads its code; says nothing about a session. */
+export function LoadingScreen({ label = 'Loading…' }: { readonly label?: string }) {
   return (
     <main className="tx-screen">
-      <Spinner size="lg" label="Checking your session…" />
+      <Spinner size="lg" label={label} />
     </main>
   );
+}
+
+/**
+ * Around a page outside the router (which has `RouteError` for this): when its code cannot be
+ * loaded or it throws, a card with a reload button instead of a blank page. A reload keeps the
+ * address, fragment included.
+ */
+export class StandaloneErrorBoundary extends Component<
+  { readonly children: ReactNode },
+  { readonly error: unknown }
+> {
+  override state: { readonly error: unknown } = { error: null };
+
+  static getDerivedStateFromError(error: unknown): { error: unknown } {
+    return { error: error ?? new Error('page failed') };
+  }
+
+  override render(): ReactNode {
+    if (this.state.error === null) return this.props.children;
+    return (
+      <main className="tx-screen">
+        <div className="tx-screen__card">
+          <Wordmark size="lg" />
+          <h1 className="tx-visually-hidden">TINNOX CMS</h1>
+          <ErrorNotice
+            error={this.state.error}
+            title="This page could not be shown"
+            onRetry={() => {
+              window.location.reload();
+            }}
+          />
+        </div>
+      </main>
+    );
+  }
 }
 
 export function SessionErrorScreen({

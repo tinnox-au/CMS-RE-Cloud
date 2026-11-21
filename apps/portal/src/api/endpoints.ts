@@ -1,4 +1,6 @@
 import {
+  AlertRecipientDtoSchema,
+  AlertRecipientListResponseSchema,
   AppDtoSchema,
   AppListResponseSchema,
   AuditListResponseSchema,
@@ -37,6 +39,7 @@ import {
   SiteListResponseSchema,
   TagDtoSchema,
   TagListResponseSchema,
+  type AlertRecipientDto,
   type AppCreate,
   type AppDto,
   type AppPatch,
@@ -210,6 +213,14 @@ export interface Endpoints {
   removeMember(id: string): Promise<MemberChangeResponse>;
   /** Ends every session the person has open; their next sign-in asks for the one-time code. */
   signOutMember(id: string): Promise<MemberSignOutResponse>;
+
+  /** The organisation's alert addresses with their status (`alerts.manage`). */
+  listAlertRecipients(signal?: AbortSignal): Promise<AlertRecipientDto[]>;
+  /** Adds an address and sends it the confirmation e-mail. 503 when e-mail is not set up. */
+  addAlertRecipient(email: string): Promise<AlertRecipientDto>;
+  removeAlertRecipient(id: string): Promise<void>;
+  /** Public: the confirmation page posts the token from its link. 404 for any link not valid. */
+  confirmAlertRecipient(token: string): Promise<void>;
 
   logout(): Promise<LogoutResponse>;
 }
@@ -477,6 +488,28 @@ export function createEndpoints(client: ApiClient): Endpoints {
         { method: 'POST', path: ROUTES.memberSignOut(id) },
         MemberSignOutResponseSchema,
       );
+    },
+
+    async listAlertRecipients(signal) {
+      return (
+        await client.request(get(ROUTES.alertRecipients, signal), AlertRecipientListResponseSchema)
+      ).items;
+    },
+    addAlertRecipient(email) {
+      return client.request(
+        { method: 'POST', path: ROUTES.alertRecipients, body: { email } },
+        AlertRecipientDtoSchema,
+      );
+    },
+    removeAlertRecipient(id) {
+      return client.requestNoContent({ method: 'DELETE', path: ROUTES.alertRecipient(id) });
+    },
+    confirmAlertRecipient(token) {
+      return client.requestNoContent({
+        method: 'POST',
+        path: ROUTES.alertRecipientConfirm,
+        body: { token },
+      });
     },
 
     logout() {

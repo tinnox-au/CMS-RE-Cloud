@@ -174,6 +174,8 @@ describe('display form validation', () => {
       defaultFit: 'cover',
       rotation: 0,
       workingHours: null,
+      alertOfflineMinutes: 30,
+      alertBackOnline: true,
       route: 'browser',
       player: null,
       createdAt: T,

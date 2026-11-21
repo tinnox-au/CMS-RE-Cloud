@@ -30,7 +30,7 @@ describe('roles and permission keys', () => {
     expect(ROLES).toEqual(['owner', 'admin', 'editor', 'viewer']);
   });
 
-  it('lists exactly the 14 active keys and none of the reserved ones', () => {
+  it('lists exactly the 16 active keys and none of the reserved ones', () => {
     expect(PERMISSION_KEYS).toEqual([
       'org.read',
       'activity.read',
@@ -44,8 +44,10 @@ describe('roles and permission keys', () => {
       'screen.hours',
       'screen.setup',
       'screen.pair',
+      'screen.alerts',
       'member.read',
       'member.manage',
+      'alerts.manage',
     ]);
     for (const reserved of ['org.rename', 'org.delete', 'site.manage', 'support.grant'])
       expect(PERMISSION_KEYS, reserved).not.toContain(reserved);

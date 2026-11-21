@@ -248,6 +248,10 @@ const sections = [
     'Media storage and the validation worker exchange directory (relative to the repository root)',
     { MEDIA_ROOT: './data/media', MEDIA_JOBS_DIR: './data/jobs' },
   ],
+  [
+    'E-mail alerts: local Mailpit (infra/docker-compose.yml); sent mail shows at http://127.0.0.1:8025',
+    { SMTP_HOST: '127.0.0.1', SMTP_PORT: '1025', MAIL_FROM: 'alerts@tinnox-dev.invalid' },
+  ],
 ];
 
 // Keep any extra variables a developer added by hand (for example LIMIT_* overrides).

@@ -136,7 +136,7 @@ describe('display rotation and working hours', () => {
     expect(await set(Array(7).fill(padded))).toBe(PG.check);
   });
 
-  it('grants the runtime role exactly rotation, working_hours, (0009) assigned_schedule_id and (0011) assigned_layout_id on top of stage A', async () => {
+  it('grants the runtime role exactly rotation, working_hours, (0009) assigned_schedule_id, (0011) assigned_layout_id and (0014) the alert settings on top of stage A', async () => {
     const { rows } = await migrator.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.column_privileges
        WHERE table_schema = 'public' AND table_name = 'display'
@@ -164,6 +164,9 @@ describe('display rotation and working hours', () => {
         'assigned_schedule_id',
         // 0011
         'assigned_layout_id',
+        // 0014
+        'alert_offline_minutes',
+        'alert_back_online',
       ].sort(),
     );
   });

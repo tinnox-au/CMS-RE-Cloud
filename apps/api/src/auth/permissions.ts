@@ -55,7 +55,7 @@ const any = (refine: RefineName, ...keys: PermissionKey[]): RouteRule =>
   Object.freeze({ any: Object.freeze(keys), refine });
 
 /**
- * Every operator route and the keys it needs (section 6.1): 59 entries, 26 GET and 33 writes.
+ * Every operator route and the keys it needs (section 6.1): 62 entries, 27 GET and 35 writes.
  * Keyed by `${METHOD} ${pattern}` with the contract constants, so a renamed path breaks the
  * build. HEAD is read as GET (`routeKey`).
  */
@@ -67,6 +67,7 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   [`GET ${ROUTES.displayPattern}`]: all('org.read'),
   [`PATCH ${ROUTES.displayPattern}`]: any(
     'displayPatchFields',
+    'screen.alerts',
     'screen.assign',
     'screen.details',
     'screen.hours',
@@ -137,6 +138,10 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   [`GET ${ROUTES.invites}`]: all('member.read'),
   [`POST ${ROUTES.invites}`]: all('member.manage'),
   [`POST ${ROUTES.inviteCancelPattern}`]: all('member.manage'),
+
+  [`GET ${ROUTES.alertRecipients}`]: all('alerts.manage'),
+  [`POST ${ROUTES.alertRecipients}`]: all('alerts.manage'),
+  [`DELETE ${ROUTES.alertRecipientPattern}`]: all('alerts.manage'),
 } satisfies Record<string, RouteRule>);
 
 /** `${METHOD} ${pattern}`, with HEAD read as GET (Fastify registers a HEAD twin of every GET). */
@@ -160,6 +165,8 @@ export const DISPLAY_PATCH_KEYS = Object.freeze({
   description: 'screen.details',
   tagIds: 'screen.details',
   workingHours: 'screen.hours',
+  alertOfflineMinutes: 'screen.alerts',
+  alertBackOnline: 'screen.alerts',
   canvas: 'screen.setup',
   contentRect: 'screen.setup',
   defaultFit: 'screen.setup',
@@ -262,7 +269,7 @@ export function createRouteCheck(): {
 } {
   const registered = new Set<string>();
   return {
-    // Called once per method: the 59 routes and the HEAD twin of every GET.
+    // Called once per method: the 62 routes and the HEAD twin of every GET.
     onRoute: (route) => {
       const methods = Array.isArray(route.method) ? route.method : [route.method];
       for (const method of methods) registered.add(`${String(method)} ${route.url}`);
