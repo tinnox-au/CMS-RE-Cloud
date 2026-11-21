@@ -14,6 +14,8 @@ export interface RowFocusSource {
   readonly row: (id: string) => Element | null;
   /** The page's primary add or new button. */
   readonly primary: () => HTMLElement | null;
+  /** The control in a row to focus, as a selector; the row's "Actions for …" button by default. */
+  readonly button?: string;
 }
 
 interface Snapshot {
@@ -48,7 +50,8 @@ function selectAllCheckbox(): HTMLElement | null {
 function focusTarget(snapshot: Snapshot): HTMLElement | null {
   const { candidates, source } = snapshot;
   for (const id of candidates) {
-    const button = source.row(id)?.querySelector<HTMLElement>(ACTIONS_BUTTON) ?? null;
+    const button =
+      source.row(id)?.querySelector<HTMLElement>(source.button ?? ACTIONS_BUTTON) ?? null;
     if (button?.isConnected === true) return button;
   }
   if (source.mode === 'bulk') return selectAllCheckbox() ?? source.primary();
@@ -57,8 +60,8 @@ function focusTarget(snapshot: Snapshot): HTMLElement | null {
 
 /**
  * The `returnFocus` of a delete dialog: remembers the neighbouring rows when the dialog
- * opens, and on close names the "Actions for …" button of the row after the deleted one,
- * else the row before, else the page's primary button. After a bulk delete it names the
+ * opens, and on close names the "Actions for …" button (or `source.button`) of the row after
+ * the deleted one, else the row before, else the page's primary button. After a bulk delete it names the
  * first remaining row's actions button, else the select-all checkbox. The dialog only asks
  * when the control that opened it has gone (`ui/focusReturn.ts`).
  */

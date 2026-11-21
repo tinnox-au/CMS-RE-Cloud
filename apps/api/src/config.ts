@@ -109,7 +109,7 @@ const EnvSchema = z.object({
   SMTP_HOST: z.string().max(253).optional(),
   /** 587 (STARTTLS) by default. */
   SMTP_PORT: intFromEnv(1, 65535).default(587),
-  /** "true" for implicit TLS (usually port 465). Otherwise STARTTLS is required, except on loopback. */
+  /** "true" for implicit TLS (usually port 465). Otherwise STARTTLS is required, except to 127.0.0.1 or ::1. */
   SMTP_SECURE: z
     .enum(['true', 'false'])
     .default('false')

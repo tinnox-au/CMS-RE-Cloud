@@ -606,6 +606,16 @@ describe('with organisation A as context', () => {
         'INSERT INTO display (org_id, site_id, name, canvas_width, canvas_height, assigned_layout_id) VALUES ($1, $2, $3, 100, 100, $4)',
         [a.orgId, a.siteId, 'cross-layout', b.layoutId],
       ],
+      // An alert episode for the other organisation's display (0014).
+      [
+        'INSERT INTO display_alert (display_id, org_id, offline_since) VALUES ($2, $1, now())',
+        [a.orgId, b.displayId],
+      ],
+      // An alert address added by the other organisation's member (0014).
+      [
+        "INSERT INTO alert_recipient (org_id, email, created_by, confirm_token_hash, confirm_expires_at) VALUES ($1, 'fk-probe@example.com', $2, $3, now() + interval '7 days')",
+        [a.orgId, b.membershipId, randomBytes(32)],
+      ],
     ];
     for (const [sql, values] of attempts) {
       expect(await pgCode(withOrg(pool, a.orgId, (tx) => tx.query(sql, values))), sql).toBe(

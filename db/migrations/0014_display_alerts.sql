@@ -24,7 +24,8 @@
 --
 -- Locks and deploy order. Takes ACCESS EXCLUSIVE on display until commit and reads every display
 -- row once to validate the new CHECK; the constant defaults rewrite nothing. An API from before
--- 0014 keeps working (it never names the new columns), so migrate, then start the new API.
+-- 0014 keeps working (it never names the new columns), so migrate, then start the new API and
+-- portal together, and reload open portal tabs (docs/portal-v2/stage-c-alerts.md section 9).
 
 -- ----------------------------------------------------------------------- 1. display
 
@@ -189,7 +190,8 @@ BEGIN
 END $$;
 
 -- Same guard as 0013: every sec function must be SECURITY DEFINER, owned by tinnox_definer, with
--- a locked search_path, not executable by PUBLIC and executable by tinnox_app.
+-- a locked search_path, not executable by PUBLIC and executable by tinnox_app. IS NOT TRUE, not
+-- NOT: a function created without SET has a NULL proconfig, which must count as unsafe.
 DO $$
 DECLARE
   bad text;
@@ -197,10 +199,10 @@ BEGIN
   SELECT string_agg(p.proname, ', ') INTO bad
   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'sec'
-    AND NOT (p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, pg_temp']
-             AND pg_get_userbyid(p.proowner) = 'tinnox_definer'
-             AND NOT has_function_privilege('public', p.oid, 'EXECUTE')
-             AND has_function_privilege('tinnox_app', p.oid, 'EXECUTE'));
+    AND (p.prosecdef AND p.proconfig @> ARRAY['search_path=pg_catalog, pg_temp']
+         AND pg_get_userbyid(p.proowner) = 'tinnox_definer'
+         AND NOT has_function_privilege('public', p.oid, 'EXECUTE')
+         AND has_function_privilege('tinnox_app', p.oid, 'EXECUTE')) IS NOT TRUE;
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'sec functions with unsafe definition: %', bad;
   END IF;

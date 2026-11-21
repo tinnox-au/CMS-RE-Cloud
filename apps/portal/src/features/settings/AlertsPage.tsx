@@ -24,7 +24,7 @@ import {
   type DataTableColumn,
   type StatusTone,
 } from '../../ui/index.ts';
-import { elementByTestId } from '../shared/index.ts';
+import { elementByTestId, rowByTestId, useRowFocusReturn } from '../shared/index.ts';
 import { AddAlertAddressDialog } from './AddAlertAddressDialog.tsx';
 
 const STATUS: { readonly [K in AlertRecipientStatus]: { label: string; tone: StatusTone } } = {
@@ -173,6 +173,7 @@ export function AlertsPage() {
       />
       <RemoveAddressDialog
         recipient={removeTarget}
+        order={state.status === 'ready' ? state.data.map((r) => r.id) : []}
         onClose={() => {
           setRemoveTarget(null);
         }}
@@ -184,15 +185,31 @@ export function AlertsPage() {
 
 function RemoveAddressDialog({
   recipient,
+  order,
   onClose,
   onRemoved,
 }: {
   readonly recipient: AlertRecipientDto | null;
+  /** The ids of the rows on view, in the order shown, for the focus after a removal. */
+  readonly order: readonly string[];
   readonly onClose: () => void;
   /** The list is out of date: after a removal, or an answer that says it may be. */
   readonly onRemoved: () => void;
 }) {
   const toast = useToast();
+  // Once the removed row is gone: the next row's Remove button, else the previous row's, else
+  // "Add address" (ui/README.md, Dialog accessibility).
+  const returnFocus = useRowFocusReturn(
+    recipient !== null,
+    recipient === null ? [] : [recipient.id],
+    {
+      mode: 'row',
+      order,
+      row: rowByTestId('settings-alerts-row-'),
+      primary: elementByTestId('settings-alerts-add'),
+      button: '[data-testid="settings-alerts-row-remove"]',
+    },
+  );
   // The address as it was when the dialog opened; it stays while the dialog fades out.
   const [shown, setShown] = useState(recipient);
   const [busy, setBusy] = useState(false);
@@ -246,7 +263,7 @@ function RemoveAddressDialog({
       onConfirm={confirm}
       onCancel={onClose}
       testId="settings-alerts-remove-dialog"
-      returnFocus={focusAfterRemove}
+      returnFocus={returnFocus}
     >
       <p>
         <strong translate="no">{shown?.email}</strong> will receive no more screen alerts. To add it
@@ -263,13 +280,5 @@ function RemoveAddressDialog({
         />
       )}
     </ConfirmDialog>
-  );
-}
-
-/** Once a removed row is gone: another row's Remove button, else "Add address". */
-function focusAfterRemove(): HTMLElement | null {
-  return (
-    document.querySelector<HTMLElement>('[data-testid="settings-alerts-row-remove"]') ??
-    elementByTestId('settings-alerts-add')()
   );
 }

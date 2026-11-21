@@ -119,10 +119,15 @@ describe('AlertsTab', () => {
       .element(screen.getByLabelText('Also e-mail when it reports again'))
       .not.toBeInTheDocument();
     await screen.getByTestId('screen-detail-alerts-save').click();
-    expect(patchDisplay).toHaveBeenCalledWith(DISPLAY.id, {
-      alertOfflineMinutes: null,
-      alertBackOnline: true,
-    });
+    expect(patchDisplay).toHaveBeenCalledWith(DISPLAY.id, { alertOfflineMinutes: null });
+  });
+
+  it('sends only the changed setting, so it cannot overwrite another editor’s change', async () => {
+    patchDisplay.mockResolvedValue({ ...DISPLAY, alertOfflineMinutes: 120 });
+    const screen = await renderTab('editor');
+    await screen.getByLabelText('E-mail when this screen stops reporting').selectOptions('2 hours');
+    await screen.getByTestId('screen-detail-alerts-save').click();
+    expect(patchDisplay).toHaveBeenCalledWith(DISPLAY.id, { alertOfflineMinutes: 120 });
   });
 
   it('shows a stored delay that is not one of the choices, and keeps it a choice', async () => {

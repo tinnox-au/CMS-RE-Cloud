@@ -3,7 +3,7 @@
  * addresses, the message or the transport options.
  */
 import { createTransport } from 'nodemailer';
-import { isLoopbackHost, type AppConfig } from './config.ts';
+import type { AppConfig } from './config.ts';
 
 export interface MailMessage {
   readonly to: string;
@@ -23,9 +23,10 @@ export function createMailer(config: AppConfig['mail']): Mailer | null {
     host: config.host,
     port: config.port,
     secure: config.secure,
-    // Never plain text over a network: STARTTLS or implicit TLS, except to a loopback relay
-    // (Mailpit in development).
-    requireTLS: !config.secure && !isLoopbackHost(config.host),
+    // Never plain text over a network: STARTTLS or implicit TLS, except to a loopback address
+    // (Mailpit in development). Not a name, even localhost: Nodemailer resolves names through
+    // DNS, which may answer with another machine.
+    requireTLS: !config.secure && config.host !== '127.0.0.1' && config.host !== '::1',
     ...(config.user === null || config.password === null
       ? {}
       : { auth: { user: config.user, pass: config.password } }),

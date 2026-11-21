@@ -17,13 +17,20 @@ describe('createMailer', () => {
     expect(createMailer(null)).toBeNull();
   });
 
-  it('requires TLS to any host but a loopback relay', () => {
+  it('requires TLS to any host but a loopback address', () => {
     createMailer({ ...base, host: 'smtp.example.com' });
     createMailer({ ...base, host: '127.0.0.1' });
+    createMailer({ ...base, host: '::1' });
+    // Names go through DNS, which may answer with another machine.
+    createMailer({ ...base, host: 'localhost' });
+    createMailer({ ...base, host: 'relay.localhost' });
     createMailer({ ...base, host: 'smtp.example.com', port: 465, secure: true });
     expect(createTransport.mock.calls.map(([options]) => options)).toMatchObject([
       { host: 'smtp.example.com', requireTLS: true },
       { host: '127.0.0.1', requireTLS: false },
+      { host: '::1', requireTLS: false },
+      { host: 'localhost', requireTLS: true },
+      { host: 'relay.localhost', requireTLS: true },
       { host: 'smtp.example.com', secure: true, requireTLS: false },
     ]);
   });

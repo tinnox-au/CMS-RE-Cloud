@@ -23,6 +23,7 @@ export interface DisplayAlertDeps {
   /**
    * Checked before each organisation is claimed: true stops the run there (shutdown), so no new
    * transition is claimed that the process may not live to mail. Claimed ones are still mailed.
+   * A lost lock connection stops the run the same way and counts as failed.
    */
   readonly shouldStop?: () => boolean;
 }
@@ -32,7 +33,11 @@ export interface DisplayAlertResult {
   readonly skipped: boolean;
   readonly offline: number;
   readonly online: number;
-  /** Episodes closed without an e-mail: unpaired, re-paired, alerts or back-online e-mail off. */
+  /**
+   * Episodes closed without an e-mail: unpaired, re-paired and the new player has not reported
+   * yet, alerts off, or back-online e-mail off. Once a re-paired screen's new player reports, the
+   * screen is reporting again, so that closes with the back-online e-mail.
+   */
   readonly closed: number;
   /** E-mails the server refused, and organisations whose check failed. */
   readonly failed: number;
@@ -77,6 +82,13 @@ export async function runDisplayAlerts(deps: DisplayAlertDeps): Promise<DisplayA
     if (locked.rows[0]?.ok !== true) return { skipped: true, ...counts };
     try {
       for (const orgId of await displayAlertOrgs(poolAsTx(deps.pool))) {
+        // The lock went with its connection, so another runner may already be running: claim
+        // nothing more, but still send what this run claimed (delivery is at most once).
+        if (broken !== undefined) {
+          counts.failed += 1;
+          deps.logger.error({ err: broken }, 'display alert check stopped: lock connection lost');
+          break;
+        }
         if (deps.shouldStop?.() === true) break;
         let outcome: OrgOutcome;
         try {
@@ -95,6 +107,16 @@ export async function runDisplayAlerts(deps: DisplayAlertDeps): Promise<DisplayA
         // shortcut: one e-mail at a time and no retry; queue and retry when a provider's limits or outages bite.
         for (const { displayId, message } of outcome.outbox) {
           try {
+            // An address removed since the claim gets nothing; one already handed to the
+            // server cannot be recalled.
+            const live = await withOrg(deps.pool, orgId, (tx) =>
+              tx.query(
+                `SELECT 1 FROM alert_recipient
+                 WHERE org_id = app_org_id() AND email = $1 AND confirmed_at IS NOT NULL`,
+                [message.to],
+              ),
+            );
+            if (live.rowCount !== 1) continue;
             await deps.mail.send(message);
           } catch (error) {
             counts.failed += 1;
@@ -198,6 +220,7 @@ async function claimTransitions(tx: Tx, deps: DisplayAlertDeps): Promise<OrgOutc
       if (!offlineDue(last, deps.now, minutes, row.working_hours, row.timezone)) continue;
       // Claimed only while the stale report is still the latest: a report that arrived since
       // the read above cancels the alert.
+      // shortcut: settings and the active registration are read once per organisation per run, so a change (alerts off, a revocation) that commits during this run applies from the next run, which closes the episode silently; re-check them in the claim if one stray e-mail ever matters.
       const opened = await tx.query(
         `INSERT INTO display_alert (display_id, org_id, offline_since)
          SELECT dd.display_id, dd.org_id, date_trunc('milliseconds', dd.last_heartbeat_at)

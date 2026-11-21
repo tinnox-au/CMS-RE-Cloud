@@ -269,6 +269,39 @@ describe('offlineDue (Australia/Melbourne)', () => {
     // Always on: 01:45 AEST to 03:05 AEDT is 20 real minutes, though the wall clock moved 80.
     expect(due('2026-10-03T15:45:00Z', '2026-10-03T16:05:00Z', null)).toBe(false);
   });
+  it('counts the exact minutes when hours do not fall on 5-minute marks', () => {
+    // Round 8 EAU-01: closing at 18:02, silent since Tuesday 17:34 is 28 minutes that day.
+    const odd = [1, 2, 3, 4, 5, 6, 7].map(() => ({ start: '08:00', end: '18:02' }));
+    expect(due('2026-11-17T06:34:00Z', '2026-11-17T07:04:00Z', odd)).toBe(false); // 18:04
+    expect(due('2026-11-17T06:34:00Z', '2026-11-17T21:01:00Z', odd)).toBe(false); // 08:01
+    expect(due('2026-11-17T06:34:00Z', '2026-11-17T21:02:00Z', odd)).toBe(true); // 08:02
+    // An opening shorter than a step, 09:01 to 09:04 UTC: 3 minutes a day, so 30 minutes take
+    // ten days.
+    const short = [1, 2, 3, 4, 5, 6, 7].map(() => ({ start: '09:01', end: '09:04' }));
+    expect(due('2026-10-01T10:00:00Z', '2026-10-10T09:03:00Z', short, 'UTC')).toBe(false);
+    expect(due('2026-10-01T10:00:00Z', '2026-10-11T09:04:00Z', short, 'UTC')).toBe(true);
+  });
+  it('alerts at the first open moment after 14 silent days when the delay needs more', () => {
+    // Round 8 EAX-02: one hour a day never reaches 48 hours within the 14 days scanned.
+    const noon = [1, 2, 3, 4, 5, 6, 7].map(() => ({ start: '12:00', end: '13:00' }));
+    const long = (last: string, now: string) => due(last, now, noon, 'UTC', 2880);
+    expect(long('2026-09-21T12:30:00Z', '2026-11-20T01:30:00Z')).toBe(false); // closed
+    expect(long('2026-09-21T12:30:00Z', '2026-11-20T12:30:00Z')).toBe(true); // open
+    expect(long('2026-11-06T12:31:00Z', '2026-11-20T12:30:00Z')).toBe(false); // 1 min short
+    expect(long('2026-11-06T12:30:00Z', '2026-11-20T12:30:00Z')).toBe(true); // 14 days
+  });
+  it('can come due at closing time; the check then sends it just after closing', () => {
+    // Round 8 EAX-03, kept by Michael: the delay counts inside hours only, but an alert due at
+    // 17:00 goes out at the next check, a minute or two after closing.
+    const office = [1, 2, 3, 4, 5, 6, 7].map(() => ({ start: '09:00', end: '17:00' }));
+    expect(due('2026-11-17T05:30:00Z', '2026-11-17T05:59:00Z', office)).toBe(false); // 16:59
+    expect(due('2026-11-17T05:30:00Z', '2026-11-17T06:00:00Z', office)).toBe(true); // 17:00
+    expect(due('2026-11-17T05:30:00Z', '2026-11-17T06:02:00Z', office)).toBe(true); // 17:02
+    // Silent since 16:31: 29 minutes that day, the 30th at 09:00 to 09:01 the next morning.
+    expect(due('2026-11-17T05:31:00Z', '2026-11-17T06:01:00Z', office)).toBe(false); // 17:01
+    expect(due('2026-11-17T05:31:00Z', '2026-11-17T22:00:00Z', office)).toBe(false); // 09:00
+    expect(due('2026-11-17T05:31:00Z', '2026-11-17T22:01:00Z', office)).toBe(true); // 09:01
+  });
 });
 
 describe('buildDeliveryStatusView', () => {

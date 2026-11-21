@@ -140,6 +140,28 @@ describe('AlertsPage', () => {
     await expect.element(screen.getByText('No alert addresses yet')).toBeVisible();
   });
 
+  it('puts focus on the next address after a removal, else the previous one, else Add address', async () => {
+    removeAlertRecipient.mockResolvedValue();
+    const screen = await renderPage([CONFIRMED, EXPIRED, WAITING]);
+    const dialog = screen.getByTestId('settings-alerts-remove-dialog');
+    const remove = async (who: AlertRecipientDto, after: AlertRecipientDto[]) => {
+      await screen.getByRole('button', { name: `Remove ${who.email}` }).click();
+      listAlertRecipients.mockResolvedValue(after);
+      await screen.getByTestId('settings-alerts-remove-dialog-confirm').click();
+      await expect.element(dialog).not.toBeVisible();
+    };
+    await remove(EXPIRED, [CONFIRMED, WAITING]);
+    await expect
+      .element(screen.getByRole('button', { name: 'Remove new@example.com' }))
+      .toHaveFocus();
+    await remove(WAITING, [CONFIRMED]);
+    await expect
+      .element(screen.getByRole('button', { name: 'Remove ops@example.com' }))
+      .toHaveFocus();
+    await remove(CONFIRMED, []);
+    await expect.element(screen.getByTestId('settings-alerts-add')).toHaveFocus();
+  });
+
   it('says what each 503 means: nothing added, or added without its link', async () => {
     const screen = await renderPage([]);
     await screen.getByTestId('settings-alerts-add').click();

@@ -141,6 +141,10 @@ export function isStale(
 const STEP_MS = 5 * 60_000;
 const SCAN_MS = 14 * 24 * 60 * 60_000;
 
+/** 'HH:mm' (00:00 to 24:00) as milliseconds since local midnight. */
+const msOfDay = (hhmm: string): number =>
+  (Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3))) * 60_000;
+
 /**
  * True when a screen silent since `lastReportAt` has passed its offline delay of `minutes`,
  * counting only the time inside its working hours, read in `timeZone`, between the report and
@@ -149,9 +153,11 @@ const SCAN_MS = 14 * 24 * 60 * 60_000;
  * if it reports within the delay. Null hours (always on) and a zone this runtime does not know
  * count every minute (fail open, as the player does). Time is real elapsed time, so a
  * daylight-saving change does not add or remove an hour.
+ *
+ * The delay can come due in the last minute before closing; the check runs about once a
+ * minute, so that alert goes out just after closing (Michael, round 8 EAX-03: kept).
  */
-// shortcut: the walk samples the wall clock once per 5-minute step (aligned to UTC 5-minute marks), so hours that do not start or end on a 5-minute mark can count up to 5 minutes early or late at each boundary; sample per minute if customers set such hours.
-// shortcut: only the last 14 days are scanned (at most 4032 steps, about 10 ms), so a delay needing more than 14 days of working hours never fires; raise SCAN_MS or count whole periods if delays grow.
+// shortcut: only the last 14 days are scanned (at most 4032 steps, about 10 ms); a delay needing more working hours than that fires at the first open moment after 14 silent days instead; count whole weekly periods if delays ever grow past 48 hours.
 export function offlineDue(
   lastReportAt: Date,
   now: Date,
@@ -163,18 +169,28 @@ export function offlineDue(
   const end = now.getTime();
   // Time inside working hours never exceeds the elapsed time, so most screens stop here.
   if (end - lastReportAt.getTime() < needMs) return false;
-  if (hours === null || localWallClock(end, timeZone) === null) {
-    return end - lastReportAt.getTime() >= needMs;
-  }
+  const wallNow = localWallClock(end, timeZone);
+  if (hours === null || wallNow === null) return true;
   let insideMs = 0;
   for (let t = Math.max(lastReportAt.getTime(), end - SCAN_MS); t < end;) {
     const next = Math.min(end, (Math.floor(t / STEP_MS) + 1) * STEP_MS);
+    // A UTC 5-minute step never crosses local midnight or a daylight-saving change (offsets are
+    // whole quarter hours), so the local clock moves linearly inside it: count its exact
+    // overlap with that day's hours.
     const wall = localWallClock(t, timeZone);
-    if (wall === null || withinWorkingHours(hours, wall)) insideMs += next - t;
+    const today = wall === null ? null : hours[wall.day];
+    if (wall !== null && today) {
+      const from = msOfDay(wall.time) + (t % 60_000);
+      const overlap =
+        Math.min(from + (next - t), msOfDay(today.end)) - Math.max(from, msOfDay(today.start));
+      insideMs += Math.max(0, overlap);
+    }
     if (insideMs >= needMs) return true;
     t = next;
   }
-  return false;
+  // A delay longer than the working hours in 14 days fires at the first open moment after
+  // 14 silent days (the e-mail's "has not reported for <delay>" is still true).
+  return lastReportAt.getTime() <= end - SCAN_MS && withinWorkingHours(hours, wallNow);
 }
 
 export interface StatusViewInput {

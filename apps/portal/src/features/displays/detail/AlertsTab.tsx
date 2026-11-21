@@ -56,10 +56,19 @@ export function AlertsTab({
 
   const save = () => {
     if (readOnly || saving || !dirty) return;
+    // Only what this editor changed, so a stale tab does not write back another editor's
+    // change to the other setting (the API keeps an omitted key).
+    const patch: Partial<AlertsDraft> = {};
+    if (value.alertOfflineMinutes !== display.alertOfflineMinutes) {
+      patch.alertOfflineMinutes = value.alertOfflineMinutes;
+    }
+    if (value.alertBackOnline !== display.alertBackOnline) {
+      patch.alertBackOnline = value.alertBackOnline;
+    }
     setSaving(true);
     setSaveError(null);
     api
-      .patchDisplay(display.id, value)
+      .patchDisplay(display.id, patch)
       .then((saved) => {
         setSaving(false);
         onDraft(null);

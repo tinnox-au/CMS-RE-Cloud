@@ -162,6 +162,48 @@ describe('e-mail alerts for screens', () => {
     expect(mailFor('Alert repaired')).toHaveLength(1);
   });
 
+  it('sends the reporting-again e-mail once a re-paired screen’s new player has reported', async () => {
+    const screen = await reportingScreen('Alert swapped');
+    await later(async () => {
+      await check();
+      // A technician swaps the player: the new one reports before the next check.
+      const replacement = await pairPlayer(t, owner, screen.id);
+      await report(screen.id, replacement);
+      await check();
+    });
+    expect(mailFor('Alert swapped').map((m) => m.subject)).toEqual([
+      'Screen not reporting: Alert swapped',
+      'Screen reporting again: Alert swapped',
+    ]);
+    expect(await openEpisodes(screen.id)).toBe(0);
+    const audit = (await auditEvents(owner, '&category=display')).filter(
+      (e) => e.objectId === screen.id && e.action.endsWith('_alert'),
+    );
+    expect(audit.map((e) => e.action)).toEqual(['display.online_alert', 'display.offline_alert']);
+  });
+
+  it('sends no reporting-again e-mail when that choice is off', async () => {
+    const screen = await reportingScreen('Alert no recovery');
+    const saved = await owner.fetch(`/api/displays/${screen.id}`, {
+      method: 'PATCH',
+      json: { alertBackOnline: false },
+    });
+    expect(saved.status).toBe(200);
+    await later(async () => {
+      await check();
+      await report(screen.id, screen.player);
+      await check();
+    });
+    expect(mailFor('Alert no recovery').map((m) => m.subject)).toEqual([
+      'Screen not reporting: Alert no recovery',
+    ]);
+    expect(await openEpisodes(screen.id)).toBe(0);
+    const audit = (await auditEvents(owner, '&category=display')).filter(
+      (e) => e.objectId === screen.id && e.action.endsWith('_alert'),
+    );
+    expect(audit.map((e) => e.action)).toEqual(['display.offline_alert']);
+  });
+
   it('lets an Editor turn alerts off, which sends nothing and closes an open episode silently', async () => {
     const editor = await signIn(t, await addMember(org, 'editor'));
     const screen = await reportingScreen('Alert off', editor);
@@ -288,6 +330,125 @@ describe('e-mail alerts for screens', () => {
     expect(results.map((r) => r.failed)).toEqual([0, 0]);
     expect(mailFor('Alert race')).toHaveLength(1);
     expect(await openEpisodes(screen.id)).toBe(1);
+  });
+
+  it('mails every confirmed address, and not one removed during the run', async () => {
+    const pair = await createOrg('Alerts two addresses');
+    const pairOwner = await signIn(t, pair);
+    // Sent in address order: a-first before b-second.
+    await addConfirmed(t, pairOwner, 'a-first@example.com');
+    const second = await addConfirmed(t, pairOwner, 'b-second@example.com');
+    const display = await createDisplay(pairOwner, pair, 'Alert pair');
+    const player = await pairPlayer(t, pairOwner, display.id);
+    await report(display.id, player);
+    let removed = 0;
+    // Removes b-second while a-first's reporting-again e-mail is being sent.
+    const removing = {
+      send: async (message: (typeof t.sentMail)[number]) => {
+        if (
+          message.to === 'a-first@example.com' &&
+          message.subject.startsWith('Screen reporting')
+        ) {
+          const response = await pairOwner.fetch(`/api/alert-recipients/${second}`, {
+            method: 'DELETE',
+          });
+          removed = response.status;
+        }
+        t.sentMail.push(message);
+      },
+    };
+    await later(async () => {
+      await check();
+      await report(display.id, player);
+      expect((await checkAlerts(t, { mail: removing })).failed).toBe(0);
+    });
+    expect(removed).toBe(204);
+    expect(mailFor('Alert pair').map((m) => [m.to, m.subject])).toEqual([
+      ['a-first@example.com', 'Screen not reporting: Alert pair'],
+      ['b-second@example.com', 'Screen not reporting: Alert pair'],
+      ['a-first@example.com', 'Screen reporting again: Alert pair'],
+    ]);
+  });
+
+  it('stops claiming when the lock connection is lost, and still sends what it claimed', async () => {
+    // Two organisations, each with a due screen; `first` is checked first (ids in order).
+    const made: { org: TestOrg; name: string; displayId: string }[] = [];
+    for (const i of [1, 2]) {
+      // One at a time: addConfirmed reads the newest confirmation e-mail.
+      const o = await createOrg(`Alerts lock ${i}`);
+      const op = await signIn(t, o);
+      await addConfirmed(t, op, `lock${i}@example.com`);
+      const display = await createDisplay(op, o, `Alert lock ${i}`);
+      const player = await pairPlayer(t, op, display.id);
+      await report(display.id, player);
+      made.push({ org: o, name: `Alert lock ${i}`, displayId: display.id });
+    }
+    const [first, second] = [...made].sort((x, y) => (x.org.orgId < y.org.orgId ? -1 : 1));
+    if (first === undefined || second === undefined) throw new Error('two organisations');
+    let terminated = false;
+    // On the first e-mail of either screen, ends the run's lock connection.
+    const cutting = {
+      send: async (message: (typeof t.sentMail)[number]) => {
+        if (!terminated && made.some((m) => message.subject.endsWith(`: ${m.name}`))) {
+          terminated = true;
+          const killer = await appClient();
+          try {
+            const { rows } = await killer.query<{ pid: number }>(
+              `SELECT l.pid FROM pg_locks l,
+                 LATERAL (SELECT hashtextextended('tinnox.display_alerts', 0) AS k) h
+               WHERE l.locktype = 'advisory' AND l.granted AND l.objsubid = 1
+                 AND l.classid = ((h.k >> 32) & 4294967295)::oid
+                 AND l.objid = (h.k & 4294967295)::oid`,
+            );
+            const pid = rows[0]?.pid;
+            expect(pid).toBeDefined();
+            await killer.query('SELECT pg_terminate_backend($1)', [pid]);
+            // Gives the client time to see the connection end.
+            for (let i = 0; i < 50; i += 1) {
+              const left = await killer.query('SELECT 1 FROM pg_stat_activity WHERE pid = $1', [
+                pid,
+              ]);
+              if (left.rowCount === 0) break;
+              await new Promise((resolve) => setTimeout(resolve, 20));
+            }
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          } finally {
+            await killer.end();
+          }
+        }
+        t.sentMail.push(message);
+      },
+    };
+    const countEpisodes = async (orgId: string, displayId: string) => {
+      const client = await appClient();
+      try {
+        await client.query('BEGIN');
+        await client.query("SELECT set_config('app.org_id', $1, true)", [orgId]);
+        const { rowCount } = await client.query(
+          'SELECT 1 FROM display_alert WHERE display_id = $1',
+          [displayId],
+        );
+        await client.query('COMMIT');
+        return rowCount;
+      } finally {
+        await client.end();
+      }
+    };
+    await later(async () => {
+      const stopped = await checkAlerts(t, { mail: cutting });
+      expect(terminated).toBe(true);
+      expect(stopped.failed).toBeGreaterThanOrEqual(1);
+      expect(mailFor(first.name).map((m) => m.subject)).toEqual([
+        `Screen not reporting: ${first.name}`,
+      ]);
+      expect(mailFor(second.name)).toEqual([]);
+      expect(await countEpisodes(second.org.orgId, second.displayId)).toBe(0);
+      // The next run takes the lock again and claims the rest.
+      await check();
+    });
+    expect(mailFor(second.name).map((m) => m.subject)).toEqual([
+      `Screen not reporting: ${second.name}`,
+    ]);
   });
 });
 

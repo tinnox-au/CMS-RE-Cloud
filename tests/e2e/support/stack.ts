@@ -101,6 +101,14 @@ export async function startApi(): Promise<void> {
         // One address creates every pairing session in this run; the limit itself is
         // covered by the integration tests.
         LIMIT_PAIRING_MAX_SESSIONS_PER_IP: '500',
+        // Always the local Mailpit (15-alerts.spec.ts reads it), whatever .env or the shell
+        // says. The empty values blank out inherited credentials (loadConfig treats '' as unset).
+        SMTP_HOST: '127.0.0.1',
+        SMTP_PORT: '1025',
+        SMTP_SECURE: 'false',
+        SMTP_USER: '',
+        SMTP_PASSWORD: '',
+        MAIL_FROM: 'alerts@tinnox-dev.invalid',
       },
     },
   );
