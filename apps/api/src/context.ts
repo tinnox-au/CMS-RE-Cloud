@@ -3,6 +3,7 @@ import type { DeliveryRegistry } from '@tinnox/delivery';
 import type { ObjectStorage } from '@tinnox/storage';
 import type { IdentityProvider } from './auth/oidc.ts';
 import type { AppConfig } from './config.ts';
+import type { Mailer } from './mail.ts';
 import type { MediaPipeline } from './media/pipeline.ts';
 
 /** Everything a route needs. Built once in main.ts (or by a test) and passed to buildApp. */
@@ -13,6 +14,8 @@ export interface AppContext {
   readonly delivery: DeliveryRegistry;
   readonly idp: IdentityProvider;
   readonly media: MediaPipeline;
+  /** Outgoing e-mail, or null when SMTP is not configured (no alerts). Tests inject a stub. */
+  readonly mail: Mailer | null;
   /** Server clock. Injected so staleness and expiry can be tested with real time arithmetic. */
   readonly now: () => Date;
   /**

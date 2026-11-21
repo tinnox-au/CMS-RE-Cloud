@@ -19,6 +19,7 @@ const OUTSIDE_OPERATOR_API = new Set(['auth.ts', 'ops.ts', 'player.ts']);
  * through withOrgAllowed.
  */
 const READS: Readonly<Record<string, number>> = {
+  'alert-recipients.ts': 1,
   'apps.ts': 2,
   'audit.ts': 1,
   'displays.ts': 5,

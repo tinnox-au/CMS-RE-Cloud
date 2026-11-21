@@ -1,4 +1,5 @@
 import {
+  localWallClock,
   ManifestSchema,
   type ManifestAssetV1,
   type ManifestScheduleEvent,
@@ -15,7 +16,7 @@ import {
   makeManifestV3,
   makeManifestV4,
 } from './fakes.test-support.ts';
-import { coveringSlices, localWallClock, playableIndexes } from './time-rules.ts';
+import { coveringSlices, playableIndexes } from './time-rules.ts';
 
 const at = (iso: string): number => Date.parse(iso);
 

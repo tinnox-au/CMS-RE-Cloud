@@ -363,13 +363,19 @@ test('on a 1376x774 canvas the Text app fits without overflow', async () => {
     return {
       box: { left: box.left, top: box.top, right: box.right, bottom: box.bottom },
       lines: lines.map((el) => {
-        const rect = el.getBoundingClientRect();
+        // The glyph boxes (each font's ascent plus descent), not the line boxes: they are what
+        // the root's overflow:hidden would cut. A leaf's scrollHeight is no clip test: Chrome
+        // counts a glyph box taller than line-height 1.15 as overflow of the leaf (fonts on
+        // Linux, such as Noto Sans at 1.36em, give 20px at 122px), but nothing clips the leaf.
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const rect = range.getBoundingClientRect();
         return {
           left: rect.left,
           top: rect.top,
           right: rect.right,
           bottom: rect.bottom,
-          clipped: el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1,
+          clipped: el.scrollWidth > el.clientWidth + 1,
         };
       }),
     };

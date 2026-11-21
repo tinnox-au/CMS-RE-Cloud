@@ -5,15 +5,18 @@
 import { assertConnectionRole, createPool } from '@tinnox/db';
 import { createDeliveryRegistry } from '@tinnox/delivery';
 import { LocalObjectStorage } from '@tinnox/storage';
+import { runDisplayAlerts } from './alerts.ts';
 import { buildApp } from './app.ts';
 import { createIdentityProvider } from './auth/oidc.ts';
 import { ConfigError, loadConfig, type AppConfig } from './config.ts';
 import type { AppContext } from './context.ts';
 import { runHousekeeping } from './housekeeping.ts';
 import { createLogger } from './logger.ts';
+import { createMailer, type Mailer } from './mail.ts';
 import { MediaPipeline } from './media/pipeline.ts';
 
 const HOUSEKEEPING_INTERVAL_MS = 60 * 60 * 1000;
+const ALERT_INTERVAL_MS = 60 * 1000;
 
 async function main(): Promise<void> {
   let config: AppConfig;
@@ -61,6 +64,7 @@ async function main(): Promise<void> {
     delivery,
     idp: createIdentityProvider(config),
     media,
+    mail: createMailer(config.mail),
     now: () => new Date(),
   };
 
@@ -77,18 +81,57 @@ async function main(): Promise<void> {
   const housekeepingTimer = setInterval(() => void housekeeping(), HOUSEKEEPING_INTERVAL_MS);
   housekeepingTimer.unref();
 
+  // The e-mail alert check: a self-rescheduling loop, so runs never overlap in this process;
+  // other instances and alerts-once skip on the database lock (alerts.ts).
   let closing = false;
+  let alertTimer: NodeJS.Timeout | undefined;
+  let alertRun: Promise<void> = Promise.resolve();
+  let skippedInRow = 0;
+  const alertLoop = (mail: Mailer): void => {
+    alertRun = runDisplayAlerts({
+      pool,
+      now: ctx.now(),
+      mail,
+      portalOrigin: config.portalOrigin,
+      logger,
+      shouldStop: () => closing,
+    }).then(
+      (result) => {
+        // Another runner holding the lock now and then is normal; every fifth skip in a row is
+        // logged, so a lock that stays held (a hung run, or a pooler that lost the unlock) does
+        // not stop alerts silently.
+        skippedInRow = result.skipped ? skippedInRow + 1 : 0;
+        if (skippedInRow > 0 && skippedInRow % 5 === 0) {
+          logger.warn(
+            { skippedInRow },
+            'display alert check keeps skipping: another runner holds the lock',
+          );
+        } else if (result.offline + result.online + result.closed + result.failed > 0) {
+          logger.info(result, 'display alert check finished');
+        }
+      },
+      (error: unknown) => logger.error({ err: error }, 'display alert check failed'),
+    );
+    void alertRun.then(() => {
+      if (closing) return;
+      alertTimer = setTimeout(() => alertLoop(mail), ALERT_INTERVAL_MS);
+      alertTimer.unref();
+    });
+  };
+
   const shutdown = async (signal: string): Promise<void> => {
     if (closing) return;
     closing = true;
     logger.info({ signal }, 'shutting down');
     clearInterval(housekeepingTimer);
+    clearTimeout(alertTimer);
     // Do not wait for ever on open connections.
     const force = setTimeout(() => process.exit(1), 10_000);
     force.unref();
     try {
-      await app.close();
-      await media.stop();
+      // The alert run stops claiming at its next organisation (shouldStop); the e-mails it has
+      // already claimed get the shutdown budget alongside closing the server.
+      await Promise.all([alertRun, app.close(), media.stop()]);
       await pool.end();
       process.exit(0);
     } catch (error) {
@@ -111,6 +154,8 @@ async function main(): Promise<void> {
   await media.start();
   await app.listen({ host: config.host, port: config.port });
   void housekeeping();
+  if (ctx.mail === null) logger.warn('SMTP_HOST is not set: e-mail alerts are off');
+  else alertLoop(ctx.mail);
   if (config.nodeEnv !== 'production') {
     logger.warn('development configuration: plain http on loopback, development identity realm');
   }

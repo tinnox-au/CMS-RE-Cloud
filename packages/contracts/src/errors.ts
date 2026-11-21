@@ -31,6 +31,10 @@ export const API_ERROR_CODES = [
   'url_signature_invalid',
   'range_not_satisfiable',
   'service_unavailable',
+  // 503s of POST /api/alert-recipients: nothing was stored, or the address was stored but its
+  // confirmation e-mail was not sent. Each has a definite outcome the portal states.
+  'mail_not_configured',
+  'confirmation_not_sent',
   'internal_error',
 ] as const;
 export const ApiErrorCodeSchema = z.enum(API_ERROR_CODES);

@@ -1,5 +1,5 @@
 # Local development services for TINNOX CMS prototype M0.
-# Start with:  npm run infra:up   (docker compose --env-file .env -f infra/docker-compose.yml up -d --wait postgres keycloak)
+# Start with:  npm run infra:up   (docker compose --env-file .env -f infra/docker-compose.yml up -d --wait postgres keycloak mailpit)
 # Everything binds to 127.0.0.1 only. Values come from the gitignored .env written by scripts/setup-dev.mjs.
 name: tinnox-cms
 
@@ -62,6 +62,27 @@ services:
       timeout: 5s
       retries: 60
       start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+  # Development mail catcher for the e-mail alerts (CMS-15): the API sends to SMTP 1025, and the
+  # web page and API at http://127.0.0.1:8025 show what was sent. Nothing leaves the machine.
+  mailpit:
+    # Tag and digest of the multi-arch index pulled on 2026-11-21 (Mailpit 1.33.0).
+    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
+    restart: unless-stopped
+    environment:
+      # No call home for the latest version.
+      MP_DISABLE_VERSION_CHECK: 'true'
+    ports:
+      - '127.0.0.1:1025:1025'
+      - '127.0.0.1:8025:8025'
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
     security_opt:
       - no-new-privileges:true
 

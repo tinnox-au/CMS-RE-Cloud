@@ -162,7 +162,7 @@ export function tagDeleteConsequence(scope: TagScope, usageCount: number): strin
 
 /* ---------- Planned settings ---------- */
 
-export type PlannedSettingId = 'working-hours' | 'alerts' | 'api-tokens';
+export type PlannedSettingId = 'working-hours' | 'api-tokens';
 
 export interface PlannedSetting {
   readonly id: PlannedSettingId;
@@ -178,12 +178,6 @@ export const PLANNED_SETTINGS: readonly PlannedSetting[] = [
     title: 'Working hours',
     description: 'Default hours for new screens. Set hours per screen on its Working hours tab.',
     stage: 'B',
-  },
-  {
-    id: 'alerts',
-    title: 'Alerts',
-    description: 'Send an e-mail when a screen stops reporting.',
-    stage: 'C',
   },
   {
     id: 'api-tokens',

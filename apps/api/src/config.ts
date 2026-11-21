@@ -6,8 +6,10 @@
  *   - plain http origins are accepted only for loopback hosts;
  *   - portal and player must be different origins (D7);
  *   - the redirect URI must be the callback route on the portal or API origin.
+ *   - e-mail is off without SMTP_HOST; with it, MAIL_FROM is required, and SMTP_USER and
+ *     SMTP_PASSWORD come together.
  * Extra rules when NODE_ENV=production:
- *   - no secret may be a development value (prefix "dev-") or a placeholder;
+ *   - no secret may be a development value (prefix "dev-") or a placeholder (SMTP_PASSWORD too);
  *   - issuer, origins and redirect URIs must be https;
  *   - the development realm is refused;
  *   - an MFA evidence requirement (acr or amr) must be configured.
@@ -103,6 +105,25 @@ const EnvSchema = z.object({
    * the immediate peer), so it would silently do nothing.
    */
   TRUST_PROXY: z.string().max(1000).default('false'),
+  /** E-mail alerts (CMS-15) are off when unset. Any SMTP provider; SES offers SMTP too. */
+  SMTP_HOST: z.string().max(253).optional(),
+  /** 587 (STARTTLS) by default. */
+  SMTP_PORT: intFromEnv(1, 65535).default(587),
+  /** "true" for implicit TLS (usually port 465). Otherwise STARTTLS is required, except to 127.0.0.1 or ::1. */
+  SMTP_SECURE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  SMTP_USER: z.string().max(200).optional(),
+  SMTP_PASSWORD: z.string().max(200).optional(),
+  MAIL_FROM: z
+    .string()
+    .max(254)
+    .regex(
+      /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/,
+      'must be an e-mail address such as alerts@example.com',
+    )
+    .optional(),
 });
 
 export interface AppConfig {
@@ -140,12 +161,26 @@ export interface AppConfig {
   readonly sessionCookieName: string;
   readonly loginCookieName: string;
   readonly limits: Limits;
+  /** Null when SMTP_HOST is unset: no e-mail, so no alerts. */
+  readonly mail: {
+    readonly host: string;
+    readonly port: number;
+    readonly secure: boolean;
+    readonly user: string | null;
+    readonly password: string | null;
+    readonly from: string;
+  } | null;
 }
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 function isLoopback(url: URL): boolean {
-  return LOOPBACK_HOSTS.has(url.hostname) || url.hostname.endsWith('.localhost');
+  return isLoopbackHost(url.hostname);
+}
+
+/** A host name or address on this machine (URL host form for IPv6, or a bare ::1). */
+export function isLoopbackHost(host: string): boolean {
+  return LOOPBACK_HOSTS.has(host) || host === '::1' || host.endsWith('.localhost');
 }
 
 function looksLikeDevSecret(value: string): boolean {
@@ -287,6 +322,13 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     problems.push('DATABASE_URL is not a valid URL');
   }
 
+  if (e.SMTP_HOST !== undefined && e.MAIL_FROM === undefined) {
+    problems.push('MAIL_FROM is required when SMTP_HOST is set');
+  }
+  if ((e.SMTP_USER === undefined) !== (e.SMTP_PASSWORD === undefined)) {
+    problems.push('SMTP_USER and SMTP_PASSWORD must be set together');
+  }
+
   if (production) {
     const secrets: [string, string][] = [
       ['SESSION_SECRET', e.SESSION_SECRET],
@@ -295,6 +337,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
       ['OIDC_CLIENT_SECRET', e.OIDC_CLIENT_SECRET],
       ['DATABASE_URL password', databasePassword],
     ];
+    if (e.SMTP_PASSWORD !== undefined) secrets.push(['SMTP_PASSWORD', e.SMTP_PASSWORD]);
     for (const [name, value] of secrets) {
       if (value === '' || looksLikeDevSecret(value)) {
         problems.push(`${name} is a development or placeholder value`);
@@ -360,5 +403,16 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): A
     sessionCookieName: secureCookies ? SESSION_COOKIE.secure : SESSION_COOKIE.development,
     loginCookieName: secureCookies ? '__Host-tinnox_login' : 'tinnox_login',
     limits,
+    mail:
+      e.SMTP_HOST === undefined || e.MAIL_FROM === undefined
+        ? null
+        : Object.freeze({
+            host: e.SMTP_HOST,
+            port: e.SMTP_PORT,
+            secure: e.SMTP_SECURE,
+            user: e.SMTP_USER ?? null,
+            password: e.SMTP_PASSWORD ?? null,
+            from: e.MAIL_FROM,
+          }),
   });
 }

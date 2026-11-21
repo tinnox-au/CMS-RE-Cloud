@@ -21,5 +21,6 @@ export * from './push.ts';
 export * from './overview.ts';
 export * from './session.ts';
 export * from './members.ts';
+export * from './alerts.ts';
 export * from './audit.ts';
 export * from './routes.ts';

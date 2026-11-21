@@ -5,6 +5,7 @@ import { api } from '../../../api/index.ts';
 import { useLoad } from '../../../hooks/useLoad.ts';
 import { displayFormFromDto, type DisplayFormValues } from '../../../lib/displayForm.ts';
 import {
+  alertsDirty,
   endPairingWords,
   revokeOutcomeText,
   sameTagIds,
@@ -13,6 +14,7 @@ import {
   screenDetailsDirty,
   screenDetailTabOf,
   workingHoursDirty,
+  type AlertsDraft,
   type ScreenDetailOpenTabId,
   type ScreenDetailsValues,
   type WorkingHoursDraft,
@@ -62,8 +64,14 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
     // Putting tags on a screen is part of its details; creating one needs screen.setup.
     tags: !useCanAtMount('screen.details'),
     workingHours: !useCanAtMount('screen.hours'),
+    alerts: !useCanAtMount('screen.alerts'),
   };
-  const allReadOnly = readOnly.details && readOnly.canvas && readOnly.tags && readOnly.workingHours;
+  const allReadOnly =
+    readOnly.details &&
+    readOnly.canvas &&
+    readOnly.tags &&
+    readOnly.workingHours &&
+    readOnly.alerts;
 
   const selectTab = (next: ScreenDetailOpenTabId) => {
     setParams(new URLSearchParams(screenDetailSearch(window.location.search.slice(1), next)), {
@@ -91,11 +99,14 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
   const [rotationDraft, setRotationDraft] = useState<Rotation | null>(null);
   const [tagsDraft, setTagsDraft] = useState<readonly string[] | null>(null);
   const [workingHoursDraft, setWorkingHoursDraft] = useState<WorkingHoursDraft | null>(null);
+  const [alertsDraft, setAlertsDraft] = useState<AlertsDraft | null>(null);
   // Save state too: a save outlives its tab, so its answer cannot clear newer input (FCX-03).
   const canvasSave = useSectionSave();
   const tagsSave = useSectionSave();
   const workingHoursSave = useSectionSave();
-  const saving = canvasSave.saving || tagsSave.saving || workingHoursSave.saving;
+  const alertsSave = useSectionSave();
+  const saving =
+    canvasSave.saving || tagsSave.saving || workingHoursSave.saving || alertsSave.saving;
 
   const dirty =
     (detailsDraft !== null && screenDetailsDirty(detailsDraft, display)) ||
@@ -106,7 +117,8 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
         rotationDraft ?? display.rotation,
       )) ||
     (tagsDraft !== null && !sameTagIds(tagsDraft, display.tagIds)) ||
-    (workingHoursDraft !== null && workingHoursDirty(workingHoursDraft, display.workingHours));
+    (workingHoursDraft !== null && workingHoursDirty(workingHoursDraft, display.workingHours)) ||
+    (alertsDraft !== null && alertsDirty(alertsDraft, display));
 
   const leaveGuard = useLeaveGuard(dirty && !allReadOnly, display.name, saving);
 
@@ -224,8 +236,15 @@ export function ScreenDetail({ data, refreshError, back, onReload, onChanged }: 
               onTagsDraft={setTagsDraft}
               workingHoursDraft={workingHoursDraft}
               onWorkingHoursDraft={setWorkingHoursDraft}
+              alertsDraft={alertsDraft}
+              onAlertsDraft={setAlertsDraft}
               onSaved={changed}
-              saves={{ canvas: canvasSave, tags: tagsSave, workingHours: workingHoursSave }}
+              saves={{
+                canvas: canvasSave,
+                tags: tagsSave,
+                workingHours: workingHoursSave,
+                alerts: alertsSave,
+              }}
               onPaired={afterPlayerChange}
               onRevoke={() => {
                 askRevoke('pairing');

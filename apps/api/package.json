@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch --env-file=../../.env src/main.ts",
     "start": "tsx --env-file-if-exists=../../.env src/main.ts",
+    "alerts:once": "tsx --env-file-if-exists=../../.env src/alerts-once.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test:integration": "vitest run --config vitest.config.ts",
     "live-check": "node scripts/live-check.mjs"
@@ -24,6 +25,7 @@
     "fastify": "5.12.8",
     "fastify-plugin": "6.0.1",
     "file-type": "22.3.0",
+    "nodemailer": "10.3.1",
     "openid-client": "6.9.0",
     "pg": "8.23.1",
     "pino": "10.4.0",

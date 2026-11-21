@@ -65,6 +65,8 @@ interface DisplayRow {
   route: 'browser';
   rotation: Rotation;
   working_hours: WorkingHours | null;
+  alert_offline_minutes: number | null;
+  alert_back_online: boolean;
   created_at: Date;
   updated_at: Date;
   registration_id: string | null;
@@ -88,7 +90,8 @@ interface DisplayRow {
 const DISPLAY_SELECT = `
   SELECT d.id, d.site_id, d.name, d.description, d.canvas_width, d.canvas_height,
          d.content_x, d.content_y, d.content_width, d.content_height,
-         d.default_fit, d.route, d.rotation, d.working_hours, d.created_at, d.updated_at,
+         d.default_fit, d.route, d.rotation, d.working_hours, d.alert_offline_minutes,
+         d.alert_back_online, d.created_at, d.updated_at,
          pr.id AS registration_id, pr.created_at AS registered_at,
          ARRAY(SELECT dt.tag_id FROM display_tag dt
                WHERE dt.display_id = d.id AND dt.org_id = d.org_id
@@ -143,6 +146,8 @@ function toDisplayDto(row: DisplayRow): DisplayDto {
     defaultFit: row.default_fit,
     rotation: row.rotation,
     workingHours: row.working_hours,
+    alertOfflineMinutes: row.alert_offline_minutes,
+    alertBackOnline: row.alert_back_online,
     route: row.route,
     player:
       row.registration_id === null || row.registered_at === null
@@ -446,11 +451,14 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
           assigned_layout_id: string | null;
           rotation: Rotation;
           working_hours: WorkingHours | null;
+          alert_offline_minutes: number | null;
+          alert_back_online: boolean;
         }>(
           `SELECT d.name, d.description, d.canvas_width, d.canvas_height,
                   d.content_x, d.content_y, d.content_width, d.content_height,
                   d.default_fit, d.assigned_playlist_id, d.assigned_schedule_id,
-                  d.assigned_layout_id, d.rotation, d.working_hours
+                  d.assigned_layout_id, d.rotation, d.working_hours,
+                  d.alert_offline_minutes, d.alert_back_online
            FROM display d WHERE d.id = $1 AND d.org_id = app_org_id() FOR UPDATE`,
           [id],
         );
@@ -511,7 +519,7 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
                  content_x = $5, content_y = $6, content_width = $7, content_height = $8,
                  default_fit = $9, description = $10, assigned_playlist_id = $11,
                  rotation = $12, working_hours = $13::jsonb, assigned_schedule_id = $14,
-                 assigned_layout_id = $15
+                 assigned_layout_id = $15, alert_offline_minutes = $16, alert_back_online = $17
              WHERE id = $1 AND org_id = app_org_id()`,
             [
               id,
@@ -529,6 +537,10 @@ export function registerDisplayRoutes(app: FastifyInstance, ctx: AppContext): vo
               hours === null ? null : JSON.stringify(hours),
               after.assignedScheduleId,
               after.assignedLayoutId,
+              patch.alertOfflineMinutes === undefined
+                ? current.alert_offline_minutes
+                : patch.alertOfflineMinutes,
+              patch.alertBackOnline ?? current.alert_back_online,
             ],
           );
         }

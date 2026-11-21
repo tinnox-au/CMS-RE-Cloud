@@ -13,6 +13,10 @@ import { createRouteCheck, permissionGuard } from './auth/permissions.ts';
 import { requireOperator } from './auth/session.ts';
 import { perMinute, type AppContext } from './context.ts';
 import { HttpError, registerErrorHandling, sendFrameworkError } from './errors.ts';
+import {
+  registerAlertConfirmRoute,
+  registerAlertRecipientRoutes,
+} from './routes/alert-recipients.ts';
 import { registerAppRoutes } from './routes/apps.ts';
 import { registerAuditRoutes } from './routes/audit.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
@@ -100,6 +104,8 @@ export async function buildApp(
 
   registerOpsRoutes(app, ctx);
   registerAuthRoutes(app, ctx);
+  // Public: opened from an e-mail by someone with no session.
+  registerAlertConfirmRoute(app, ctx);
 
   // Operator API: every route below requires a session; state-changing ones also
   // require the portal Origin and the CSRF token (auth/session.ts). Then the session's role
@@ -127,6 +133,7 @@ export async function buildApp(
     registerOverviewRoutes(api, ctx);
     registerAuditRoutes(api, ctx);
     registerMemberRoutes(api, ctx);
+    registerAlertRecipientRoutes(api, ctx);
   });
   routeCheck.assertComplete();
 

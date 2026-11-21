@@ -1020,6 +1020,8 @@ Routes are declared in `App.tsx` with the `page(path, load, render)` helper: eac
 | `/displays`, `/displays/*` | `App.tsx` | redirect to the same path under `/screens`, keeping the query and fragment |
 | `/settings` | `features/settings/SettingsPage.tsx` | `SettingsPage` |
 | `/settings/tags` | `features/settings/TagsPage.tsx` | `TagsPage` |
+| `/settings/alerts` | `features/settings/AlertsPage.tsx` | `AlertsPage` (inside `RequirePermission permission="alerts.manage"`) |
+| `/alerts/confirm` | `features/alerts/AlertConfirmPage.tsx` | `AlertConfirmPage`: outside the router and the session check; `App()` picks it by path, inside `StandaloneErrorBoundary` with `LoadingScreen` as the fallback (`shell/Screens.tsx`) |
 | `/audit` | `features/audit/AuditPage.tsx` | `AuditPage` |
 | `/apps` | `features/apps/AppsPage.tsx` | `AppsPage` (list, type filter, create dialog) |
 | `/apps/:id` | `features/apps/AppEditorPage.tsx` | `AppEditorPage` (`AppEditor`: preview, settings, delete) |

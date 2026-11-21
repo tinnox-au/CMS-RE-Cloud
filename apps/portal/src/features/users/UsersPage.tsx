@@ -508,6 +508,7 @@ export function UsersPage() {
       />
       <CancelInviteDialog
         invite={cancelTarget}
+        order={invites.map((invite) => invite.id)}
         onClose={() => {
           setCancelTarget(null);
         }}
@@ -708,17 +709,29 @@ function RemoveDialog({
 /** "Cancel invite": TINNOX will not set the person up; their details are deleted now. */
 function CancelInviteDialog({
   invite,
+  order,
   onClose,
   onChanged,
   onDone,
 }: {
   readonly invite: InviteDto | null;
+  /** The ids of the invites on view, in the order shown, for the focus after a cancellation. */
+  readonly order: readonly string[];
   readonly onClose: () => void;
   readonly onChanged: () => void;
   readonly onDone: (name: string) => void;
 }) {
   const state = useConfirmState(invite);
   const name = state.shown?.name ?? '';
+  // Once the cancelled row is gone: the next invite's Cancel button, else the previous one's,
+  // else "Invite person" (ui/README.md, Dialog accessibility).
+  const returnFocus = useRowFocusReturn(invite !== null, invite === null ? [] : [invite.id], {
+    mode: 'row',
+    order,
+    row: rowByTestId('users-invite-row-'),
+    primary: elementByTestId('users-invite'),
+    button: '[data-testid="users-invite-row-cancel"]',
+  });
 
   const confirm = () => {
     if (state.busy || state.shown === null) return;
@@ -761,7 +774,7 @@ function CancelInviteDialog({
       onConfirm={confirm}
       onCancel={onClose}
       testId="users-invite-cancel-dialog"
-      returnFocus={inviteFocusAfterCancel}
+      returnFocus={returnFocus}
     >
       <p>
         TINNOX will not set up {name}. Their name and work e-mail address are deleted from the
@@ -783,16 +796,5 @@ function CancelInviteDialog({
         />
       )}
     </ConfirmDialog>
-  );
-}
-
-/**
- * Where focus goes once a cancelled invite's row is gone: the Cancel button of an invite still
- * waiting, else "Invite person", rather than the top of the page.
- */
-function inviteFocusAfterCancel(): HTMLElement | null {
-  return (
-    document.querySelector<HTMLElement>('[data-testid="users-invite-row-cancel"]') ??
-    elementByTestId('users-invite')()
   );
 }

@@ -9,7 +9,7 @@ export type Role = z.infer<typeof RoleSchema>;
 
 /**
  * Active permission keys. Reserved, not listed until a route needs one: org.rename, org.delete,
- * site.manage, support.grant (H1), and the keys of CMS-14, CMS-15, CMS-16 and Epic J.
+ * site.manage, support.grant (H1), and the keys of CMS-14, CMS-16 and Epic J.
  * Who holds which key: ROLE_PERMISSIONS in packages/domain/src/permissions.ts.
  */
 export const PERMISSION_KEYS = [
@@ -25,8 +25,10 @@ export const PERMISSION_KEYS = [
   'screen.hours',
   'screen.setup',
   'screen.pair',
+  'screen.alerts',
   'member.read',
   'member.manage',
+  'alerts.manage',
 ] as const;
 export const PermissionKeySchema = z.enum(PERMISSION_KEYS);
 export type PermissionKey = z.infer<typeof PermissionKeySchema>;

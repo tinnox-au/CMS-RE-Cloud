@@ -1,4 +1,5 @@
 import {
+  localWallClock,
   manifestPlaylists,
   manifestV2Facts,
   type PairingPollResponse,
@@ -19,7 +20,7 @@ import {
 import { heartbeatStateFor, PlayerMachine, type PlayerPhase } from './core/machine.ts';
 import { PlaybackLoop, type PlaybackEvent } from './core/playback.ts';
 import { SyncLoop } from './core/sync.ts';
-import { coveringSlices, localWallClock } from './core/time-rules.ts';
+import { coveringSlices } from './core/time-rules.ts';
 import { sleep, systemClock } from './core/timing.ts';
 import type { PairingRecord, RegistrationRecord, StagingRecord } from './core/types.ts';
 import { ZoneSet } from './core/zones.ts';

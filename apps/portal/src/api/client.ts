@@ -229,7 +229,8 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
   ): Promise<{ status: number; text: string }> {
     const method = options.method ?? 'GET';
     const headers: Record<string, string> = { accept: 'application/json', ...options.headers };
-    if (STATE_CHANGING.has(method)) {
+    // The one public write: the alert confirmation page has no session, so no CSRF token.
+    if (STATE_CHANGING.has(method) && options.path !== ROUTES.alertRecipientConfirm) {
       if (sentWith === null) {
         throw new ApiRequestError({
           status: 0,

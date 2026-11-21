@@ -114,7 +114,8 @@ describe('tabs', () => {
     expect(screenDetailTabOf('pairing')).toBe('pairing');
     expect(screenDetailTabOf('tags')).toBe('tags');
     expect(screenDetailTabOf(null)).toBe('overview');
-    expect(screenDetailTabOf('alerts')).toBe('overview');
+    expect(screenDetailTabOf('alerts')).toBe('alerts');
+    expect(screenDetailTabOf('advanced')).toBe('overview');
     expect(screenDetailTabOf('nonsense')).toBe('overview');
   });
 
@@ -126,7 +127,7 @@ describe('tabs', () => {
 
   it('lists the planned tabs with their stage', () => {
     const planned = SCREEN_DETAIL_TABS.filter((tab) => tab.plannedStage !== null);
-    expect(planned.map((tab) => tab.label)).toEqual(['Alerts', 'Advanced']);
+    expect(planned.map((tab) => tab.label)).toEqual(['Advanced']);
     expect(screenDetailTabOf('working-hours')).toBe('working-hours');
     expect(plannedTabReason('B')).toBe('Planned for stage B');
   });

@@ -654,7 +654,8 @@
 }
 
 .tx-screen-detail-tags,
-.tx-screen-detail-hours {
+.tx-screen-detail-hours,
+.tx-screen-detail-alerts {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--s-5);

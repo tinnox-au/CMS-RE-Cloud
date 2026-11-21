@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   addMember,
   appClient,
+  checkAlerts,
   createDisplay,
   createLayout,
   createOrg,
@@ -46,6 +47,7 @@ describe('organisation isolation through the API', () => {
     scheduleId: string;
     layoutId: string;
     inviteId: string;
+    recipientId: string;
     player: PairedPlayer;
   }
   let a: World;
@@ -61,7 +63,7 @@ describe('organisation isolation through the API', () => {
    * media in a folder, a playlist published and so assigned to the display, and a tag
    * of each scope put on the media item and on the display, an app, a schedule
    * with one event on the playlist and a layout with the playlist in both zones (both
-   * assigned to no display), and a pending invite.
+   * assigned to no display), a pending invite and an alert address waiting for confirmation.
    */
   async function world(operator: Operator, org: TestOrg): Promise<World> {
     const display = await createDisplay(operator, org, 'Isolation display');
@@ -115,6 +117,12 @@ describe('organisation isolation through the API', () => {
         json: { name: 'Isolation invitee', email: 'isolation@example.com', role: 'viewer' },
       }),
     );
+    const recipientId = await created(
+      await operator.fetch('/api/alert-recipients', {
+        method: 'POST',
+        json: { email: `isolation-${org.orgId}@example.com` },
+      }),
+    );
     return {
       displayId: display.id,
       mediaId: media.id,
@@ -127,6 +135,7 @@ describe('organisation isolation through the API', () => {
       scheduleId: schedule.id,
       layoutId: layout.id,
       inviteId,
+      recipientId,
       player,
     };
   }
@@ -223,6 +232,7 @@ describe('organisation isolation through the API', () => {
       '/api/members',
       '/api/members/names',
       '/api/invites',
+      '/api/alert-recipients',
     ]) {
       const response = await bob.fetch(path);
       expect(response.status, path).toBe(200);
@@ -242,6 +252,8 @@ describe('organisation isolation through the API', () => {
         a.scheduleId,
         a.layoutId,
         a.inviteId,
+        a.recipientId,
+        `isolation-${orgA.orgId}@example.com`,
         a.player.registrationId,
       ]) {
         expect(text, `${path} leaks ${id}`).not.toContain(id);
@@ -263,6 +275,7 @@ describe('organisation isolation through the API', () => {
         '/api/members',
         '/api/members/names',
         '/api/invites',
+        '/api/alert-recipients',
       ]) {
         expect((await json<{ items: unknown[] }>(path)).items, path).toHaveLength(1);
       }
@@ -313,15 +326,17 @@ describe('organisation isolation through the API', () => {
     const changes = (
       memberId: string,
       inviteId: string,
+      recipientId: string,
     ): [string, RequestInit & { json?: unknown }][] => [
       [`/api/members/${memberId}`, { method: 'PATCH', json: { displayName: 'Taken' } }],
       [`/api/members/${memberId}`, { method: 'PATCH', json: { role: 'viewer' } }],
       [`/api/members/${memberId}/remove`, { method: 'POST' }],
       [`/api/members/${memberId}/sign-out`, { method: 'POST' }],
       [`/api/invites/${inviteId}/cancel`, { method: 'POST' }],
+      [`/api/alert-recipients/${recipientId}`, { method: 'DELETE' }],
     ];
-    const foreign = changes(orgA.membershipId, a.inviteId);
-    const missing = changes(unknown, unknown);
+    const foreign = changes(orgA.membershipId, a.inviteId, a.recipientId);
+    const missing = changes(unknown, unknown, unknown);
     for (let i = 0; i < foreign.length; i += 1) {
       const [path, init] = foreign[i] ?? ['', {}];
       const [unknownPath, unknownInit] = missing[i] ?? ['', {}];
@@ -349,6 +364,10 @@ describe('organisation isolation through the API', () => {
       items: { id: string }[];
     };
     expect(invites.items.map((item) => item.id)).toEqual([a.inviteId]);
+    const recipients = (await (await alice.fetch('/api/alert-recipients')).json()) as {
+      items: { id: string }[];
+    };
+    expect(recipients.items.map((item) => item.id)).toEqual([a.recipientId]);
   });
 
   it('refuses every mutation of another organisation’s object and leaves it unchanged', async () => {
@@ -731,11 +750,20 @@ describe('organisation isolation through the API', () => {
       'heartbeat_log',
       'audit_event',
       'member_invite',
+      'alert_recipient',
+      'display_alert',
     ];
-    // Both organisations have a row in every tenant table, heartbeat log included.
+    // Both organisations have a row in every tenant table, heartbeat log included, and an open
+    // alert episode once both screens have been silent past the 30-minute default.
     expect((await sendHeartbeat(t, b.player, heartbeatBody(b.displayId, Date.now()))).status).toBe(
       200,
     );
+    t.advanceClock(31 * 60 * 1000);
+    try {
+      expect((await checkAlerts(t)).failed).toBe(0);
+    } finally {
+      t.advanceClock(-31 * 60 * 1000);
+    }
     const client = await appClient();
     try {
       const role = await client.query<{ current_user: string; bypass: boolean; super: boolean }>(

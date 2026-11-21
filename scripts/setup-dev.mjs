@@ -6,9 +6,11 @@
 //   infra/.generated/tinnox-dev-realm.json Keycloak realm import (built from infra/keycloak/realm-template.json)
 //   infra/.generated/dev-credentials.json  test users' passwords and TOTP secrets, for you and for automated tests
 //
-// All three are gitignored. Existing values are kept: running this again changes nothing
-// unless you pass --force, which regenerates every secret (then recreate the containers
-// with `npm run reset -- --yes`, because PostgreSQL and Keycloak keep the old ones).
+// All three are gitignored. Existing secrets and variables added by hand are kept; the fixed
+// settings (ports, URLs, media paths, the Mailpit SMTP_HOST, SMTP_PORT and MAIL_FROM) are written
+// again on every run, so a hand edit of one of those is lost. --force regenerates every secret
+// (then recreate the containers with `npm run reset -- --yes`, because PostgreSQL and Keycloak
+// keep the old ones).
 //
 // Options: --force   regenerate all secrets
 //          --quiet   do not print the generated sign-in details
@@ -247,6 +249,10 @@ const sections = [
   [
     'Media storage and the validation worker exchange directory (relative to the repository root)',
     { MEDIA_ROOT: './data/media', MEDIA_JOBS_DIR: './data/jobs' },
+  ],
+  [
+    'E-mail alerts: local Mailpit (infra/docker-compose.yml); sent mail shows at http://127.0.0.1:8025',
+    { SMTP_HOST: '127.0.0.1', SMTP_PORT: '1025', MAIL_FROM: 'alerts@tinnox-dev.invalid' },
   ],
 ];
 

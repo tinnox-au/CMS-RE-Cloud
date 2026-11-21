@@ -1,59 +1,13 @@
 import {
   eventCovers,
+  localWallClock,
   manifestPlaylists,
+  withinWorkingHours,
   type Manifest,
   type ManifestV1,
   type ManifestV4,
+  type WallClock,
 } from '@tinnox/contracts';
-
-/** A moment as read on a wall clock in some zone. `day` 0 is Monday. */
-export interface WallClock {
-  /** 'YYYY-MM-DDTHH:mm', comparable as a string with manifest windows. */
-  readonly stamp: string;
-  readonly day: number;
-  /** 'HH:mm', comparable as a string with working hours. */
-  readonly time: string;
-}
-
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const formatters = new Map<string, Intl.DateTimeFormat | null>();
-
-function formatterFor(timeZone: string): Intl.DateTimeFormat | null {
-  let formatter = formatters.get(timeZone);
-  if (formatter === undefined) {
-    try {
-      formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone,
-        hourCycle: 'h23',
-        weekday: 'short',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      // This browser's ICU does not know the zone.
-      formatter = null;
-    }
-    formatters.set(timeZone, formatter);
-  }
-  return formatter;
-}
-
-/** Wall clock in `timeZone` at `epochMs`, or null when the browser refuses the zone. */
-export function localWallClock(epochMs: number, timeZone: string): WallClock | null {
-  const formatter = formatterFor(timeZone);
-  if (formatter === null) return null;
-  const part: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {};
-  for (const { type, value } of formatter.formatToParts(epochMs)) part[type] = value;
-  const time = `${part.hour ?? ''}:${part.minute ?? ''}`;
-  return {
-    stamp: `${part.year ?? ''}-${part.month ?? ''}-${part.day ?? ''}T${time}`,
-    day: WEEKDAYS.indexOf(part.weekday ?? ''),
-    time,
-  };
-}
 
 /** No playlist is skipped (the default of `playableIndexes`). */
 const NO_SLICES: ReadonlySet<number> = new Set<number>();
@@ -124,15 +78,7 @@ export function playableIndexes(
   const local = trustedWallClock(manifest, epochMs);
   // Versions 2 and 3 have one slice, the whole list; version 4 falls back to its default playlist.
   if (local === null) return indexesOf(0);
-  if (manifest.workingHours !== null) {
-    const today = manifest.workingHours[local.day];
-    if (
-      today === null ||
-      today === undefined ||
-      !(today.start <= local.time && local.time < today.end)
-    )
-      return [];
-  }
+  if (!withinWorkingHours(manifest.workingHours, local)) return [];
   const covering = manifest.schemaVersion === 4 ? coveringAt(manifest, local) : [];
   for (const candidate of [...covering, 0]) {
     if (candidate !== 0 && skipSlices.has(candidate)) continue;

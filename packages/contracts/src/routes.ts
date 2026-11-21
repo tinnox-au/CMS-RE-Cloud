@@ -107,6 +107,14 @@ export const ROUTES = Object.freeze({
   inviteCancelPattern: '/api/invites/:id/cancel',
   inviteCancel: (id: string) => `/api/invites/${enc(id)}/cancel`,
 
+  /** GET: the organisation's alert addresses. POST: add one and send its confirmation e-mail. */
+  alertRecipients: '/api/alert-recipients',
+  /** DELETE. */
+  alertRecipientPattern: '/api/alert-recipients/:id',
+  alertRecipient: (id: string) => `/api/alert-recipients/${enc(id)}`,
+  /** POST `{ token }`: public, the confirmation link's page calls it. A fixed path beside `:id`. */
+  alertRecipientConfirm: '/api/alert-recipients/confirm',
+
   playerPairing: '/player/pairing',
   playerPairingPollPattern: '/player/pairing/:id',
   playerPairingPoll: (id: string) => `/player/pairing/${enc(id)}`,

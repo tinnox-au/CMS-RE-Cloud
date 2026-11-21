@@ -8,6 +8,8 @@ export const AUDIT_ACTIONS = [
   'auth.session_expired',
   'display.create',
   'display.update',
+  'display.offline_alert',
+  'display.online_alert',
   'pairing.create',
   'pairing.claim',
   'pairing.complete',
@@ -46,6 +48,9 @@ export const AUDIT_ACTIONS = [
   'membership.remove',
   'membership.sessions_end',
   'membership.mfa_reset',
+  'alert_recipient.add',
+  'alert_recipient.remove',
+  'alert_recipient.confirm',
   'security.cross_org_denied',
   'security.csrf_rejected',
   'security.permission_denied',
@@ -69,6 +74,7 @@ export const AUDIT_CATEGORIES = [
   'publication',
   'invite',
   'membership',
+  'alert_recipient',
   'security',
 ] as const;
 export const AuditCategorySchema = z.enum(AUDIT_CATEGORIES);

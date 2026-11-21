@@ -109,8 +109,9 @@ describe('function hardening', () => {
     );
     // 14 from migration 0002, two lookups from 0003_api_lookups.sql,
     // heartbeat_log_purge from 0004_review_hardening.sql, pairing_cancel_claims from
-    // 0010_pairing_hardening.sql and session_revoke_membership from 0013_roles_and_members.sql.
-    expect(rows.length).toBe(19);
+    // 0010_pairing_hardening.sql, session_revoke_membership from 0013_roles_and_members.sql, and
+    // display_alert_orgs and alert_recipient_by_token_hash from 0014_display_alerts.sql.
+    expect(rows.length).toBe(21);
     for (const r of rows) {
       expect(r, r.proname).toMatchObject({
         prosecdef: true,

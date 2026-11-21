@@ -2,6 +2,7 @@ import {
   DEFAULT_LIMITS,
   HEADERS,
   ROUTES,
+  type AlertRecipientDto,
   type DeliveryStatusView,
   type DisplayDto,
   type FolderDto,
@@ -41,6 +42,7 @@ const LAYOUT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const MEMBER = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const SELF = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const INVITE = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const RECIPIENT = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const AT = '2026-11-15T03:00:00.000Z';
 const CSRF = 'csrf-token-aaaaaaaaaaaaaaaaaaaa';
 const ATTEMPT_ID = 'push-attempt-0001';
@@ -81,6 +83,8 @@ const display: DisplayDto = {
   defaultFit: 'contain',
   rotation: 0,
   workingHours: null,
+  alertOfflineMinutes: 30,
+  alertBackOnline: true,
   route: 'browser',
   player: null,
   tagIds: [],
@@ -211,6 +215,13 @@ const memberName: MemberNameDto = {
   removed: false,
   renamedAt: null,
 };
+const recipient: AlertRecipientDto = {
+  id: RECIPIENT,
+  email: 'alerts@example.com',
+  status: 'waiting',
+  createdAt: AT,
+};
+
 const invite: InviteDto = {
   id: INVITE,
   name: 'Ari Park',
@@ -412,6 +423,12 @@ describe('endpoints: reads', () => {
         [memberName],
       ],
       [ROUTES.invites, { items: [invite] }, (api) => api.listInvites(signal), [invite]],
+      [
+        ROUTES.alertRecipients,
+        { items: [recipient] },
+        (api) => api.listAlertRecipients(signal),
+        [recipient],
+      ],
     ];
     for (const [path, body, call, expected] of cases) {
       const { api, calls } = await harness(body);
@@ -664,6 +681,14 @@ describe('endpoints: changes', () => {
         (api) => api.signOutMember(MEMBER),
         { sessionsEnded: 3 },
       ],
+      [
+        'POST',
+        ROUTES.alertRecipients,
+        { email: 'alerts@example.com' },
+        recipient,
+        (api) => api.addAlertRecipient('alerts@example.com'),
+        recipient,
+      ],
     ];
     for (const [method, path, sent, answer, call, expected] of cases) {
       const what = `${method} ${path}`;
@@ -686,6 +711,7 @@ describe('endpoints: changes', () => {
       [ROUTES.playlist(PLAYLIST), (api) => api.deletePlaylist(PLAYLIST)],
       [ROUTES.schedule(SCHEDULE), (api) => api.deleteSchedule(SCHEDULE)],
       [ROUTES.layout(LAYOUT), (api) => api.deleteLayout(LAYOUT)],
+      [ROUTES.alertRecipient(RECIPIENT), (api) => api.removeAlertRecipient(RECIPIENT)],
     ];
     for (const [path, call] of cases) {
       const { api, calls } = await harness(null, 204);
@@ -706,6 +732,15 @@ describe('endpoints: changes', () => {
     expect(calls[0]?.path).toBe(ROUTES.inviteCancel(INVITE));
     expect(calls[0]?.body).toBeUndefined();
     expect(calls[0]?.headers[HEADERS.csrf]).toBe(CSRF);
+  });
+
+  it('posts the alert confirmation token without the CSRF token', async () => {
+    const { api, calls } = await harness(null, 204);
+    await expect(api.confirmAlertRecipient('t'.repeat(43))).resolves.toBeUndefined();
+    expect(calls[0]?.method).toBe('POST');
+    expect(calls[0]?.path).toBe(ROUTES.alertRecipientConfirm);
+    expect(calls[0]?.body).toEqual({ token: 't'.repeat(43) });
+    expect(calls[0]?.headers[HEADERS.csrf]).toBeUndefined();
   });
 
   it('reports the last-Owner refusal with its own code', async () => {

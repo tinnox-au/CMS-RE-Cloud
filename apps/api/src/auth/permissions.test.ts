@@ -16,7 +16,7 @@ import {
   type RouteRule,
 } from './permissions.ts';
 
-/** The 59 rows of docs/portal-v2/stage-c.md section 6.1, written out. */
+/** The 59 rows of docs/portal-v2/stage-c.md section 6.1 and the 3 of stage-c-alerts.md section 4, written out. */
 const EXPECTED_ROUTES = [
   'GET /api/sites',
   'GET /api/displays',
@@ -77,11 +77,14 @@ const EXPECTED_ROUTES = [
   'GET /api/invites',
   'POST /api/invites',
   'POST /api/invites/:id/cancel',
+  'GET /api/alert-recipients',
+  'POST /api/alert-recipients',
+  'DELETE /api/alert-recipients/:id',
 ];
 
 describe('ROUTE_PERMISSIONS', () => {
-  it('has exactly the 59 routes of the build spec, each pattern a ROUTES value', () => {
-    expect(EXPECTED_ROUTES).toHaveLength(59);
+  it('has exactly the 62 routes of the build specs, each pattern a ROUTES value', () => {
+    expect(EXPECTED_ROUTES).toHaveLength(62);
     expect(Object.keys(ROUTE_PERMISSIONS).sort()).toEqual([...EXPECTED_ROUTES].sort());
     const patterns = new Set<string>(Object.values(ROUTES).filter((v) => typeof v === 'string'));
     for (const key of Object.keys(ROUTE_PERMISSIONS)) {
@@ -90,12 +93,17 @@ describe('ROUTE_PERMISSIONS', () => {
       expect(patterns.has(pattern ?? '')).toBe(true);
     }
     const reads = Object.keys(ROUTE_PERMISSIONS).filter((key) => key.startsWith('GET '));
-    expect(reads).toHaveLength(26);
+    expect(reads).toHaveLength(27);
   });
 
-  it('gives every read org.read, activity.read or member.read and no write org.read', () => {
+  it('gives every read org.read, activity.read, member.read or alerts.manage and no write org.read', () => {
     for (const [key, rule] of Object.entries(ROUTE_PERMISSIONS)) {
       const keys = 'all' in rule ? rule.all : rule.any;
+      // The alert list holds addresses, so reading it needs alerts.manage (stage-c-alerts.md A2).
+      if (key === `GET ${ROUTES.alertRecipients}`) {
+        expect(keys).toEqual(['alerts.manage']);
+        continue;
+      }
       const readKeys: PermissionKey[] = ['org.read', 'activity.read', 'member.read'];
       if (key.startsWith('GET ')) {
         expect(keys).toHaveLength(1);
@@ -163,7 +171,7 @@ describe('checkRouteTable', () => {
   });
 
   it('reports every entry when nothing was registered', () => {
-    expect(checkRouteTable(new Set())).toHaveLength(59);
+    expect(checkRouteTable(new Set())).toHaveLength(62);
   });
 });
 
@@ -172,7 +180,7 @@ describe('display PATCH fields', () => {
     expect(Object.keys(DISPLAY_PATCH_KEYS).sort()).toEqual(
       Object.keys(DisplayPatchSchema.shape).sort(),
     );
-    expect(Object.keys(DISPLAY_PATCH_KEYS)).toHaveLength(11);
+    expect(Object.keys(DISPLAY_PATCH_KEYS)).toHaveLength(13);
     for (const field of Object.keys(DisplayPatchSchema.shape)) {
       expect(displayPatchKeys([field])).toHaveLength(1);
     }
@@ -181,6 +189,7 @@ describe('display PATCH fields', () => {
   it('maps fields to keys, unique and in PERMISSION_KEYS order', () => {
     expect(displayPatchKeys(['name', 'description', 'tagIds'])).toEqual(['screen.details']);
     expect(displayPatchKeys(['workingHours'])).toEqual(['screen.hours']);
+    expect(displayPatchKeys(['alertOfflineMinutes', 'alertBackOnline'])).toEqual(['screen.alerts']);
     expect(displayPatchKeys(['rotation', 'canvas', 'contentRect', 'defaultFit'])).toEqual([
       'screen.setup',
     ]);

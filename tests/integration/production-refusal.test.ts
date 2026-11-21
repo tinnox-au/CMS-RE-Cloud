@@ -127,6 +127,11 @@ describe('production start-up', () => {
         'PORTAL_ORIGIN must use https in production',
       ],
       ['no MFA evidence', { OIDC_MFA_ACR_VALUES: '' }, 'production requires MFA evidence'],
+      [
+        'a development SMTP password',
+        { SMTP_USER: 'alerts', SMTP_PASSWORD: 'dev-smtp-password' },
+        'SMTP_PASSWORD is a development or placeholder value',
+      ],
     ];
     for (const [what, override, message] of cases) {
       const port = await freePort();

@@ -15,7 +15,7 @@
   ],
   "scripts": {
     "setup": "node scripts/setup-dev.mjs",
-    "infra:up": "docker compose --env-file .env -f infra/docker-compose.yml --profile worker up -d --build --wait postgres keycloak media-worker",
+    "infra:up": "docker compose --env-file .env -f infra/docker-compose.yml --profile worker up -d --build --wait postgres keycloak mailpit media-worker",
     "infra:down": "docker compose --env-file .env -f infra/docker-compose.yml --profile worker down",
     "infra:logs": "docker compose --env-file .env -f infra/docker-compose.yml --profile worker logs --tail=200",
     "db:migrate": "tsx scripts/migrate.ts",
